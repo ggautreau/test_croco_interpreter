@@ -4040,10 +4040,10 @@ export default function App() {
                 fontFamily: '"Raleway", sans-serif',
               }}
             >
-              Institut national de recherche pour
+              Institut National de Recherche pour
               <br />
               <span style={{ fontWeight: 800 }}>
-                l'agriculture, l'alimentation et l'environnement
+                l'Agriculture, l'Alimentation et l'Environnement (INRAE)
               </span>
             </div>
             <div className="flex items-center gap-6 mt-2">
@@ -4054,8 +4054,7 @@ export default function App() {
               className="text-[11px] mt-4 max-w-2xl leading-relaxed"
               style={{ color: "#797870" }}
             >
-              Interpretation aid for CroCoDeEL results. Not officially affiliated
-              with Metagenopolis. Cite: Goulet, L. et al., bioRxiv 2025,
+              Interpretation aid for CroCoDeEL results. Cite: Goulet, L. et al., bioRxiv 2025,
               doi:10.1101/2025.01.15.633153.
             </div>
           </div>
