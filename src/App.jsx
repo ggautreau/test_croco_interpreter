@@ -845,22 +845,44 @@ const NetworkGraph = ({ events, onPick }) => {
           const rejected = e.verdict === "false_positive";
           const accepted = e.verdict === "true_positive";
           return (
-            <line
-              key={e.id}
-              x1={a.x}
-              y1={a.y}
-              x2={b.x}
-              y2={b.y}
-              stroke={rejected ? "#c4c0b3" : accepted ? "#00a3a6" : "#275662"}
-              strokeOpacity={rejected ? 0.5 : 0.8}
-              strokeWidth={1.2 + (e.score || 0) * 2.5}
-              strokeDasharray={rejected ? "3 3" : undefined}
-              markerEnd="url(#arrow-inrae)"
-              onMouseEnter={() => setHover({ kind: "edge", e })}
-              onMouseLeave={() => setHover(null)}
-              onClick={() => onPick && onPick(e.id)}
-              style={{ cursor: "pointer" }}
-            />
+            <g key={e.id}>
+              {/* wider invisible hit line for easier clicking */}
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke="transparent"
+                strokeWidth="10"
+                onMouseEnter={() => setHover({ kind: "edge", e })}
+                onMouseLeave={() => setHover(null)}
+                onClick={() => onPick && onPick(e.id)}
+                style={{ cursor: "pointer" }}
+              />
+              {/* visible line */}
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={rejected ? "#c4c0b3" : accepted ? "#00a3a6" : "#275662"}
+                strokeOpacity={
+                  hover?.kind === "edge" && hover.e.id === e.id
+                    ? 1
+                    : rejected
+                      ? 0.5
+                      : 0.8
+                }
+                strokeWidth={
+                  (hover?.kind === "edge" && hover.e.id === e.id ? 2 : 0) +
+                  1.2 +
+                  (e.score || 0) * 2.5
+                }
+                strokeDasharray={rejected ? "3 3" : undefined}
+                markerEnd="url(#arrow-inrae)"
+                style={{ pointerEvents: "none" }}
+              />
+            </g>
           );
         })}
         {nodes.map((n) => {
@@ -927,18 +949,24 @@ const NetworkGraph = ({ events, onPick }) => {
         </div>
       )}
       {hover?.kind === "edge" && (
-        <div className="px-3 py-2 text-[12px] border-t border-stone-300 bg-[#f6f7f7]">
+        <div className="px-3 py-2 text-[12px] border-t border-stone-300 bg-[#f6f7f7] flex items-center gap-2 flex-wrap">
           <span className="font-semibold" style={{ color: "#275662" }}>
             {hover.e.source}
           </span>
-          <ArrowRight className="inline w-3 h-3 mx-1" style={{ color: "#00a3a6" }} />
+          <ArrowRight className="inline w-3 h-3" style={{ color: "#00a3a6" }} />
           <span className="font-semibold" style={{ color: "#275662" }}>
             {hover.e.target}
           </span>
-          <span className="text-stone-500 ml-3">rate:</span>{" "}
+          <span className="text-stone-500 ml-2">rate:</span>{" "}
           {(hover.e.rate * 100).toFixed(2)}%
-          <span className="text-stone-500 ml-3">score:</span>{" "}
+          <span className="text-stone-500 ml-2">score:</span>{" "}
           {hover.e.score.toFixed(3)}
+          <span
+            className="ml-auto text-[11px]"
+            style={{ color: "#00a3a6", fontWeight: 600 }}
+          >
+            click to open →
+          </span>
         </div>
       )}
     </div>
@@ -2031,119 +2059,282 @@ const EventsTable = ({
 };
 
 /* ---------- SCATTER TAB ---------- */
-const ScatterTab = ({
-  events,
-  selected,
-  onSelect,
-  scatter,
-  ab,
-  diag,
-  above,
-  missing,
-  metadata,
-  plateMap,
-}) => {
-  const sel = selected || events[0];
-  if (!sel) return null;
-  if (!ab) {
+/* ----- Mini scatter thumbnail (for the gallery) ----- */
+const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
+  if (!scatter) return null;
+  const pad = { l: 8, r: 8, t: 8, b: 8 };
+  const w = width - pad.l - pad.r;
+  const h = height - pad.t - pad.b;
+  const floor = 1e-8;
+  const pts = scatter.points.map((p) => ({
+    ...p,
+    lx: Math.log10(Math.max(p.x, floor)),
+    ly: Math.log10(Math.max(p.y, floor)),
+  }));
+  if (pts.length === 0) {
     return (
       <div
-        className="p-6 rounded-sm"
-        style={{ background: "#fdeceb", border: "1px solid #ed6e6c", color: "#8a2422" }}
+        style={{
+          width,
+          height,
+          background: "#fafbfb",
+          border: "1px solid #e6e8e8",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#797870",
+          fontSize: 11,
+        }}
       >
-        <strong>Scatterplots require the abundance table.</strong> Drop{" "}
-        <code>species_abundance.tsv</code> above to enable this view.
+        no data
       </div>
     );
   }
-  const related = areRelated(metadata, sel.source, sel.target);
-  const pd = plateDistance(plateMap, sel.source, sel.target);
+  const allX = pts.map((p) => p.lx);
+  const allY = pts.map((p) => p.ly);
+  const lo = Math.floor(Math.min(Math.log10(floor), ...allX, ...allY));
+  const hi = Math.ceil(Math.max(...allX, ...allY, -2));
+  const sx = (v) => pad.l + ((v - lo) / (hi - lo)) * w;
+  const sy = (v) => pad.t + h - ((v - lo) / (hi - lo)) * h;
   return (
-    <div className="grid lg:grid-cols-[1fr_280px] gap-8">
-      <div>
-        <SectionTitle eyebrow="Scatterplot" title={`${sel.source} → ${sel.target}`}>
-          Each point is a species. The dashed salmon line is the theoretical
-          contamination line at rate {(sel.rate * 100).toFixed(2)}%. Species
-          introduced by contamination are shown in salmon.
-        </SectionTitle>
-        <CascadeBanner
-          cascade={sel.cascade}
-          onJumpToUpstream={(id) => onSelect(id)}
+    <svg width={width} height={height} style={{ display: "block", background: "#fff" }}>
+      {/* axes */}
+      <line
+        x1={pad.l}
+        y1={pad.t + h}
+        x2={pad.l + w}
+        y2={pad.t + h}
+        stroke="#c4c0b3"
+        strokeWidth="0.75"
+      />
+      <line
+        x1={pad.l}
+        y1={pad.t}
+        x2={pad.l}
+        y2={pad.t + h}
+        stroke="#c4c0b3"
+        strokeWidth="0.75"
+      />
+      {/* contamination line */}
+      {scatter.logC != null && (
+        <line
+          x1={sx(lo)}
+          y1={sy(lo - scatter.logC)}
+          x2={sx(hi)}
+          y2={sy(hi - scatter.logC)}
+          stroke="#ed6e6c"
+          strokeWidth="1"
+          strokeDasharray="3 2"
         />
-        {(related === true ||
-          (pd && pd.samePlate && pd.distance != null)) && (
-          <div className="flex gap-2 mb-4 flex-wrap">
-            {related === true && (
-              <Pill tone="warn">
-                ⚠ related — same subject ({metadata.bySample[sel.source]?.subject})
-              </Pill>
-            )}
-            {pd && pd.samePlate && pd.distance != null && (
-              <Pill
-                tone={
-                  pd.distance <= 1 ? "bad" : pd.distance === 2 ? "warn" : "neutral"
-                }
-              >
-                plate {plateMap.bySample[sel.source]?.plate} · Δ={pd.distance}
-              </Pill>
-            )}
-          </div>
-        )}
-        <div className="flex gap-6 items-start flex-wrap">
-          <Scatterplot scatter={scatter} />
-          <div className="flex-1 min-w-[240px]">
-            <Diag label="Probability (RF)" value={sel.score.toFixed(3)} />
-            <Diag label="Contamination rate" value={`${(sel.rate * 100).toFixed(2)}%`} />
-            <Diag
-              label="Species on line"
-              value={diag?.n ?? "–"}
-              tone={diag?.n >= 10 ? "good" : diag?.n ? "warn" : "bad"}
+      )}
+      {/* points */}
+      {pts.map((p, i) => (
+        <circle
+          key={i}
+          cx={sx(p.lx)}
+          cy={sy(p.ly)}
+          r={p.onLine ? 2 : 1.4}
+          fill={p.onLine ? "#ed6e6c" : "#275662"}
+          fillOpacity={p.onLine ? 0.9 : 0.35}
+        />
+      ))}
+    </svg>
+  );
+};
+
+/* ----- Gallery card ----- */
+const GalleryCard = ({ event, ab, metadata, plateMap, onPick }) => {
+  const scatter = useMemo(() => buildScatter(ab, event), [ab, event]);
+  const related = areRelated(metadata, event.source, event.target);
+  const pd = plateDistance(plateMap, event.source, event.target);
+  const verdictDot =
+    event.verdict === "true_positive" ? "#00a3a6" :
+    event.verdict === "false_positive" ? "#ed6e6c" :
+    event.verdict === "uncertain" ? "#c4c0b3" : null;
+
+  return (
+    <button
+      onClick={() => onPick(event.id)}
+      className="text-left rounded-sm"
+      style={{
+        border: "1px solid #e6e8e8",
+        background: "#fff",
+        transition: "transform 0.12s, box-shadow 0.12s, border-color 0.12s",
+        padding: 0,
+        overflow: "hidden",
+        width: "100%",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = "translateY(-2px)";
+        e.currentTarget.style.boxShadow = "0 6px 14px -6px rgba(39, 86, 98, 0.25)";
+        e.currentTarget.style.borderColor = "#00a3a6";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = "";
+        e.currentTarget.style.boxShadow = "";
+        e.currentTarget.style.borderColor = "#e6e8e8";
+      }}
+    >
+      <div style={{ background: "#fff", borderBottom: "1px solid #f0f2f2" }}>
+        <MiniScatter scatter={scatter} width={240} height={180} />
+      </div>
+      <div style={{ padding: "10px 12px" }}>
+        <div className="flex items-center gap-1.5 mb-1">
+          {verdictDot && (
+            <span
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{ background: verdictDot }}
             />
-            <Diag
-              label="Line R² (log-log)"
-              value={diag?.r2 != null ? diag.r2.toFixed(3) : "–"}
-              tone={
-                diag?.r2 != null
-                  ? diag.r2 > 0.8
-                    ? "good"
-                    : diag.r2 > 0.5
-                      ? "warn"
-                      : "bad"
-                  : "neutral"
-              }
-            />
-            <Diag
-              label="Fitted slope"
-              value={diag?.slope != null ? diag.slope.toFixed(2) : "–"}
-              hint="expected ≈ 1"
-            />
-            <Diag
-              label="Points above line"
-              value={above != null ? above : "–"}
-              tone={above == null ? "neutral" : above <= 3 ? "good" : "warn"}
-              hint={sel.cascade ? "explained by cascade" : "> 3 → cascade?"}
-            />
-            <Diag
-              label="Abundant source species missing from target"
-              value={missing != null ? missing : "–"}
-              tone={missing == null ? "neutral" : missing <= 2 ? "good" : "bad"}
-            />
+          )}
+          <div
+            className="text-[12px] truncate"
+            style={{
+              color: "#275662",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+          >
+            {event.source} → {event.target}
           </div>
         </div>
-      </div>
-      <aside>
         <div
-          className="text-[10px] tracking-[0.15em] uppercase mb-3"
+          className="flex items-center justify-between text-[11px] tabular mb-2"
+          style={{ color: "#797870" }}
+        >
+          <span>
+            score <b style={{ color: "#275662" }}>{event.score.toFixed(3)}</b>
+          </span>
+          <span>
+            rate{" "}
+            <b style={{ color: "#275662" }}>
+              {(event.rate * 100).toFixed(2)}%
+            </b>
+          </span>
+        </div>
+        {(related === true ||
+          (pd && pd.samePlate && pd.distance != null && pd.distance <= 2) ||
+          event.cascade) && (
+          <div className="flex flex-wrap gap-1">
+            {related === true && <Pill tone="warn">related</Pill>}
+            {pd && pd.samePlate && pd.distance != null && pd.distance <= 1 && (
+              <Pill tone="bad">adjacent</Pill>
+            )}
+            {pd && pd.samePlate && pd.distance === 2 && (
+              <Pill tone="warn">Δ=2</Pill>
+            )}
+            {event.cascade && <Pill tone="violet">cascade</Pill>}
+          </div>
+        )}
+      </div>
+    </button>
+  );
+};
+
+/* ----- Scatterplot gallery tab ----- */
+const ScatterTab = ({ events, ab, metadata, plateMap, onPick }) => {
+  const [sortBy, setSortBy] = useState("score");
+
+  if (!ab) {
+    return (
+      <div>
+        <SectionTitle eyebrow="Scatterplot" title="Event gallery">
+          Browse every flagged event as a scatterplot thumbnail. Click any card
+          to open it in the Guided validation workflow.
+        </SectionTitle>
+        <div
+          className="p-6 rounded-sm"
+          style={{ background: "#fdeceb", border: "1px solid #ed6e6c", color: "#8a2422" }}
+        >
+          <strong>Scatterplots require the abundance table.</strong> Drop{" "}
+          <code>species_abundance.tsv</code> above to enable this view.
+        </div>
+      </div>
+    );
+  }
+
+  const sorted = useMemo(() => {
+    const copy = [...events];
+    if (sortBy === "score") copy.sort((a, b) => b.score - a.score);
+    else if (sortBy === "rate") copy.sort((a, b) => b.rate - a.rate);
+    else if (sortBy === "pending") {
+      const rank = (v) =>
+        v === "pending" ? 0 : v === "uncertain" ? 1 : v === "true_positive" ? 2 : 3;
+      copy.sort((a, b) => rank(a.verdict) - rank(b.verdict) || b.score - a.score);
+    } else if (sortBy === "source") {
+      copy.sort((a, b) => a.source.localeCompare(b.source));
+    }
+    return copy;
+  }, [events, sortBy]);
+
+  return (
+    <div>
+      <SectionTitle eyebrow="Scatterplot" title="Event gallery">
+        Browse every flagged event as a scatterplot thumbnail. Click any card
+        to open it in the Guided validation workflow for full diagnostics.
+      </SectionTitle>
+
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
+        <span
+          className="text-[11px] uppercase tracking-[0.1em]"
           style={{
-            color: "#ed6e6c",
+            color: "#797870",
             fontWeight: 700,
             fontFamily: '"Raleway", sans-serif',
           }}
         >
-          All events
-        </div>
-        <EventQueue events={events} currentId={sel.id} onSelect={onSelect} compact />
-      </aside>
+          Sort by
+        </span>
+        {[
+          { id: "score", label: "probability" },
+          { id: "rate", label: "rate" },
+          { id: "pending", label: "pending first" },
+          { id: "source", label: "source" },
+        ].map((opt) => {
+          const active = sortBy === opt.id;
+          return (
+            <button
+              key={opt.id}
+              onClick={() => setSortBy(opt.id)}
+              className="px-3 py-1 text-[11px] rounded-sm"
+              style={{
+                background: active ? "#275662" : "#fff",
+                color: active ? "#fff" : "#275662",
+                border: "1px solid #275662",
+                fontWeight: 600,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+        <span className="ml-auto text-[12px]" style={{ color: "#797870" }}>
+          {sorted.length} event{sorted.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      <div
+        className="grid gap-4"
+        style={{
+          gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+        }}
+      >
+        {sorted.map((e) => (
+          <GalleryCard
+            key={e.id}
+            event={e}
+            ab={ab}
+            metadata={metadata}
+            plateMap={plateMap}
+            onPick={onPick}
+          />
+        ))}
+      </div>
+
+      <p className="text-[11px] mt-6" style={{ color: "#797870" }}>
+        Click any thumbnail to open the full view with diagnostics and verdict
+        controls.
+      </p>
     </div>
   );
 };
@@ -2152,12 +2343,20 @@ const ScatterTab = ({
 const NetworkTab = ({ events, onPick }) => (
   <div>
     <SectionTitle eyebrow="Network" title="Contamination map">
-      Directed graph from source to target. Edge thickness reflects RF probability.
-      Salmon nodes appear on both sides — a possible contamination cascade.
+      Directed graph from source to target. Edge thickness reflects RF
+      probability. Salmon nodes appear on both sides — a possible contamination
+      cascade. Click any edge to open that event in Guided validation.
     </SectionTitle>
     <NetworkGraph events={events} onPick={onPick} />
-    <p className="text-[11px] mt-3" style={{ color: "#797870" }}>
-      Click an edge to open the event in guided validation.
+    <p
+      className="text-[11px] mt-3 flex items-center gap-1.5"
+      style={{ color: "#797870" }}
+    >
+      <span
+        className="inline-block w-2 h-2 rounded-full"
+        style={{ background: "#00a3a6" }}
+      />
+      Hover an edge to inspect it, click to jump into validation.
     </p>
   </div>
 );
@@ -3191,7 +3390,8 @@ export default function App() {
     return c;
   }, [events]);
 
-  const selected = events.find((e) => e.id === selId) || null;
+  const selected =
+    events.find((e) => e.id === selId) || events[0] || null;
   const setVerdict = (id, verdict) =>
     setRawEvents((prev) =>
       prev.map((e) => (e.id === id ? { ...e, verdict } : e)),
@@ -3573,15 +3773,13 @@ export default function App() {
           {tab === "scatter" && (
             <ScatterTab
               events={events}
-              selected={selected}
-              onSelect={setSelId}
-              scatter={scatter}
               ab={ab}
-              diag={diag}
-              above={above}
-              missing={missing}
               metadata={metadata}
               plateMap={plateMap}
+              onPick={(id) => {
+                setSelId(id);
+                setTab("validate");
+              }}
             />
           )}
           {tab === "network" && (
