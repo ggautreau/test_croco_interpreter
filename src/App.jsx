@@ -696,12 +696,19 @@ const Scatterplot = ({ scatter, width = 560, height = 500 }) => {
     ) : null;
 
   return (
-    <div className="relative">
+    <div
+      className="relative"
+      style={{ width: "100%", maxWidth: width }}
+    >
       <svg
-        width={width}
-        height={height}
+        viewBox={`0 0 ${width} ${height}`}
         className="border border-stone-300 rounded-sm"
-        style={{ background: "#fff" }}
+        style={{
+          background: "#fff",
+          width: "100%",
+          height: "auto",
+          display: "block",
+        }}
       >
         {ticks.map((t) => (
           <g key={`gx-${t}`}>
@@ -788,8 +795,8 @@ const Scatterplot = ({ scatter, width = 560, height = 500 }) => {
         <div
           className="absolute pointer-events-none text-[11px] px-2 py-1 shadow-lg rounded-sm"
           style={{
-            left: hover.sx + 12,
-            top: hover.sy - 8,
+            left: `calc(${(hover.sx / width) * 100}% + 12px)`,
+            top: `calc(${(hover.sy / height) * 100}% - 8px)`,
             maxWidth: 260,
             background: "#275662",
             color: "white",
