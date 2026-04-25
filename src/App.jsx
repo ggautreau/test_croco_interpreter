@@ -6921,7 +6921,14 @@ function loadFromStorage() {
 function saveToStorage(payload) {
   // Try the full payload first. If it exceeds the quota, retry without
   // the abundance table (which is by far the largest piece). If THAT
-  // still fails, retry with events only as a last resort.
+  // still fails, retry with events only as a last resort. UI state
+  // (tab, selId, filter, sort) is tiny and always preserved.
+  const uiState = {
+    tab: payload.tab,
+    selId: payload.selId,
+    filter: payload.filter,
+    sort: payload.sort,
+  };
   const attempts = [
     { payload, dropped: null },
     { payload: { ...payload, ab: null }, dropped: "ab" },
@@ -6930,6 +6937,7 @@ function saveToStorage(payload) {
         version: payload.version,
         savedAt: payload.savedAt,
         rawEvents: payload.rawEvents,
+        ...uiState,
       },
       dropped: "ab+metadata+plateMap+runMetadata",
     },
@@ -7012,24 +7020,30 @@ const SavedPill = ({ timestamp }) => {
 
 export default function App() {
   // Try to recover a previous session before initial render so the UI
-  // shows the data immediately (no flicker).
+  // shows the data immediately (no flicker). All persisted UI state
+  // (filters, sort, active tab, selected event) is restored alongside
+  // the data so the user lands exactly where they left off.
   const initial = typeof window !== "undefined" ? loadFromStorage() : null;
   const [rawEvents, setRawEvents] = useState(initial?.rawEvents || []);
   const [runMetadata, setRunMetadata] = useState(initial?.runMetadata || null);
   const [ab, setAb] = useState(initial?.ab || null);
   const [metadata, setMetadata] = useState(initial?.metadata || null);
   const [plateMap, setPlateMap] = useState(initial?.plateMap || null);
-  const [tab, setTab] = useState("overview");
-  const [selId, setSelId] = useState(null);
-  const [filter, setFilter] = useState({
-    q: "",
-    minScore: 0,
-    verdict: "all",
-    minRate: 0,
-    hideRelated: false,
-    adjacentOnly: false,
-  });
-  const [sort, setSort] = useState({ by: "score", dir: "desc" });
+  const [tab, setTab] = useState(initial?.tab || "overview");
+  const [selId, setSelId] = useState(
+    initial?.selId !== undefined ? initial.selId : null,
+  );
+  const [filter, setFilter] = useState(
+    initial?.filter || {
+      q: "",
+      minScore: 0,
+      verdict: "all",
+      minRate: 0,
+      hideRelated: false,
+      adjacentOnly: false,
+    },
+  );
+  const [sort, setSort] = useState(initial?.sort || { by: "score", dir: "desc" });
   const [err, setErr] = useState(null);
   const eventFileRef = useRef(null);
   const abFileRef = useRef(null);
@@ -7059,11 +7073,16 @@ export default function App() {
         metadata,
         plateMap,
         ab,
+        // UI state — keeps the user exactly where they left off
+        tab,
+        selId,
+        filter,
+        sort,
       });
       if (ok) setSavedAt(Date.now());
     }, 200);
     return () => clearTimeout(handle);
-  }, [rawEvents, runMetadata, metadata, plateMap, ab]);
+  }, [rawEvents, runMetadata, metadata, plateMap, ab, tab, selId, filter, sort]);
 
   /* When a CroCoDeEL run header carries explicit cutoffs, pre-set the
      events-table filters to those values. The user can still lower them
