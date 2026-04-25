@@ -5728,8 +5728,9 @@ const HelpTab = () => {
           <p style={{ color: "#797870", fontSize: 12 }}>
             CroCoDeEL itself is published in Goulet L. et al., bioRxiv 2025
             (doi.org/10.1101/2025.01.15.633153). This interpretation tool was
-            built on top of it to replace the static PDF reports the
-            pipeline currently produces.
+            built on top of it to further explore the contamination events,
+            in addition to the static PDF reports the pipeline currently
+            produces.
           </p>
         </HelpSection>
 
