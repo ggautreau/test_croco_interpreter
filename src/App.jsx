@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   Upload,
   AlertCircle,
@@ -682,6 +682,21 @@ const Scatterplot = ({ scatter, width = 560, height = 500 }) => {
   const ticks = [];
   for (let i = lo; i <= hi; i++) ticks.push(i);
 
+  // y=x identity line: indicates "same abundance in source and target".
+  // Dashed so it's distinguishable from the (also-diagonal) contamination line.
+  const diagLine = (
+    <line
+      x1={sx(lo)}
+      y1={sy(lo)}
+      x2={sx(hi)}
+      y2={sy(hi)}
+      stroke="#000000"
+      strokeWidth="1.25"
+      strokeDasharray="2 4"
+      strokeOpacity="0.75"
+    />
+  );
+
   const lineEls =
     scatter.logC != null ? (
       <line
@@ -790,6 +805,7 @@ const Scatterplot = ({ scatter, width = 560, height = 500 }) => {
             style={{ cursor: "pointer" }}
           />
         ))}
+        {diagLine}
       </svg>
       {hover && (
         <div
@@ -1013,6 +1029,8 @@ const PlateGrid = ({
   editable = false,
   labelMode = "sample",
   size = 26,
+  focus = null,
+  arrows = null, // array of {fromRow, fromCol, toRow, toCol, color, opacity, width, key}
 }) => {
   const rows = format?.rows || 8;
   const cols = format?.cols || 12;
@@ -1030,7 +1048,7 @@ const PlateGrid = ({
   const rowLabel = (r) => String.fromCharCode(65 + r);
 
   return (
-    <div className="inline-block">
+    <div className="inline-block" style={{ position: "relative" }}>
       <div
         className="grid"
         style={{
@@ -1069,6 +1087,7 @@ const PlateGrid = ({
               const sid = grid[`${r}-${c}`];
               const highlight = sid ? highlightSamples[sid] : null;
               const filled = !!sid;
+              const isFocused = focus && focus.row === r && focus.col === c;
               return (
                 <button
                   key={`w-${r}-${c}`}
@@ -1090,6 +1109,11 @@ const PlateGrid = ({
                     fontWeight: 600,
                     overflow: "hidden",
                     lineHeight: 1,
+                    boxShadow: isFocused
+                      ? "0 0 0 2px #00a3a6, 0 0 0 3px #fff"
+                      : "none",
+                    position: "relative",
+                    zIndex: isFocused ? 2 : 1,
                   }}
                   title={sid ? `${wellLabel(r, c)} · ${sid}` : wellLabel(r, c)}
                 >
@@ -1106,7 +1130,102 @@ const PlateGrid = ({
           </React.Fragment>
         ))}
       </div>
+      {arrows && arrows.length > 0 && (
+        <PlateArrowsOverlay
+          arrows={arrows}
+          rows={rows}
+          cols={cols}
+          size={size}
+        />
+      )}
     </div>
+  );
+};
+
+/** Arrow overlay drawn absolutely over a PlateGrid. Coordinates are
+    computed from the well indices: wells are `size` px each, separated by 2 px
+    gap, and the grid has a `size` px header row and column. */
+const PlateArrowsOverlay = ({ arrows, rows, cols, size }) => {
+  const step = size + 2; // well + gap
+  const totalW = step + cols * step;
+  const totalH = step + rows * step;
+  const wellCenter = (r, c) => ({
+    x: step + c * step + size / 2,
+    y: step + r * step + size / 2,
+  });
+
+  // Unique marker id per color so arrowheads pick up the right tint
+  const colorsUsed = Array.from(new Set(arrows.map((a) => a.color)));
+  const markerId = (c) => `arr-${c.replace("#", "")}`;
+
+  return (
+    <svg
+      width={totalW}
+      height={totalH}
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        pointerEvents: "none",
+        zIndex: 3,
+      }}
+    >
+      <defs>
+        {colorsUsed.map((color) => (
+          <marker
+            key={color}
+            id={markerId(color)}
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="5"
+            markerHeight="5"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={color} />
+          </marker>
+        ))}
+      </defs>
+      {arrows.map((a) => {
+        const p1 = wellCenter(a.fromRow, a.fromCol);
+        const p2 = wellCenter(a.toRow, a.toCol);
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        // Pull line endpoints in so arrows don't start/end inside the wells
+        const inset = size / 2 - 1;
+        const ux = dx / (dist || 1);
+        const uy = dy / (dist || 1);
+        const sx = p1.x + ux * inset;
+        const sy = p1.y + uy * inset;
+        const ex = p2.x - ux * inset;
+        const ey = p2.y - uy * inset;
+
+        // Quadratic bezier control point perpendicular to line,
+        // to separate overlapping arrows between neighboring wells
+        const mx = (sx + ex) / 2;
+        const my = (sy + ey) / 2;
+        const curvature = Math.min(dist * 0.15, size * 0.9);
+        // perpendicular unit vector (rotate 90°)
+        const px = -uy;
+        const py = ux;
+        const cx = mx + px * curvature;
+        const cy = my + py * curvature;
+
+        return (
+          <path
+            key={a.key}
+            d={`M ${sx} ${sy} Q ${cx} ${cy} ${ex} ${ey}`}
+            fill="none"
+            stroke={a.color}
+            strokeWidth={a.width || 1.5}
+            strokeOpacity={a.opacity ?? 1}
+            strokeLinecap="round"
+            markerEnd={`url(#${markerId(a.color)})`}
+          />
+        );
+      })}
+    </svg>
   );
 };
 /* ============================================================================
@@ -2237,6 +2356,17 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
           fillOpacity={p.onLine ? 0.9 : 0.35}
         />
       ))}
+      {/* y=x identity (drawn last so it stays on top) */}
+      <line
+        x1={sx(lo)}
+        y1={sy(lo)}
+        x2={sx(hi)}
+        y2={sy(hi)}
+        stroke="#000000"
+        strokeWidth="0.7"
+        strokeDasharray="1.5 2.5"
+        strokeOpacity="0.7"
+      />
     </svg>
   );
 };
@@ -2468,6 +2598,10 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
     plateMap ? Object.values(plateMap.bySample)[0]?.plate || "P1" : "P1",
   );
   const [selectedSample, setSelectedSample] = useState(null);
+  const [sampleQuery, setSampleQuery] = useState("");
+  const [showUnplacedOnly, setShowUnplacedOnly] = useState(false);
+  const [focus, setFocus] = useState({ row: 0, col: 0 });
+  const gridRef = useRef(null);
 
   const placed = useMemo(() => {
     const s = new Set();
@@ -2475,22 +2609,37 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
     return s;
   }, [plateMap]);
 
-  const unplaced = samples.filter((s) => !placed.has(s));
+  const unplaced = useMemo(
+    () => samples.filter((s) => !placed.has(s)),
+    [samples, placed],
+  );
 
-  const handleClickWell = (r, c) => {
-    if (!selectedSample) return;
+  const filteredSamples = useMemo(() => {
+    let list = showUnplacedOnly ? unplaced : samples;
+    if (sampleQuery.trim()) {
+      const q = sampleQuery.toLowerCase().trim();
+      list = list.filter((s) => s.toLowerCase().includes(q));
+    }
+    return list;
+  }, [samples, unplaced, showUnplacedOnly, sampleQuery]);
+
+  /** Place `sid` (or the currently-selected sample) in well (r, c). */
+  const placeSample = (r, c, sid = selectedSample) => {
+    if (!sid) return;
     const newMap = { ...(plateMap?.bySample || {}) };
-    Object.keys(newMap).forEach((k) => {
-      if (k === selectedSample) delete newMap[k];
-    });
+    // remove any previous placement of this sample
+    delete newMap[sid];
+    // remove whatever was in this well
     Object.entries(newMap).forEach(([k, v]) => {
       if (v.plate === plateId && v.row === r && v.col === c) {
         delete newMap[k];
       }
     });
-    newMap[selectedSample] = { plate: plateId, row: r, col: c };
+    newMap[sid] = { plate: plateId, row: r, col: c };
     setPlateMap({ bySample: newMap, format });
     setSelectedSample(null);
+    // auto-advance the focus to the next empty well
+    advanceFocusToNextEmpty({ bySample: newMap }, r, c);
   };
 
   const clearWell = (sid) => {
@@ -2500,6 +2649,66 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
       Object.keys(newMap).length ? { bySample: newMap, format } : null,
     );
   };
+
+  /** Get the sample id currently at (plateId, row, col) if any. */
+  const sampleAt = (r, c) => {
+    if (!plateMap) return null;
+    const hit = Object.entries(plateMap.bySample).find(
+      ([, v]) => v.plate === plateId && v.row === r && v.col === c,
+    );
+    return hit ? hit[0] : null;
+  };
+
+  /** Move the keyboard focus to the next empty well, row-major. */
+  const advanceFocusToNextEmpty = (map, fromR, fromC) => {
+    const total = format.rows * format.cols;
+    let idx = fromR * format.cols + fromC + 1;
+    for (let k = 0; k < total; k++) {
+      const r = Math.floor(idx / format.cols) % format.rows;
+      const c = idx % format.cols;
+      const occupied = Object.values(map.bySample || {}).some(
+        (v) => v.plate === plateId && v.row === r && v.col === c,
+      );
+      if (!occupied) {
+        setFocus({ row: r, col: c });
+        return;
+      }
+      idx++;
+    }
+  };
+
+  /** Keyboard navigation handler. */
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const onKey = (e) => {
+      // Only trap keys when the focus is within the editor container
+      if (!el.contains(document.activeElement) && document.activeElement !== document.body) {
+        // if focused in an <input>, don't interfere
+        if (document.activeElement && document.activeElement.tagName === "INPUT") return;
+      }
+      let handled = true;
+      if (e.key === "ArrowRight") {
+        setFocus((f) => ({ ...f, col: Math.min(format.cols - 1, f.col + 1) }));
+      } else if (e.key === "ArrowLeft") {
+        setFocus((f) => ({ ...f, col: Math.max(0, f.col - 1) }));
+      } else if (e.key === "ArrowDown") {
+        setFocus((f) => ({ ...f, row: Math.min(format.rows - 1, f.row + 1) }));
+      } else if (e.key === "ArrowUp") {
+        setFocus((f) => ({ ...f, row: Math.max(0, f.row - 1) }));
+      } else if (e.key === "Enter") {
+        if (selectedSample) placeSample(focus.row, focus.col);
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        const sid = sampleAt(focus.row, focus.col);
+        if (sid) clearWell(sid);
+      } else {
+        handled = false;
+      }
+      if (handled) e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focus, selectedSample, plateMap, plateId, format]);
 
   const downloadTSV = () => {
     if (!plateMap) return;
@@ -2515,7 +2724,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
 
   return (
     <div className="grid lg:grid-cols-[auto_1fr] gap-8">
-      <div>
+      <div ref={gridRef} tabIndex={0} style={{ outline: "none" }}>
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           <label
             className="text-[11px]"
@@ -2554,20 +2763,51 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
           <input
             value={plateId}
             onChange={(e) => setPlateId(e.target.value)}
-            className="px-2 py-1 text-[11px] rounded-sm w-16"
+            className="px-2 py-1 text-[11px] rounded-sm w-20"
             style={{ border: "1px solid #c4c0b3" }}
           />
         </div>
+
         <PlateGrid
           format={format}
           plateId={plateId}
           plateMap={plateMap}
           highlightSamples={selectedSample ? { [selectedSample]: "#00a3a6" } : {}}
-          onClickWell={handleClickWell}
+          onClickWell={(r, c) => {
+            setFocus({ row: r, col: c });
+            if (selectedSample) placeSample(r, c);
+          }}
+          focus={focus}
           editable
           labelMode="sample"
           size={format.rows > 8 ? 22 : 32}
         />
+
+        {/* Keyboard shortcuts cheatsheet */}
+        <div
+          className="mt-3 p-2.5 rounded-sm text-[11px]"
+          style={{
+            background: "#f6f7f7",
+            border: "1px solid #e6e8e8",
+            color: "#275662",
+          }}
+        >
+          <span
+            className="uppercase tracking-[0.1em] mr-2"
+            style={{
+              color: "#ed6e6c",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+              fontSize: 10,
+            }}
+          >
+            Shortcuts
+          </span>
+          <kbd style={kbdStyle}>←↑→↓</kbd> move focus ·{" "}
+          <kbd style={kbdStyle}>Enter</kbd> place selected sample ·{" "}
+          <kbd style={kbdStyle}>Del</kbd> clear well
+        </div>
+
         <div className="mt-4 flex gap-2">
           <button
             onClick={downloadTSV}
@@ -2611,16 +2851,52 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
             fontFamily: '"Raleway", sans-serif',
           }}
         >
-          Samples {selectedSample ? "— click a well to place" : ""}
+          Samples {selectedSample ? "— click a well (or press Enter) to place" : ""}
         </div>
+
+        {/* Filter controls */}
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
+              style={{ color: "#797870" }}
+            />
+            <input
+              value={sampleQuery}
+              onChange={(e) => setSampleQuery(e.target.value)}
+              placeholder="search sample…"
+              className="pl-7 pr-3 py-1.5 text-[12px] rounded-sm w-full outline-none"
+              style={{ border: "1px solid #c4c0b3" }}
+            />
+          </div>
+          <label
+            className="flex items-center gap-1.5 text-[12px] cursor-pointer"
+            style={{ color: "#275662" }}
+          >
+            <input
+              type="checkbox"
+              checked={showUnplacedOnly}
+              onChange={(e) => setShowUnplacedOnly(e.target.checked)}
+              style={{ accentColor: "#00a3a6" }}
+            />
+            unplaced only
+          </label>
+        </div>
+
         <div className="mb-3 text-[12px]" style={{ color: "#797870" }}>
           {unplaced.length} unplaced · {placed.size} placed of {samples.length}
+          {sampleQuery && (
+            <>
+              {" "}· {filteredSamples.length} matching
+            </>
+          )}
         </div>
+
         <div
           className="rounded-sm max-h-[500px] overflow-auto"
           style={{ border: "1px solid #e6e8e8" }}
         >
-          {samples.map((s) => {
+          {filteredSamples.map((s) => {
             const pos = plateMap?.bySample[s];
             const isSelected = selectedSample === s;
             return (
@@ -2663,16 +2939,162 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
               </div>
             );
           })}
+          {filteredSamples.length === 0 && (
+            <div
+              className="px-3 py-6 text-center text-[12px]"
+              style={{ color: "#797870" }}
+            >
+              No samples match this filter.
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 };
 
+const kbdStyle = {
+  display: "inline-block",
+  padding: "1px 6px",
+  margin: "0 2px",
+  background: "#fff",
+  border: "1px solid #c4c0b3",
+  borderRadius: 3,
+  fontFamily: "system-ui, monospace",
+  fontSize: 10,
+  fontWeight: 600,
+  color: "#275662",
+};
+
+/* ---------- PLATE THUMBNAIL (for overview grid) ---------- */
+const PlateThumbnail = ({
+  plate,
+  plateMap,
+  eventsBySample,
+  selectedEventWells,
+  onClick,
+}) => {
+  // Compute which wells are occupied and whether they belong to an event
+  const rows = plateMap.format.rows;
+  const cols = plateMap.format.cols;
+  const cellSize = 7; // px — small enough for dozens of thumbnails
+  const padding = 4;
+  const width = cols * cellSize + padding * 2;
+  const height = rows * cellSize + padding * 2;
+
+  const grid = useMemo(() => {
+    const g = {};
+    Object.entries(plateMap.bySample).forEach(([sid, p]) => {
+      if (p.plate !== plate.id) return;
+      g[`${p.row}-${p.col}`] = sid;
+    });
+    return g;
+  }, [plateMap, plate.id]);
+
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-sm text-left"
+      style={{
+        border: "1px solid #e6e8e8",
+        background: "#fff",
+        padding: 12,
+        transition:
+          "transform 0.12s, box-shadow 0.12s, border-color 0.12s",
+        cursor: "pointer",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = "translateY(-2px)";
+        e.currentTarget.style.boxShadow =
+          "0 6px 14px -6px rgba(39,86,98,0.25)";
+        e.currentTarget.style.borderColor = "#00a3a6";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = "";
+        e.currentTarget.style.boxShadow = "";
+        e.currentTarget.style.borderColor = "#e6e8e8";
+      }}
+    >
+      <svg
+        width={width}
+        height={height}
+        style={{ display: "block", margin: "0 auto" }}
+      >
+        <rect
+          x="0"
+          y="0"
+          width={width}
+          height={height}
+          fill="#fafbfb"
+          stroke="#e6e8e8"
+          strokeWidth="1"
+          rx="2"
+        />
+        {Array.from({ length: rows }).map((_, r) =>
+          Array.from({ length: cols }).map((_, c) => {
+            const sid = grid[`${r}-${c}`];
+            const hasEvent = sid && eventsBySample[sid];
+            const selected = sid && selectedEventWells?.has(sid);
+            let fill = "#e6e8e8"; // empty well
+            if (sid) fill = "#c9dfe0"; // placed
+            if (hasEvent) fill = "#ed6e6c"; // contamination
+            if (selected) fill = "#00a3a6"; // currently-picked event
+            return (
+              <circle
+                key={`${r}-${c}`}
+                cx={padding + c * cellSize + cellSize / 2}
+                cy={padding + r * cellSize + cellSize / 2}
+                r={cellSize / 2 - 0.5}
+                fill={fill}
+              />
+            );
+          }),
+        )}
+      </svg>
+      <div
+        className="mt-2 text-[13px] truncate"
+        style={{
+          color: "#275662",
+          fontWeight: 700,
+          fontFamily: '"Raleway", sans-serif',
+        }}
+      >
+        {plate.id}
+      </div>
+      <div
+        className="text-[11px] tabular flex items-center justify-between mt-0.5"
+        style={{ color: "#797870" }}
+      >
+        <span>
+          {plate.nSamples} sample{plate.nSamples !== 1 ? "s" : ""}
+        </span>
+        <span>
+          <span style={{ color: plate.nEvents ? "#ed6e6c" : "#797870", fontWeight: 600 }}>
+            {plate.nEvents}
+          </span>{" "}
+          event{plate.nEvents !== 1 ? "s" : ""}
+        </span>
+      </div>
+      {plate.nAdjacent > 0 && (
+        <div
+          className="mt-1 text-[10px]"
+          style={{ color: "#8a2422", fontWeight: 600 }}
+        >
+          {plate.nAdjacent} adjacent-well
+        </div>
+      )}
+    </button>
+  );
+};
+
+/* ---------- PLATE TAB ---------- */
 const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
-  const [mode, setMode] = useState(plateMap ? "view" : "edit");
+  const [mode, setMode] = useState(plateMap ? "overview" : "edit");
   const [currentPlate, setCurrentPlate] = useState(null);
   const [hoverEvent, setHoverEvent] = useState(null);
+  const [plateFilter, setPlateFilter] = useState("all"); // all | withEvents
+  const [eventFilter, setEventFilter] = useState("all"); // all | thisPlate | interPlate | adjacent
+  const [showArrows, setShowArrows] = useState(false);
 
   const plates = useMemo(() => {
     if (!plateMap) return [];
@@ -2681,20 +3103,94 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
     return Array.from(s).sort();
   }, [plateMap]);
 
+  // Compute per-plate stats once for all views
+  const plateStats = useMemo(() => {
+    if (!plateMap) return [];
+    const samplesByPlate = {};
+    plates.forEach((p) => (samplesByPlate[p] = 0));
+    Object.values(plateMap.bySample).forEach((p) => {
+      samplesByPlate[p.plate] = (samplesByPlate[p.plate] || 0) + 1;
+    });
+
+    const eventsByPlate = {};
+    const adjByPlate = {};
+    plates.forEach((p) => {
+      eventsByPlate[p] = 0;
+      adjByPlate[p] = 0;
+    });
+    events.forEach((e) => {
+      const a = plateMap.bySample[e.source];
+      const b = plateMap.bySample[e.target];
+      if (!a || !b) return;
+      const platesInvolved = new Set([a.plate, b.plate]);
+      platesInvolved.forEach((pl) => {
+        eventsByPlate[pl] = (eventsByPlate[pl] || 0) + 1;
+      });
+      if (a.plate === b.plate) {
+        const d = Math.max(
+          Math.abs(a.row - b.row),
+          Math.abs(a.col - b.col),
+        );
+        if (d <= 1) adjByPlate[a.plate] = (adjByPlate[a.plate] || 0) + 1;
+      }
+    });
+
+    return plates.map((p) => ({
+      id: p,
+      nSamples: samplesByPlate[p] || 0,
+      nEvents: eventsByPlate[p] || 0,
+      nAdjacent: adjByPlate[p] || 0,
+    }));
+  }, [plates, events, plateMap]);
+
+  // For thumbnails: which samples participate in any event
+  const eventsBySample = useMemo(() => {
+    const m = {};
+    events.forEach((e) => {
+      m[e.source] = true;
+      m[e.target] = true;
+    });
+    return m;
+  }, [events]);
+
+  // Inter-plate event count
+  const interPlateCount = useMemo(() => {
+    if (!plateMap) return 0;
+    return events.filter((e) => {
+      const a = plateMap.bySample[e.source];
+      const b = plateMap.bySample[e.target];
+      return a && b && a.plate !== b.plate;
+    }).length;
+  }, [events, plateMap]);
+
   const activePlate = currentPlate || plates[0];
 
-  const edgesOnPlate = useMemo(() => {
+  // For the inspect view: filter events for the list
+  const filteredEvents = useMemo(() => {
     if (!plateMap) return [];
     return events
       .map((e) => {
         const a = plateMap.bySample[e.source];
         const b = plateMap.bySample[e.target];
-        if (!a || !b) return null;
-        if (a.plate !== activePlate || b.plate !== activePlate) return null;
         return { ...e, a, b };
       })
-      .filter(Boolean);
-  }, [events, plateMap, activePlate]);
+      .filter((e) => {
+        if (!e.a || !e.b) return false;
+        if (eventFilter === "thisPlate") {
+          return e.a.plate === activePlate && e.b.plate === activePlate;
+        }
+        if (eventFilter === "interPlate") return e.a.plate !== e.b.plate;
+        if (eventFilter === "adjacent") {
+          if (e.a.plate !== e.b.plate) return false;
+          const d = Math.max(
+            Math.abs(e.a.row - e.b.row),
+            Math.abs(e.a.col - e.b.col),
+          );
+          return d <= 1;
+        }
+        return e.a.plate === activePlate || e.b.plate === activePlate;
+      });
+  }, [events, plateMap, activePlate, eventFilter]);
 
   const highlightSamples = useMemo(() => {
     const h = {};
@@ -2705,108 +3201,477 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
     return h;
   }, [hoverEvent]);
 
+  // For thumbnails: which samples belong to the hovered event's plate
+  const selectedEventWells = useMemo(() => {
+    if (!hoverEvent) return null;
+    const set = new Set();
+    if (hoverEvent.source) set.add(hoverEvent.source);
+    if (hoverEvent.target) set.add(hoverEvent.target);
+    return set;
+  }, [hoverEvent]);
+
+  /** Arrows to draw over the current plate in Inspect mode.
+      Colors: red = adjacent, orange = Δ=2, violet = cascade, grey = further.
+      Opacity + width change on hover to emphasize the focused event. */
+  const plateArrows = useMemo(() => {
+    if (!plateMap || !showArrows) return null;
+    const arrows = [];
+    filteredEvents.forEach((e) => {
+      // Only draw arrows for events fully within the active plate
+      if (!e.a || !e.b) return;
+      if (e.a.plate !== activePlate || e.b.plate !== activePlate) return;
+      const d = Math.max(
+        Math.abs(e.a.row - e.b.row),
+        Math.abs(e.a.col - e.b.col),
+      );
+      let color = "#797870"; // grey (distant)
+      if (e.cascade) color = "#423089"; // violet
+      else if (d <= 1) color = "#ed6e6c"; // red adjacent
+      else if (d === 2) color = "#e3a100"; // orange close
+      const isHovered = hoverEvent && hoverEvent.id === e.id;
+      const anyHover = !!hoverEvent;
+      return arrows.push({
+        key: `arr-${e.id}`,
+        fromRow: e.a.row,
+        fromCol: e.a.col,
+        toRow: e.b.row,
+        toCol: e.b.col,
+        color,
+        opacity: anyHover ? (isHovered ? 1 : 0.2) : 0.75,
+        width: isHovered ? 2.5 : 1.5,
+      });
+    });
+    // Render hovered arrow last so it draws on top
+    arrows.sort((a, b) => (a.opacity < b.opacity ? -1 : 1));
+    return arrows;
+  }, [filteredEvents, plateMap, showArrows, activePlate, hoverEvent]);
+
+  const visiblePlates = useMemo(() => {
+    if (plateFilter === "withEvents") {
+      return plateStats.filter((p) => p.nEvents > 0);
+    }
+    return plateStats;
+  }, [plateStats, plateFilter]);
+
   return (
     <div>
       <SectionTitle eyebrow="Plate map" title="Physical proximity on the plate">
-        Cross-sample (well-to-well) contamination happens between neighboring wells.
-        Checking the geographic proximity of a source / target pair is one of the
-        strongest diagnostic signals.
+        Cross-sample (well-to-well) contamination happens between neighboring
+        wells. Checking the geographic proximity of a source / target pair is
+        one of the strongest diagnostic signals.
       </SectionTitle>
 
+      {/* sub-mode selector */}
       <div className="flex gap-2 mb-4">
-        <button
-          onClick={() => setMode("view")}
-          className="px-4 py-1.5 text-[12px] rounded-sm"
-          style={{
-            background: mode === "view" ? "#275662" : "#fff",
-            color: mode === "view" ? "#fff" : "#275662",
-            border: "1px solid #275662",
-            fontWeight: 700,
-            fontFamily: '"Raleway", sans-serif',
-          }}
-          disabled={!plateMap}
-        >
-          View
-        </button>
-        <button
-          onClick={() => setMode("edit")}
-          className="px-4 py-1.5 text-[12px] rounded-sm"
-          style={{
-            background: mode === "edit" ? "#275662" : "#fff",
-            color: mode === "edit" ? "#fff" : "#275662",
-            border: "1px solid #275662",
-            fontWeight: 700,
-            fontFamily: '"Raleway", sans-serif',
-          }}
-        >
-          Edit
-        </button>
+        {[
+          { id: "overview", label: "Overview", disabledIfNoMap: true },
+          { id: "inspect", label: "Inspect", disabledIfNoMap: true },
+          { id: "edit", label: "Edit", disabledIfNoMap: false },
+        ].map((m) => {
+          const disabled = m.disabledIfNoMap && !plateMap;
+          const active = mode === m.id;
+          return (
+            <button
+              key={m.id}
+              onClick={() => setMode(m.id)}
+              disabled={disabled}
+              className="px-4 py-1.5 text-[12px] rounded-sm"
+              style={{
+                background: active ? "#275662" : "#fff",
+                color: active ? "#fff" : disabled ? "#c4c0b3" : "#275662",
+                border: `1px solid ${disabled ? "#e6e8e8" : "#275662"}`,
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+                cursor: disabled ? "not-allowed" : "pointer",
+              }}
+            >
+              {m.label}
+            </button>
+          );
+        })}
       </div>
 
-      {mode === "view" && plateMap && plates.length > 0 && (
-        <div className="grid lg:grid-cols-[auto_1fr] gap-8">
-          <div>
-            {plates.length > 1 && (
-              <div className="flex gap-1 mb-3 flex-wrap">
-                {plates.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setCurrentPlate(p)}
-                    className="px-3 py-1 text-[11px] rounded-sm"
-                    style={{
-                      background: activePlate === p ? "#00a3a6" : "#f6f7f7",
-                      color: activePlate === p ? "#fff" : "#275662",
-                      fontWeight: 700,
-                      border: "1px solid #e6e8e8",
-                      fontFamily: '"Raleway", sans-serif',
-                    }}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            )}
-            <PlateGrid
-              format={plateMap.format}
-              plateId={activePlate}
-              plateMap={plateMap}
-              highlightSamples={highlightSamples}
-              labelMode="sample"
-              size={32}
+      {/* ============================================================
+          OVERVIEW MODE
+          ============================================================ */}
+      {mode === "overview" && plateMap && (
+        <>
+          {/* Summary strip */}
+          <div
+            className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"
+            style={{ maxWidth: 760 }}
+          >
+            <Stat label="Plates" value={plates.length} />
+            <Stat
+              label="Wells used"
+              value={Object.keys(plateMap.bySample).length}
             />
-            <div
-              className="mt-3 flex items-center gap-4 text-[11px]"
-              style={{ color: "#797870" }}
-            >
-              <span className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-sm" style={{ background: "#00a3a6" }} />
-                source
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-sm" style={{ background: "#ed6e6c" }} />
-                target
-              </span>
-            </div>
+            <Stat
+              label="Events"
+              value={events.length}
+              tone={events.length > 0 ? "bad" : "neutral"}
+            />
+            <Stat
+              label="Inter-plate events"
+              value={interPlateCount}
+              tone={interPlateCount > 0 ? "warn" : "neutral"}
+            />
           </div>
-          <div>
-            <div
-              className="text-[10px] tracking-[0.15em] uppercase mb-3"
+
+          {/* Filter row */}
+          <div className="flex items-center gap-3 mb-5 flex-wrap">
+            <span
+              className="text-[11px] uppercase tracking-[0.1em]"
               style={{
-                color: "#ed6e6c",
+                color: "#797870",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
               }}
             >
-              Events on {activePlate} ({edgesOnPlate.length})
+              Show
+            </span>
+            {[
+              { id: "all", label: `all plates (${plateStats.length})` },
+              {
+                id: "withEvents",
+                label: `with events (${plateStats.filter((p) => p.nEvents > 0).length})`,
+              },
+            ].map((f) => {
+              const active = plateFilter === f.id;
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => setPlateFilter(f.id)}
+                  className="px-3 py-1 text-[11px] rounded-sm"
+                  style={{
+                    background: active ? "#275662" : "#fff",
+                    color: active ? "#fff" : "#275662",
+                    border: "1px solid #275662",
+                    fontWeight: 600,
+                    fontFamily: '"Raleway", sans-serif',
+                  }}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+
+            {/* legend */}
+            <div
+              className="ml-auto flex items-center gap-3 text-[11px]"
+              style={{ color: "#797870" }}
+            >
+              <span className="flex items-center gap-1">
+                <span
+                  className="inline-block w-2.5 h-2.5 rounded-full"
+                  style={{ background: "#c9dfe0" }}
+                />
+                occupied
+              </span>
+              <span className="flex items-center gap-1">
+                <span
+                  className="inline-block w-2.5 h-2.5 rounded-full"
+                  style={{ background: "#ed6e6c" }}
+                />
+                event
+              </span>
+            </div>
+          </div>
+
+          {/* Thumbnail grid */}
+          {visiblePlates.length === 0 ? (
+            <div
+              className="p-6 rounded-sm text-[13px] text-center"
+              style={{
+                background: "#f6f7f7",
+                border: "1px solid #e6e8e8",
+                color: "#797870",
+              }}
+            >
+              No plates match this filter.
+            </div>
+          ) : (
+            <div
+              className="grid gap-3"
+              style={{
+                gridTemplateColumns:
+                  "repeat(auto-fill, minmax(160px, 1fr))",
+              }}
+            >
+              {visiblePlates.map((p) => (
+                <PlateThumbnail
+                  key={p.id}
+                  plate={p}
+                  plateMap={plateMap}
+                  eventsBySample={eventsBySample}
+                  selectedEventWells={null}
+                  onClick={() => {
+                    setCurrentPlate(p.id);
+                    setMode("inspect");
+                  }}
+                />
+              ))}
+            </div>
+          )}
+
+          <p className="text-[11px] mt-6" style={{ color: "#797870" }}>
+            Click any plate to open it in Inspect mode with the full grid and
+            events list.
+          </p>
+        </>
+      )}
+
+      {/* ============================================================
+          INSPECT MODE
+          ============================================================ */}
+      {mode === "inspect" && plateMap && plates.length > 0 && (
+        <div className="grid lg:grid-cols-[auto_1fr] gap-8">
+          <div>
+            {/* Plate picker — pills for few, dropdown for many */}
+            {plates.length > 1 && (
+              <div className="mb-3">
+                {plates.length <= 6 ? (
+                  <div className="flex gap-1 flex-wrap">
+                    {plates.map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setCurrentPlate(p)}
+                        className="px-3 py-1 text-[11px] rounded-sm"
+                        style={{
+                          background:
+                            activePlate === p ? "#00a3a6" : "#f6f7f7",
+                          color: activePlate === p ? "#fff" : "#275662",
+                          fontWeight: 700,
+                          border: "1px solid #e6e8e8",
+                          fontFamily: '"Raleway", sans-serif',
+                        }}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <label
+                      className="text-[11px]"
+                      style={{
+                        color: "#275662",
+                        fontWeight: 700,
+                        fontFamily: '"Raleway", sans-serif',
+                      }}
+                    >
+                      Plate:
+                    </label>
+                    <select
+                      value={activePlate}
+                      onChange={(e) => setCurrentPlate(e.target.value)}
+                      className="px-3 py-1 text-[12px] rounded-sm"
+                      style={{
+                        border: "1px solid #275662",
+                        background: "#fff",
+                        color: "#275662",
+                        fontWeight: 700,
+                        fontFamily: '"Raleway", sans-serif',
+                        minWidth: 160,
+                      }}
+                    >
+                      {plateStats.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.id} ({p.nEvents} event{p.nEvents !== 1 ? "s" : ""})
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => setMode("overview")}
+                      className="px-3 py-1 text-[11px] rounded-sm"
+                      style={{
+                        background: "#fff",
+                        color: "#275662",
+                        border: "1px solid #c4c0b3",
+                        fontWeight: 600,
+                        fontFamily: '"Raleway", sans-serif',
+                      }}
+                    >
+                      ← Overview
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Main plate + possibly a second plate for inter-plate events */}
+            {hoverEvent &&
+            hoverEvent.a &&
+            hoverEvent.b &&
+            hoverEvent.a.plate !== hoverEvent.b.plate ? (
+              <div className="flex gap-6 items-start flex-wrap">
+                <div>
+                  <div
+                    className="text-[10px] mb-1 uppercase tracking-[0.1em]"
+                    style={{
+                      color: "#00a3a6",
+                      fontWeight: 700,
+                      fontFamily: '"Raleway", sans-serif',
+                    }}
+                  >
+                    source — {hoverEvent.a.plate}
+                  </div>
+                  <PlateGrid
+                    format={plateMap.format}
+                    plateId={hoverEvent.a.plate}
+                    plateMap={plateMap}
+                    highlightSamples={{ [hoverEvent.source]: "#00a3a6" }}
+                    labelMode="sample"
+                    size={28}
+                  />
+                </div>
+                <div>
+                  <div
+                    className="text-[10px] mb-1 uppercase tracking-[0.1em]"
+                    style={{
+                      color: "#ed6e6c",
+                      fontWeight: 700,
+                      fontFamily: '"Raleway", sans-serif',
+                    }}
+                  >
+                    target — {hoverEvent.b.plate}
+                  </div>
+                  <PlateGrid
+                    format={plateMap.format}
+                    plateId={hoverEvent.b.plate}
+                    plateMap={plateMap}
+                    highlightSamples={{ [hoverEvent.target]: "#ed6e6c" }}
+                    labelMode="sample"
+                    size={28}
+                  />
+                </div>
+              </div>
+            ) : (
+              <PlateGrid
+                format={plateMap.format}
+                plateId={activePlate}
+                plateMap={plateMap}
+                highlightSamples={highlightSamples}
+                labelMode="sample"
+                size={32}
+                arrows={plateArrows}
+              />
+            )}
+
+            <div
+              className="mt-3 flex items-center gap-4 text-[11px] flex-wrap"
+              style={{ color: "#797870" }}
+            >
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="w-3 h-3 rounded-sm"
+                  style={{ background: "#00a3a6" }}
+                />
+                source
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="w-3 h-3 rounded-sm"
+                  style={{ background: "#ed6e6c" }}
+                />
+                target
+              </span>
+              {showArrows && (
+                <>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 1,
+                      height: 12,
+                      background: "#c4c0b3",
+                      margin: "0 4px",
+                    }}
+                  />
+                  <span className="flex items-center gap-1.5">
+                    <svg width="18" height="6" aria-hidden="true">
+                      <line x1="1" y1="3" x2="17" y2="3" stroke="#ed6e6c" strokeWidth="2" />
+                    </svg>
+                    adjacent
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <svg width="18" height="6" aria-hidden="true">
+                      <line x1="1" y1="3" x2="17" y2="3" stroke="#e3a100" strokeWidth="2" />
+                    </svg>
+                    Δ=2
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <svg width="18" height="6" aria-hidden="true">
+                      <line x1="1" y1="3" x2="17" y2="3" stroke="#423089" strokeWidth="2" />
+                    </svg>
+                    cascade
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <svg width="18" height="6" aria-hidden="true">
+                      <line x1="1" y1="3" x2="17" y2="3" stroke="#797870" strokeWidth="2" />
+                    </svg>
+                    further
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <div
+                className="text-[10px] tracking-[0.15em] uppercase"
+                style={{
+                  color: "#ed6e6c",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                Events ({filteredEvents.length})
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <label
+                  className="flex items-center gap-1 text-[11px] cursor-pointer select-none"
+                  style={{ color: "#275662", fontWeight: 600 }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={showArrows}
+                    onChange={(e) => setShowArrows(e.target.checked)}
+                    style={{ accentColor: "#00a3a6" }}
+                  />
+                  show arrows
+                </label>
+                <select
+                  value={eventFilter}
+                  onChange={(e) => setEventFilter(e.target.value)}
+                  className="px-2 py-1 text-[11px] rounded-sm"
+                  style={{
+                    border: "1px solid #c4c0b3",
+                    background: "#fff",
+                    color: "#275662",
+                  }}
+                >
+                  <option value="all">involving {activePlate}</option>
+                  <option value="thisPlate">within {activePlate}</option>
+                  <option value="adjacent">adjacent wells only</option>
+                  <option value="interPlate">
+                    inter-plate ({interPlateCount})
+                  </option>
+                </select>
+              </div>
             </div>
             <div
-              className="rounded-sm overflow-auto max-h-[480px]"
+              className="rounded-sm overflow-auto max-h-[520px]"
               style={{ border: "1px solid #e6e8e8" }}
             >
-              {edgesOnPlate.map((e) => {
-                const dr = Math.abs(e.a.row - e.b.row);
-                const dc = Math.abs(e.a.col - e.b.col);
-                const d = Math.max(dr, dc);
+              {filteredEvents.map((e) => {
+                const samePlate = e.a.plate === e.b.plate;
+                const d = samePlate
+                  ? Math.max(
+                      Math.abs(e.a.row - e.b.row),
+                      Math.abs(e.a.col - e.b.col),
+                    )
+                  : null;
                 return (
                   <button
                     key={e.id}
@@ -2818,14 +3683,30 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
                       borderBottom: "1px solid #f0f2f2",
                       background: "#fff",
                     }}
-                    onMouseOver={(ev) => (ev.currentTarget.style.background = "#f6f7f7")}
-                    onMouseOut={(ev) => (ev.currentTarget.style.background = "#fff")}
+                    onMouseOver={(ev) =>
+                      (ev.currentTarget.style.background = "#f6f7f7")
+                    }
+                    onMouseOut={(ev) =>
+                      (ev.currentTarget.style.background = "#fff")
+                    }
                   >
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span style={{ color: "#275662", fontWeight: 600 }}>
-                        {wellLabel(e.a.row, e.a.col)} → {wellLabel(e.b.row, e.b.col)}
+                        {samePlate ? (
+                          <>
+                            {e.a.plate} · {wellLabel(e.a.row, e.a.col)} →{" "}
+                            {wellLabel(e.b.row, e.b.col)}
+                          </>
+                        ) : (
+                          <>
+                            {e.a.plate}:{wellLabel(e.a.row, e.a.col)} →{" "}
+                            {e.b.plate}:{wellLabel(e.b.row, e.b.col)}
+                          </>
+                        )}
                       </span>
-                      {d === 1 ? (
+                      {!samePlate ? (
+                        <Pill tone="primary">inter-plate</Pill>
+                      ) : d === 1 ? (
                         <Pill tone="bad">adjacent</Pill>
                       ) : d === 2 ? (
                         <Pill tone="warn">close (Δ=2)</Pill>
@@ -2842,19 +3723,29 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
                   </button>
                 );
               })}
-              {edgesOnPlate.length === 0 && (
+              {filteredEvents.length === 0 && (
                 <div
                   className="px-3 py-6 text-center text-[12px]"
                   style={{ color: "#797870" }}
                 >
-                  No events involve this plate.
+                  No events match this filter.
                 </div>
               )}
             </div>
+            <p
+              className="text-[11px] mt-2"
+              style={{ color: "#797870" }}
+            >
+              Hover an event to highlight its wells. Click to open in Guided
+              validation.
+            </p>
           </div>
         </div>
       )}
 
+      {/* ============================================================
+          EDIT MODE
+          ============================================================ */}
       {mode === "edit" && (
         <PlateEditor
           samples={samples}
@@ -2863,10 +3754,15 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
         />
       )}
 
-      {mode === "view" && !plateMap && (
+      {/* Empty-state messages */}
+      {(mode === "overview" || mode === "inspect") && !plateMap && (
         <div
           className="p-6 rounded-sm text-[13px]"
-          style={{ background: "#f6f7f7", border: "1px solid #e6e8e8", color: "#275662" }}
+          style={{
+            background: "#f6f7f7",
+            border: "1px solid #e6e8e8",
+            color: "#275662",
+          }}
         >
           No plate map loaded. Upload <code>plate_map.tsv</code> above, or
           switch to Edit mode to build one manually.
@@ -4063,6 +4959,12 @@ export default function App() {
             >
               Interpretation aid for CroCoDeEL results. Cite: Goulet, L. et al., bioRxiv 2025,
               doi:10.1101/2025.01.15.633153.
+            </div>
+            <div
+              className="text-[11px] mt-1 italic"
+              style={{ color: "#797870" }}
+            >
+              Created using Claude Opus 4.7, prompted by G. Gautreau.
             </div>
           </div>
         </div>
