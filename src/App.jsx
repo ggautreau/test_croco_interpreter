@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
+import * as d3 from "d3";
 import {
   Upload,
   AlertCircle,
@@ -315,6 +316,98 @@ function plateMapToTSV(plateMap) {
     lines.push(`${sid}\t${p.plate}\t${wellLabel(p.row, p.col)}`);
   });
   return lines.join("\n");
+}
+
+/** Serialize the loaded events back to a CroCoDeEL-compatible TSV.
+    Optionally prepend the original `# key: value | ...` header line if it
+    was captured at parse time. */
+function eventsToTSV(rawEvents, runMetadata) {
+  const lines = [];
+  if (runMetadata && Object.keys(runMetadata).length > 0) {
+    const parts = Object.entries(runMetadata).map(([k, v]) => `${k}: ${v}`);
+    lines.push(`# ${parts.join(" | ")}`);
+  }
+  lines.push(
+    [
+      "source",
+      "contaminated_sample",
+      "rate",
+      "probability",
+      "score",
+      "introduced_species",
+    ].join("\t"),
+  );
+  rawEvents.forEach((e) => {
+    lines.push(
+      [
+        e.source,
+        e.target,
+        e.rate ?? "",
+        e.probability ?? "",
+        e.score ?? "",
+        Array.isArray(e.introduced) ? e.introduced.join(",") : (e.species ?? ""),
+      ].join("\t"),
+    );
+  });
+  return lines.join("\n");
+}
+
+/** Serialize the in-memory abundance matrix back to TSV. NOTE: the parser
+    normalizes columns to relative abundances per sample, so the output here
+    is RE-NORMALIZED relative abundances — not the exact original counts. */
+function abundanceToTSV(ab) {
+  if (!ab) return "";
+  const header = ["species", ...ab.samples].join("\t");
+  const lines = [header];
+  ab.species.forEach((sp) => {
+    const row = [sp];
+    ab.samples.forEach((s) => {
+      const v = ab.matrix[sp]?.[s];
+      row.push(Number.isFinite(v) ? v : 0);
+    });
+    lines.push(row.join("\t"));
+  });
+  return lines.join("\n");
+}
+
+/** Serialize metadata back to TSV using whatever extra columns were present
+    in the original upload. */
+function metadataToTSV(metadata) {
+  if (!metadata) return "";
+  const sampleIds = Object.keys(metadata.bySample);
+  if (sampleIds.length === 0) return "";
+  // Collect the union of all extra keys from the original rows
+  const allKeys = new Set();
+  sampleIds.forEach((id) => {
+    const extras = metadata.bySample[id].extra || {};
+    Object.keys(extras).forEach((k) => allKeys.add(k));
+  });
+  // Ensure sample_id and subject_id are first if present
+  const ordered = ["sample_id", "subject_id"];
+  Array.from(allKeys).forEach((k) => {
+    if (!ordered.includes(k)) ordered.push(k);
+  });
+  const lines = [ordered.join("\t")];
+  sampleIds.forEach((id) => {
+    const extras = metadata.bySample[id].extra || {};
+    const cells = ordered.map((k) => {
+      if (k === "sample_id") return extras.sample_id || id;
+      return extras[k] ?? "";
+    });
+    lines.push(cells.join("\t"));
+  });
+  return lines.join("\n");
+}
+
+/** Trigger a browser download for the given text content. */
+function downloadText(content, filename) {
+  const blob = new Blob([content], { type: "text/tab-separated-values" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 /* ============================================================================
@@ -917,35 +1010,47 @@ function layoutComponent(comp, cellWidth, cellHeight) {
     positions[e.source] = { x: cellWidth * 0.28, y: cy };
     positions[e.target] = { x: cellWidth * 0.72, y: cy };
   } else {
-    // Larger component: use a layered layout based on in/out-degrees.
-    const inDeg = {};
-    const outDeg = {};
-    nodes.forEach((n) => {
-      inDeg[n] = 0;
-      outDeg[n] = 0;
-    });
-    edges.forEach((e) => {
-      inDeg[e.target]++;
-      outDeg[e.source]++;
-    });
-    // Pure sources (in=0) on the left, pure targets on the right, both in middle
-    const sources = nodes.filter((n) => inDeg[n] === 0 && outDeg[n] > 0);
-    const targets = nodes.filter((n) => outDeg[n] === 0 && inDeg[n] > 0);
-    const middles = nodes.filter((n) => inDeg[n] > 0 && outDeg[n] > 0);
+    // Larger component: use a force-directed simulation that runs
+    // synchronously to convergence. d3 handles repulsion, edge attraction,
+    // and collision so dense components no longer overlap.
+    const simNodes = nodes.map((id) => ({ id }));
+    const simLinks = edges.map((e) => ({
+      source: e.source,
+      target: e.target,
+    }));
 
-    const placeColumn = (list, x) => {
-      const n = list.length;
-      list.forEach((id, i) => {
-        const y = n === 1 ? cy : 30 + (i * (cellHeight - 60)) / (n - 1);
-        positions[id] = { x, y };
-      });
-    };
-    placeColumn(sources, cellWidth * 0.2);
-    placeColumn(middles, cellWidth * 0.5);
-    placeColumn(targets, cellWidth * 0.8);
-    // Any node still unplaced (isolated, shouldn't happen but safety)
-    nodes.forEach((n) => {
-      if (!positions[n]) positions[n] = { x: cx, y: cy };
+    const simulation = d3
+      .forceSimulation(simNodes)
+      .force(
+        "link",
+        d3
+          .forceLink(simLinks)
+          .id((d) => d.id)
+          .distance(85)
+          .strength(0.6),
+      )
+      .force("charge", d3.forceManyBody().strength(-260))
+      .force("center", d3.forceCenter(cx, cy))
+      .force("collide", d3.forceCollide(34))
+      // Mild horizontal spread proportional to net flow direction
+      // (sources tend left, targets tend right) — avoids the layout
+      // collapsing to a vertical column.
+      .force("x", d3.forceX(cx).strength(0.05))
+      .force("y", d3.forceY(cy).strength(0.08))
+      .stop();
+
+    // Run the simulation to completion synchronously (no animation —
+    // we just want the converged layout).
+    const ITERATIONS = 300;
+    for (let i = 0; i < ITERATIONS; i++) simulation.tick();
+
+    // Clamp inside the cell with a small padding so nodes never sit on the edge.
+    const pad = 28;
+    simNodes.forEach((n) => {
+      positions[n.id] = {
+        x: Math.max(pad, Math.min(cellWidth - pad, n.x)),
+        y: Math.max(pad, Math.min(cellHeight - pad, n.y)),
+      };
     });
   }
 
@@ -957,21 +1062,48 @@ function layoutComponent(comp, cellWidth, cellHeight) {
 
 const NetworkGraph = ({ events, onPick }) => {
   const [hover, setHover] = useState(null);
+  const [zoom, setZoom] = useState({ k: 1, x: 0, y: 0 });
+  const svgRef = useRef(null);
+  const zoomBehaviorRef = useRef(null);
 
   const components = useMemo(() => buildComponents(events), [events]);
 
-  // Choose grid arrangement based on component count
-  const grid = useMemo(() => {
+  // Pick cell dimensions based on the size of the LARGEST component.
+  // Small graphs (pairs only) keep compact cells; complex graphs get
+  // proportionally more space so the force layout has room to spread.
+  const { cellWidth, cellHeight, grid } = useMemo(() => {
     const n = components.length;
-    if (n === 0) return { cols: 1, rows: 1 };
-    if (n <= 2) return { cols: n, rows: 1 };
-    if (n <= 4) return { cols: 2, rows: Math.ceil(n / 2) };
-    if (n <= 9) return { cols: 3, rows: Math.ceil(n / 3) };
-    return { cols: 4, rows: Math.ceil(n / 4) };
+    if (n === 0) return { cellWidth: 280, cellHeight: 180, grid: { cols: 1, rows: 1 } };
+
+    const maxNodes = Math.max(...components.map((c) => c.nodes.length));
+    let cw, ch;
+    if (maxNodes <= 2) {
+      cw = 260;
+      ch = 130;
+    } else if (maxNodes <= 4) {
+      cw = 320;
+      ch = 220;
+    } else if (maxNodes <= 8) {
+      cw = 380;
+      ch = 280;
+    } else {
+      cw = 460;
+      ch = 360;
+    }
+
+    let cols;
+    if (n <= 2) cols = n;
+    else if (n <= 4) cols = 2;
+    else if (n <= 9) cols = 3;
+    else cols = 4;
+
+    return {
+      cellWidth: cw,
+      cellHeight: ch,
+      grid: { cols, rows: Math.ceil(n / cols) },
+    };
   }, [components]);
 
-  const cellWidth = 280;
-  const cellHeight = 180;
   const totalWidth = grid.cols * cellWidth;
   const totalHeight = grid.rows * cellHeight + 40; // +40 for legend
 
@@ -1016,12 +1148,119 @@ const NetworkGraph = ({ events, onPick }) => {
     return d;
   }, [events]);
 
+  // Wire d3.zoom: drag to pan, wheel/pinch to zoom.
+  // Bounds: 0.4× to 4× — enough to see overview and zoom into dense clusters.
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const svgSel = d3.select(svgRef.current);
+    const zoomBehavior = d3
+      .zoom()
+      .scaleExtent([0.4, 4])
+      .filter((event) => {
+        // Don't start a pan when the user clicked on a node or an edge —
+        // those have their own click handlers (open in Guided validation).
+        // Allow zoom (wheel) and pan from background only.
+        if (event.type === "wheel") return true;
+        const target = event.target;
+        if (!target) return true;
+        // The transform group contains nodes and edges; clicks on those
+        // should not trigger a pan. Background <rect> below sits behind
+        // the transform group and IS pannable.
+        return target.tagName === "rect" && target.dataset?.bg === "1";
+      })
+      .on("zoom", (event) => {
+        const { k, x, y } = event.transform;
+        setZoom({ k, x, y });
+      });
+    zoomBehaviorRef.current = zoomBehavior;
+    svgSel.call(zoomBehavior);
+    return () => {
+      svgSel.on(".zoom", null);
+    };
+  }, []);
+
+  const resetZoom = () => {
+    if (!svgRef.current || !zoomBehaviorRef.current) return;
+    d3.select(svgRef.current)
+      .transition()
+      .duration(250)
+      .call(zoomBehaviorRef.current.transform, d3.zoomIdentity);
+  };
+
   return (
-    <div className="border border-stone-300 rounded-sm bg-white overflow-x-auto">
+    <div
+      className="border border-stone-300 rounded-sm bg-white overflow-hidden"
+      style={{ position: "relative" }}
+    >
+      {/* HTML overlay: legend (top-left, never zooms) */}
+      <div
+        className="absolute z-10 flex items-center gap-4 px-3 py-1.5 rounded-sm pointer-events-none"
+        style={{
+          top: 8,
+          left: 8,
+          background: "rgba(255,255,255,0.92)",
+          border: "1px solid #e6e8e8",
+        }}
+      >
+        <span
+          className="text-[10px] tracking-[0.1em] uppercase"
+          style={{ color: "#275662", fontWeight: 700, fontFamily: '"Raleway", sans-serif' }}
+        >
+          Legend
+        </span>
+        <span className="flex items-center gap-1.5 text-[10px]" style={{ color: "#275662" }}>
+          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "#fff", border: "1.2px solid #275662" }} />
+          source only
+        </span>
+        <span className="flex items-center gap-1.5 text-[10px]" style={{ color: "#275662" }}>
+          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "#275662" }} />
+          target only
+        </span>
+        <span className="flex items-center gap-1.5 text-[10px]" style={{ color: "#275662" }}>
+          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "#ed6e6c" }} />
+          cascade (both)
+        </span>
+      </div>
+
+      {/* HTML overlay: zoom controls (top-right) */}
+      <div
+        className="absolute z-10 flex items-center gap-1"
+        style={{ top: 8, right: 8 }}
+      >
+        <span
+          className="text-[10px] tabular px-2"
+          style={{
+            color: "#797870",
+            fontFamily: "system-ui, monospace",
+            background: "rgba(255,255,255,0.92)",
+            borderRadius: 2,
+            padding: "3px 6px",
+            border: "1px solid #e6e8e8",
+          }}
+        >
+          {Math.round(zoom.k * 100)}%
+        </span>
+        <button
+          onClick={resetZoom}
+          className="text-[10px] px-2 py-0.5 rounded-sm"
+          style={{
+            background: "#fff",
+            color: "#275662",
+            border: "1px solid #c4c0b3",
+            fontWeight: 600,
+            fontFamily: '"Raleway", sans-serif',
+          }}
+        >
+          Reset view
+        </button>
+      </div>
+
       <svg
-        width={totalWidth}
+        ref={svgRef}
+        width="100%"
         height={totalHeight}
-        style={{ display: "block" }}
+        viewBox={`0 0 ${totalWidth} ${totalHeight}`}
+        style={{ display: "block", cursor: zoom.k > 1 ? "grab" : "default" }}
       >
         <defs>
           <marker
@@ -1037,28 +1276,26 @@ const NetworkGraph = ({ events, onPick }) => {
           </marker>
         </defs>
 
-        {/* Legend (top-left) */}
-        <g transform="translate(12, 10)">
-          <text fontSize="10" fontFamily="Raleway" fontWeight="700" fill="#275662" y="10">
-            LEGEND
-          </text>
-          <g transform="translate(70, 6)">
-            <circle cx="6" cy="4" r="5" fill="#fff" stroke="#275662" strokeWidth="1.2" />
-            <text x="16" y="7" fontSize="10" fill="#275662">source only</text>
-          </g>
-          <g transform="translate(180, 6)">
-            <circle cx="6" cy="4" r="5" fill="#275662" />
-            <text x="16" y="7" fontSize="10" fill="#275662">target only</text>
-          </g>
-          <g transform="translate(290, 6)">
-            <circle cx="6" cy="4" r="5" fill="#ed6e6c" />
-            <text x="16" y="7" fontSize="10" fill="#275662">cascade (both)</text>
-          </g>
-        </g>
+        {/* Background rect — receives pan drags. Click-through everywhere
+            except where this rect lives (i.e. the empty canvas). */}
+        <rect
+          data-bg="1"
+          x="0"
+          y="0"
+          width={totalWidth}
+          height={totalHeight}
+          fill="transparent"
+        />
+
+        {/* Everything below transforms with zoom/pan */}
+        <g transform={`translate(${zoom.x},${zoom.y}) scale(${zoom.k})`}>
 
         {/* Edges (drawn first so nodes overlay endpoints) */}
-        {laidOut.map((c) =>
-          c.edges.map((e) => {
+        {laidOut.map((c) => {
+          // For dense components, hide non-hovered rate badges to reduce clutter.
+          // ≤ 2 edges = always show; otherwise only on hover.
+          const isCompact = c.edges.length <= 2;
+          return c.edges.map((e) => {
             const a = c.nodes[e.source];
             const b = c.nodes[e.target];
             if (!a || !b) return null;
@@ -1080,6 +1317,11 @@ const NetworkGraph = ({ events, onPick }) => {
             const mx = (x1 + x2) / 2;
             const my = (y1 + y2) / 2;
 
+            // Show badge only when the layout has space: simple components
+            // always show; complex components show only on hover.
+            const showBadge =
+              dist > 60 && (isCompact || isHovered);
+
             return (
               <g key={e.id}>
                 {/* invisible wider hit line */}
@@ -1095,21 +1337,43 @@ const NetworkGraph = ({ events, onPick }) => {
                   onClick={() => onPick && onPick(e.id)}
                   style={{ cursor: "pointer" }}
                 />
-                {/* visible edge */}
-                <line
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke={rejected ? "#c4c0b3" : accepted ? "#00a3a6" : "#275662"}
-                  strokeOpacity={isHovered ? 1 : rejected ? 0.4 : 0.75}
-                  strokeWidth={(isHovered ? 2 : 0) + 1.4 + (e.score || 0) * 2.4}
-                  strokeDasharray={rejected ? "3 3" : undefined}
-                  markerEnd="url(#arrow-inrae)"
-                  style={{ pointerEvents: "none" }}
-                />
+                {/* visible edge — thickness AND color intensity scale with
+                    contamination rate (log-scaled, since rates span several
+                    orders of magnitude). Higher rate = thicker, darker line. */}
+                {(() => {
+                  // log10(rate * 100) maps 0.01% → -2, 1% → 0, 100% → 2.
+                  // Normalize to [0, 1] over [-3, 2] (covers 0.001% to 100%).
+                  const r = Math.max(e.rate || 0, 1e-5);
+                  const logRate = Math.log10(r * 100); // -3 to 2
+                  const t = Math.max(0, Math.min(1, (logRate + 3) / 5)); // 0..1
+
+                  // Stroke: 1.2 (low rate) → 4.5 (high rate) base width
+                  const baseWidth = 1.2 + t * 3.3;
+                  const strokeColor = rejected
+                    ? "#c4c0b3"
+                    : accepted
+                      ? "#00a3a6"
+                      : // Lerp from light teal-grey (#7a9aa1) to deep teal (#1d3a44)
+                        // so high-rate events stand out as visually heavier.
+                        d3.interpolateRgb("#9aaab0", "#1d3a44")(t);
+
+                  return (
+                    <line
+                      x1={x1}
+                      y1={y1}
+                      x2={x2}
+                      y2={y2}
+                      stroke={strokeColor}
+                      strokeOpacity={isHovered ? 1 : rejected ? 0.4 : 0.85}
+                      strokeWidth={baseWidth + (isHovered ? 1.5 : 0)}
+                      strokeDasharray={rejected ? "3 3" : undefined}
+                      markerEnd="url(#arrow-inrae)"
+                      style={{ pointerEvents: "none" }}
+                    />
+                  );
+                })()}
                 {/* rate badge on the edge */}
-                {dist > 50 && (
+                {showBadge && (
                   <g pointerEvents="none">
                     <rect
                       x={mx - 22}
@@ -1139,8 +1403,8 @@ const NetworkGraph = ({ events, onPick }) => {
                 )}
               </g>
             );
-          }),
-        )}
+          });
+        })}
 
         {/* Nodes — circle + external label below */}
         {allNodes.map((n) => {
@@ -1170,21 +1434,27 @@ const NetworkGraph = ({ events, onPick }) => {
                 stroke="#275662"
                 strokeWidth={isNodeHover ? 2.5 : 1.5}
               />
-              {/* External label below node */}
+              {/* External label below node — white halo for readability over edges */}
               <text
                 x={n.x}
-                y={n.y + 26}
+                y={n.y + 28}
                 textAnchor="middle"
-                fontSize="11"
+                fontSize="12"
                 fontFamily="system-ui, sans-serif"
-                fontWeight="600"
+                fontWeight="700"
                 fill="#275662"
+                stroke="#ffffff"
+                strokeWidth="2"
+                strokeLinejoin="round"
+                paintOrder="stroke fill"
+                style={{ pointerEvents: "none" }}
               >
                 {n.id}
               </text>
             </g>
           );
         })}
+        </g>
       </svg>
 
       {hover?.kind === "node" && (
@@ -1445,7 +1715,15 @@ const PlateArrowsOverlay = ({ arrows, rows, cols, size }) => {
    ============================================================================ */
 
 /* ---------- generic upload card ---------- */
-const UploadCard = ({ label, hint, filename, onFile, primary, inputRef }) => {
+const UploadCard = ({
+  label,
+  hint,
+  filename,
+  onFile,
+  primary,
+  inputRef,
+  onDownload,
+}) => {
   const [drag, setDrag] = useState(false);
   const loaded = !!filename;
   return (
@@ -1511,21 +1789,48 @@ const UploadCard = ({ label, hint, filename, onFile, primary, inputRef }) => {
         className="hidden"
         onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
       />
-      <button
-        onClick={() => inputRef.current?.click()}
-        className="px-4 py-2 text-[12px] rounded-sm"
-        style={{
-          background: "#275662",
-          color: "white",
-          fontWeight: 700,
-          letterSpacing: "0.02em",
-          fontFamily: '"Raleway", sans-serif',
-        }}
-        onMouseOver={(e) => (e.currentTarget.style.background = "#00a3a6")}
-        onMouseOut={(e) => (e.currentTarget.style.background = "#275662")}
-      >
-        {loaded ? "Replace" : "Browse"}
-      </button>
+      <div className="flex flex-col items-stretch gap-1.5 shrink-0">
+        <button
+          onClick={() => inputRef.current?.click()}
+          className="px-4 py-2 text-[12px] rounded-sm"
+          style={{
+            background: "#275662",
+            color: "white",
+            fontWeight: 700,
+            letterSpacing: "0.02em",
+            fontFamily: '"Raleway", sans-serif',
+          }}
+          onMouseOver={(e) => (e.currentTarget.style.background = "#00a3a6")}
+          onMouseOut={(e) => (e.currentTarget.style.background = "#275662")}
+        >
+          {loaded ? "Replace" : "Browse"}
+        </button>
+        {loaded && onDownload && (
+          <button
+            onClick={onDownload}
+            title="Download this file"
+            className="px-2 py-1 text-[11px] rounded-sm flex items-center justify-center gap-1"
+            style={{
+              background: "#fff",
+              color: "#275662",
+              border: "1px solid #c4c0b3",
+              fontWeight: 600,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.borderColor = "#00a3a6";
+              e.currentTarget.style.color = "#00a3a6";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.borderColor = "#c4c0b3";
+              e.currentTarget.style.color = "#275662";
+            }}
+          >
+            <Download className="w-3 h-3" />
+            Download
+          </button>
+        )}
+      </div>
     </div>
   );
 };
@@ -1549,6 +1854,11 @@ const MetadataUploadCard = ({ metadata, setMetadata, setErr }) => {
       filename={metadata ? `${metadata.nSamples} samples annotated` : null}
       onFile={onFile}
       inputRef={inputRef}
+      onDownload={
+        metadata
+          ? () => downloadText(metadataToTSV(metadata), "metadata.tsv")
+          : undefined
+      }
     />
   );
 };
@@ -1575,6 +1885,11 @@ const PlateUploadCard = ({ plateMap, setPlateMap, setErr }) => {
       }
       onFile={onFile}
       inputRef={inputRef}
+      onDownload={
+        plateMap
+          ? () => downloadText(plateMapToTSV(plateMap), "plate_map.tsv")
+          : undefined
+      }
     />
   );
 };
@@ -2895,9 +3210,11 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick }) => {
 const NetworkTab = ({ events, onPick }) => (
   <div>
     <SectionTitle eyebrow="Network" title="Contamination map">
-      Directed graph from source to target. Edge thickness reflects RF
-      probability. Salmon nodes appear on both sides — a possible contamination
-      cascade. Click any edge to open that event in Guided validation.
+      Directed graph from source to target. Edge thickness and color intensity
+      reflect the contamination rate (log-scaled — heavier, darker arrows mean
+      higher rates). Salmon nodes appear on both sides — a possible
+      contamination cascade. Hover any edge for details, click to open it in
+      Guided validation.
     </SectionTitle>
     <NetworkGraph events={events} onPick={onPick} />
     <p
@@ -2908,7 +3225,8 @@ const NetworkTab = ({ events, onPick }) => (
         className="inline-block w-2 h-2 rounded-full"
         style={{ background: "#00a3a6" }}
       />
-      Hover an edge to inspect it, click to jump into validation.
+      Hover an edge to inspect it, click to jump into validation. Scroll to
+      zoom in on dense clusters, drag the background to pan.
     </p>
   </div>
 );
@@ -4602,6 +4920,10 @@ const ExportTab = ({ counts, onExportTSV, onExportJSON }) => (
       <Stat label="False positives" value={counts.fp} tone="bad" />
       <Stat label="Pending" value={counts.pending + counts.uncertain} />
     </div>
+    <p className="text-[12px] mt-6" style={{ color: "#797870" }}>
+      Need to retrieve the files you uploaded? Each upload card at the top of
+      the page has a small Download button when the file is loaded.
+    </p>
   </div>
 );
 /* ============================================================================
@@ -5094,6 +5416,15 @@ export default function App() {
               onFile={loadEvents}
               primary
               inputRef={eventFileRef}
+              onDownload={
+                rawEvents.length
+                  ? () =>
+                      downloadText(
+                        eventsToTSV(rawEvents, runMetadata),
+                        "contamination_events.tsv",
+                      )
+                  : undefined
+              }
             />
             <UploadCard
               label="species_abundance.tsv"
@@ -5105,6 +5436,12 @@ export default function App() {
               }
               onFile={loadAbundance}
               inputRef={abFileRef}
+              onDownload={
+                ab
+                  ? () =>
+                      downloadText(abundanceToTSV(ab), "species_abundance.tsv")
+                  : undefined
+              }
             />
             <MetadataUploadCard
               metadata={metadata}
