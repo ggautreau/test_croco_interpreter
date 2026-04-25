@@ -2593,19 +2593,8 @@ const VerdictBtn = ({ children, onClick, active, tone, icon: Icon }) => {
    ============================================================================ */
 
 /* ---------- EMPTY STATE ---------- */
-const EmptyState = ({ onLoadDemo, demoLoading, compact = false }) => (
-  <div
-    className={
-      compact
-        ? "py-6 mb-8"
-        : "max-w-7xl mx-auto px-6 py-16"
-    }
-    style={
-      compact
-        ? { borderBottom: "1px solid #e6e8e8" }
-        : undefined
-    }
-  >
+const EmptyState = ({ onLoadDemo, demoLoading }) => (
+  <div className="max-w-7xl mx-auto px-6 py-16">
     <div className="grid md:grid-cols-[1fr_320px] gap-10">
       <div>
         <SectionTitle eyebrow="Getting started" title="Upload your events to begin">
@@ -2905,9 +2894,10 @@ const RunMetadataBlock = ({ meta }) => {
   );
 };
 
-const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOpen }) => {
+const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOpen, onLoadDemo, demoLoading }) => {
   const topByScore = [...events].sort((a, b) => b.score - a.score).slice(0, 5);
   const topByRate = [...events].sort((a, b) => b.rate - a.rate).slice(0, 5);
+  const noData = events.length === 0;
 
   const relatedCount = useMemo(() => {
     if (!metadata) return null;
@@ -2930,6 +2920,61 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
         These are the events CroCoDeEL flagged. Your role: distinguish real contamination
         from coincidental abundance similarity. Start from the highest-score events.
       </SectionTitle>
+
+      {/* No-data banner — shown until the user uploads contamination_events.tsv */}
+      {noData && (
+        <div
+          className="mt-2 mb-8 p-5 rounded-sm flex items-center gap-5 flex-wrap"
+          style={{
+            background: "#eef8f8",
+            border: "1px solid #00a3a6",
+            borderLeft: "4px solid #00a3a6",
+          }}
+        >
+          <div className="flex-1 min-w-[260px]">
+            <div
+              className="text-[14px]"
+              style={{
+                color: "#275662",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              No data loaded yet
+            </div>
+            <div
+              className="text-[12px] mt-1"
+              style={{ color: "#797870", lineHeight: 1.5 }}
+            >
+              Upload your{" "}
+              <code style={{ fontFamily: "ui-monospace, monospace" }}>
+                contamination_events.tsv
+              </code>{" "}
+              from the cards at the top of the page, or load the bundled
+              demo dataset (Lou et al. 2023, P3). All counts below are zero
+              until then.
+            </div>
+          </div>
+          {onLoadDemo && (
+            <button
+              onClick={onLoadDemo}
+              disabled={demoLoading}
+              className="px-4 py-2 text-[13px] rounded-sm shrink-0"
+              style={{
+                background: demoLoading ? "#c4c0b3" : "#00a3a6",
+                color: "#fff",
+                fontWeight: 700,
+                letterSpacing: "0.02em",
+                fontFamily: '"Raleway", sans-serif',
+                cursor: demoLoading ? "not-allowed" : "pointer",
+                border: "none",
+              }}
+            >
+              {demoLoading ? "Loading…" : "Load demo data"}
+            </button>
+          )}
+        </div>
+      )}
 
       {runMetadata && <RunMetadataBlock meta={runMetadata} />}
 
@@ -7038,7 +7083,7 @@ export default function App() {
           style={{ borderBottom: "2px solid #e6e8e8" }}
         >
             {[
-              { id: "overview", label: "Overview", icon: BookOpen, requiresData: true },
+              { id: "overview", label: "Overview", icon: BookOpen, requiresData: false },
               { id: "table", label: "Events table", icon: TableIcon, requiresData: true },
               { id: "scatter", label: "Scatterplots", icon: ScatterIcon, requiresData: true },
               { id: "network", label: "Network", icon: GitBranch, requiresData: true },
@@ -7084,15 +7129,7 @@ export default function App() {
             })}
           </nav>
 
-          {events.length === 0 && (
-            <EmptyState
-              onLoadDemo={loadDemo}
-              demoLoading={demoLoading}
-              compact={tab === "help"}
-            />
-          )}
-
-          {(events.length > 0 || tab === "help") && (
+          {(events.length > 0 || tab === "help" || tab === "overview") && (
             <>
           {tab === "overview" && (
             <Overview
@@ -7106,6 +7143,8 @@ export default function App() {
                 setSelId(id);
                 setTab("validate");
               }}
+              onLoadDemo={loadDemo}
+              demoLoading={demoLoading}
             />
           )}
           {tab === "table" && (
