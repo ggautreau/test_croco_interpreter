@@ -1933,9 +1933,42 @@ const PlateArrowsOverlay = ({ arrows, rows, cols, size }) => {
     y: step + r * step + size / 2,
   });
 
-  // Unique marker id per color so arrowheads pick up the right tint
-  const colorsUsed = Array.from(new Set(arrows.map((a) => a.color)));
-  const markerId = (c) => `arr-${c.replace("#", "")}`;
+  // Pre-compute arrow geometry so we can emit defs (markers) and paths
+  // in two separate passes — markers must live in <defs> for the SVG
+  // marker resolution to work reliably across browsers.
+  const computed = arrows.map((a) => {
+    const p1 = wellCenter(a.fromRow, a.fromCol);
+    const p2 = wellCenter(a.toRow, a.toCol);
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    // Adaptive inset: pull endpoints in by a fraction of the well size,
+    // but never more than 30% of the total distance so short arrows
+    // remain visible (we'd rather poke a few pixels into the well than
+    // collapse the line entirely).
+    const maxInset = size / 2 - 2;
+    const inset = Math.min(maxInset, dist * 0.3);
+    const ux = dx / (dist || 1);
+    const uy = dy / (dist || 1);
+    const sx = p1.x + ux * inset;
+    const sy = p1.y + uy * inset;
+    const ex = p2.x - ux * inset;
+    const ey = p2.y - uy * inset;
+    // Curvature scales with line length: gentle on short trips, a bit
+    // more on long ones (so multiple parallel arrows don't overlap).
+    const mx = (sx + ex) / 2;
+    const my = (sy + ey) / 2;
+    const curvature = Math.min(dist * 0.12, size * 0.6);
+    const px = -uy;
+    const py = ux;
+    const cx = mx + px * curvature;
+    const cy = my + py * curvature;
+    // Arrowhead size scales with stroke width so thin arrows get small
+    // heads and thick arrows get larger ones — visually balanced.
+    const w = a.width || 1.5;
+    const headScale = Math.max(2.5, Math.min(6, w * 1.6));
+    return { a, sx, sy, ex, ey, cx, cy, w, headScale };
+  });
 
   return (
     <svg
@@ -1950,60 +1983,33 @@ const PlateArrowsOverlay = ({ arrows, rows, cols, size }) => {
       }}
     >
       <defs>
-        {colorsUsed.map((color) => (
+        {computed.map(({ a, headScale }) => (
           <marker
-            key={color}
-            id={markerId(color)}
+            key={`${a.key}-head`}
+            id={`${a.key}-head`}
             viewBox="0 0 10 10"
             refX="8"
             refY="5"
-            markerWidth="5"
-            markerHeight="5"
+            markerWidth={headScale}
+            markerHeight={headScale}
             orient="auto-start-reverse"
           >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill={color} />
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={a.color} />
           </marker>
         ))}
       </defs>
-      {arrows.map((a) => {
-        const p1 = wellCenter(a.fromRow, a.fromCol);
-        const p2 = wellCenter(a.toRow, a.toCol);
-        const dx = p2.x - p1.x;
-        const dy = p2.y - p1.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        // Pull line endpoints in so arrows don't start/end inside the wells
-        const inset = size / 2 - 1;
-        const ux = dx / (dist || 1);
-        const uy = dy / (dist || 1);
-        const sx = p1.x + ux * inset;
-        const sy = p1.y + uy * inset;
-        const ex = p2.x - ux * inset;
-        const ey = p2.y - uy * inset;
-
-        // Quadratic bezier control point perpendicular to line,
-        // to separate overlapping arrows between neighboring wells
-        const mx = (sx + ex) / 2;
-        const my = (sy + ey) / 2;
-        const curvature = Math.min(dist * 0.15, size * 0.9);
-        // perpendicular unit vector (rotate 90°)
-        const px = -uy;
-        const py = ux;
-        const cx = mx + px * curvature;
-        const cy = my + py * curvature;
-
-        return (
-          <path
-            key={a.key}
-            d={`M ${sx} ${sy} Q ${cx} ${cy} ${ex} ${ey}`}
-            fill="none"
-            stroke={a.color}
-            strokeWidth={a.width || 1.5}
-            strokeOpacity={a.opacity ?? 1}
-            strokeLinecap="round"
-            markerEnd={`url(#${markerId(a.color)})`}
-          />
-        );
-      })}
+      {computed.map(({ a, sx, sy, ex, ey, cx, cy, w }) => (
+        <path
+          key={a.key}
+          d={`M ${sx} ${sy} Q ${cx} ${cy} ${ex} ${ey}`}
+          fill="none"
+          stroke={a.color}
+          strokeWidth={w}
+          strokeOpacity={a.opacity ?? 1}
+          strokeLinecap="round"
+          markerEnd={`url(#${a.key}-head)`}
+        />
+      ))}
     </svg>
   );
 };
@@ -3230,7 +3236,7 @@ const EventsTable = ({
               onChange={(e) => setFilter({ ...filter, hideRelated: e.target.checked })}
               style={{ accentColor: "#00a3a6" }}
             />
-            hide related
+            hide same subject
           </label>
         )}
         {plateMap && (
@@ -4264,13 +4270,14 @@ const PlateThumbnail = ({
 };
 
 /* ---------- PLATE TAB ---------- */
-const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
+const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata }) => {
   const [mode, setMode] = useState(plateMap ? "overview" : "edit");
   const [currentPlate, setCurrentPlate] = useState(null);
   const [hoverEvent, setHoverEvent] = useState(null);
   const [plateFilter, setPlateFilter] = useState("all"); // all | withEvents
   const [eventFilter, setEventFilter] = useState("all"); // all | thisPlate | interPlate | adjacent
-  const [showArrows, setShowArrows] = useState(false);
+  const [showArrows, setShowArrows] = useState(true);
+  const [hideSameSubject, setHideSameSubject] = useState(false);
 
   const plates = useMemo(() => {
     if (!plateMap) return [];
@@ -4352,6 +4359,10 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
       })
       .filter((e) => {
         if (!e.a || !e.b) return false;
+        if (hideSameSubject) {
+          const r = areRelated(metadata, e.source, e.target);
+          if (r?.related === true && r.kind === "subject") return false;
+        }
         if (eventFilter === "thisPlate") {
           return e.a.plate === activePlate && e.b.plate === activePlate;
         }
@@ -4366,7 +4377,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
         }
         return e.a.plate === activePlate || e.b.plate === activePlate;
       });
-  }, [events, plateMap, activePlate, eventFilter]);
+  }, [events, plateMap, activePlate, eventFilter, hideSameSubject, metadata]);
 
   const highlightSamples = useMemo(() => {
     const h = {};
@@ -4406,6 +4417,13 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
       else if (d === 2) color = "#e3a100"; // orange close
       const isHovered = hoverEvent && hoverEvent.id === e.id;
       const anyHover = !!hoverEvent;
+
+      // Width scales with contamination rate (log-scaled, same mapping as
+      // the Network tab for consistency). 0.001% → ~1.2px, 100% → ~4.5px.
+      const r = Math.max(e.rate || 0, 1e-5);
+      const t = Math.max(0, Math.min(1, (Math.log10(r * 100) + 3) / 5));
+      const baseWidth = 1.2 + t * 3.3;
+
       return arrows.push({
         key: `arr-${e.id}`,
         fromRow: e.a.row,
@@ -4414,7 +4432,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
         toCol: e.b.col,
         color,
         opacity: anyHover ? (isHovered ? 1 : 0.2) : 0.75,
-        width: isHovered ? 2.5 : 1.5,
+        width: baseWidth + (isHovered ? 1.5 : 0),
       });
     });
     // Render hovered arrow last so it draws on top
@@ -4817,6 +4835,20 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
                   />
                   show arrows
                 </label>
+                {metadata && (
+                  <label
+                    className="flex items-center gap-1 text-[11px] cursor-pointer select-none"
+                    style={{ color: "#275662", fontWeight: 600 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={hideSameSubject}
+                      onChange={(e) => setHideSameSubject(e.target.checked)}
+                      style={{ accentColor: "#00a3a6" }}
+                    />
+                    hide same subject
+                  </label>
+                )}
                 <select
                   value={eventFilter}
                   onChange={(e) => setEventFilter(e.target.value)}
@@ -4963,12 +4995,33 @@ const ValidateTab = ({
   setNote,
   metadata,
   plateMap,
+  bulkMarkSameSubjectAsFP,
+  bulkResetAllVerdicts,
 }) => {
   const sel = selected || events[0];
   if (!sel) return null;
   const idx = events.findIndex((e) => e.id === sel.id);
   const related = areRelated(metadata, sel.source, sel.target);
   const pd = plateDistance(plateMap, sel.source, sel.target);
+
+  // Count pending same-subject events for the bulk-action button.
+  const pendingSameSubjectCount = useMemo(() => {
+    if (!metadata) return 0;
+    return events.filter((e) => {
+      const r = areRelated(metadata, e.source, e.target);
+      return r?.related === true && r.kind === "subject" && e.verdict === "pending";
+    }).length;
+  }, [events, metadata]);
+
+  // Count events that have either a verdict or a note — used to decide
+  // whether to show the "Reset all" button.
+  const decidedCount = useMemo(
+    () =>
+      events.filter(
+        (e) => e.verdict !== "pending" || (e.notes && e.notes.length > 0),
+      ).length,
+    [events],
+  );
 
   return (
     <div className="grid lg:grid-cols-[260px_1fr] gap-8">
@@ -4986,6 +5039,60 @@ const ValidateTab = ({
             {idx + 1}/{events.length}
           </span>
         </div>
+        {pendingSameSubjectCount > 0 && bulkMarkSameSubjectAsFP && (
+          <button
+            onClick={bulkMarkSameSubjectAsFP}
+            className="w-full mb-2 px-3 py-2 text-[11px] rounded-sm flex items-center justify-center gap-1.5 text-left"
+            style={{
+              background: "#fff",
+              color: "#275662",
+              border: "1px solid #c4c0b3",
+              fontWeight: 600,
+              fontFamily: '"Raleway", sans-serif',
+              cursor: "pointer",
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.borderColor = "#00a3a6";
+              e.currentTarget.style.color = "#00a3a6";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.borderColor = "#c4c0b3";
+              e.currentTarget.style.color = "#275662";
+            }}
+            title="Bulk-classify same-subject (longitudinal) events as false positives, with an explanatory note"
+          >
+            <XCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Mark all same-subject contaminations as FP ({pendingSameSubjectCount} identified)
+            </span>
+          </button>
+        )}
+        {decidedCount > 0 && bulkResetAllVerdicts && (
+          <button
+            onClick={bulkResetAllVerdicts}
+            className="w-full mb-3 px-3 py-2 text-[11px] rounded-sm flex items-center justify-center gap-1.5 text-left"
+            style={{
+              background: "#fff",
+              color: "#797870",
+              border: "1px solid #e6e8e8",
+              fontWeight: 600,
+              fontFamily: '"Raleway", sans-serif',
+              cursor: "pointer",
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.borderColor = "#ed6e6c";
+              e.currentTarget.style.color = "#ed6e6c";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.borderColor = "#e6e8e8";
+              e.currentTarget.style.color = "#797870";
+            }}
+            title="Clear all verdicts and notes; events return to the pending state"
+          >
+            <X className="w-3.5 h-3.5 shrink-0" />
+            <span>Reset all verdicts ({decidedCount})</span>
+          </button>
+        )}
         <EventQueue events={events} currentId={sel.id} onSelect={onSelect} />
       </aside>
 
@@ -5609,7 +5716,7 @@ const HelpTab = () => {
             with a probability and a contamination rate.
           </p>
           <p>
-            CroCoDeEL flags more events than there are real contaminations —
+            CroCoDeEL could flag more events than there are real contaminations —
             many candidate events turn out to be biologically explained
             (longitudinal samples from the same person, mother-infant
             transmission, etc.) rather than true cross-contamination. This
@@ -6560,8 +6667,10 @@ export default function App() {
       if (e.score < filter.minScore) return false;
       if (e.rate < filter.minRate) return false;
       if (filter.verdict !== "all" && e.verdict !== filter.verdict) return false;
-      if (filter.hideRelated && areRelated(metadata, e.source, e.target)?.related === true)
-        return false;
+      if (filter.hideRelated) {
+        const r = areRelated(metadata, e.source, e.target);
+        if (r?.related === true && r.kind === "subject") return false;
+      }
       if (filter.adjacentOnly) {
         const pd = plateDistance(plateMap, e.source, e.target);
         if (!pd || !pd.samePlate || pd.distance == null || pd.distance > 1)
@@ -6628,6 +6737,87 @@ export default function App() {
     setRawEvents((prev) =>
       prev.map((e) => (e.id === id ? { ...e, notes } : e)),
     );
+
+  /** Bulk-classify all same-subject events as false positives, with an
+      auto-generated note explaining the rationale. Events that already
+      have a manual verdict are skipped (to avoid overwriting user
+      decisions). User notes are preserved by prepending the auto-note. */
+  const [bulkConfirm, setBulkConfirm] = useState(null); // null | { kind, count, onConfirm }
+
+  const bulkMarkSameSubjectAsFP = () => {
+    if (!metadata) {
+      setBulkConfirm({
+        kind: "info",
+        title: "Metadata required",
+        body: "Load metadata.tsv first to bulk-classify same-subject events.",
+      });
+      return;
+    }
+    const matches = events.filter((e) => {
+      const r = areRelated(metadata, e.source, e.target);
+      return r?.related === true && r.kind === "subject" && e.verdict === "pending";
+    });
+    if (matches.length === 0) {
+      setBulkConfirm({
+        kind: "info",
+        title: "Nothing to classify",
+        body: "No pending same-subject events were found.",
+      });
+      return;
+    }
+    setBulkConfirm({
+      kind: "confirm",
+      title: `Mark ${matches.length} same-subject event${matches.length > 1 ? "s" : ""} as false positive?`,
+      body:
+        "These are longitudinal pairs (source and target share a subject_id) — biologically expected to share microbes, so CroCoDeEL flags are typically false positives.\n\n" +
+        "An explanatory note will be added to each. Already-validated events are not affected.",
+      confirmLabel: `Mark ${matches.length} as FP`,
+      onConfirm: () => {
+        const matchIds = new Set(matches.map((e) => e.id));
+        setRawEvents((prev) =>
+          prev.map((e) => {
+            if (!matchIds.has(e.id)) return e;
+            const r = areRelated(metadata, e.source, e.target);
+            const subj = r?.value || "?";
+            const autoNote = `Auto-classified as FP: longitudinal pair (same subject_id=${subj}).`;
+            const newNote = e.notes ? `${autoNote}\n\n${e.notes}` : autoNote;
+            return { ...e, verdict: "false_positive", notes: newNote };
+          }),
+        );
+      },
+    });
+  };
+
+  /** Reset every event back to "pending" and clear notes. Used to start
+      a curation session over from scratch. Asks for confirmation because
+      this is destructive. */
+  const bulkResetAllVerdicts = () => {
+    const decided = events.filter((e) => e.verdict !== "pending").length;
+    const noted = events.filter((e) => e.notes && e.notes.length > 0).length;
+    if (decided === 0 && noted === 0) {
+      setBulkConfirm({
+        kind: "info",
+        title: "Nothing to reset",
+        body: "No verdicts or notes have been set yet.",
+      });
+      return;
+    }
+    setBulkConfirm({
+      kind: "confirm",
+      title: "Reset all curation work?",
+      body:
+        `This will clear ${decided} verdict${decided !== 1 ? "s" : ""} and ` +
+        `${noted} note${noted !== 1 ? "s" : ""}, returning every event to the "pending" state.\n\n` +
+        "Your uploaded files (events, abundance, metadata, plate map) are NOT affected.",
+      confirmLabel: "Reset everything",
+      destructive: true,
+      onConfirm: () => {
+        setRawEvents((prev) =>
+          prev.map((e) => ({ ...e, verdict: "pending", notes: "" })),
+        );
+      },
+    });
+  };
 
   /* ---- file loaders ---- */
   const loadEvents = async (file) => {
@@ -7279,6 +7469,7 @@ export default function App() {
               plateMap={plateMap}
               setPlateMap={setPlateMap}
               samples={allSamples}
+              metadata={metadata}
               onPick={(id) => {
                 setSelId(id);
                 setTab("validate");
@@ -7300,6 +7491,8 @@ export default function App() {
               setNote={setNote}
               metadata={metadata}
               plateMap={plateMap}
+              bulkMarkSameSubjectAsFP={bulkMarkSameSubjectAsFP}
+              bulkResetAllVerdicts={bulkResetAllVerdicts}
             />
           )}
           {tab === "export" && (
@@ -7313,6 +7506,106 @@ export default function App() {
             </>
           )}
         </div>
+
+      {/* Confirm/info modal — used for bulk actions. Replaces window.confirm
+          which Chromium can suppress after rapid successive uses. */}
+      {bulkConfirm && (
+        <div
+          onClick={() => setBulkConfirm(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(39,86,98,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              borderRadius: 4,
+              padding: "24px 28px",
+              maxWidth: 520,
+              width: "100%",
+              boxShadow: "0 12px 32px rgba(0,0,0,0.2)",
+              borderLeft: `4px solid ${bulkConfirm.destructive ? "#ed6e6c" : "#00a3a6"}`,
+            }}
+          >
+            <h3
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: "#275662",
+                fontFamily: '"Raleway", sans-serif',
+                marginBottom: 12,
+              }}
+            >
+              {bulkConfirm.title}
+            </h3>
+            <p
+              style={{
+                fontSize: 13,
+                color: "#5a5550",
+                lineHeight: 1.6,
+                whiteSpace: "pre-wrap",
+                marginBottom: 20,
+              }}
+            >
+              {bulkConfirm.body}
+            </p>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                onClick={() => setBulkConfirm(null)}
+                style={{
+                  padding: "8px 16px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: "#fff",
+                  color: "#797870",
+                  border: "1px solid #c4c0b3",
+                  borderRadius: 3,
+                  cursor: "pointer",
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                {bulkConfirm.kind === "confirm" ? "Cancel" : "Close"}
+              </button>
+              {bulkConfirm.kind === "confirm" && (
+                <button
+                  onClick={() => {
+                    bulkConfirm.onConfirm?.();
+                    setBulkConfirm(null);
+                  }}
+                  style={{
+                    padding: "8px 16px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background: bulkConfirm.destructive ? "#ed6e6c" : "#00a3a6",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 3,
+                    cursor: "pointer",
+                    fontFamily: '"Raleway", sans-serif',
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  {bulkConfirm.confirmLabel || "Confirm"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ==================== FOOTER ==================== */}
       <footer
