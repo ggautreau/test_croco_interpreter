@@ -23,6 +23,7 @@ import {
   Beaker,
   Droplets,
   User,
+  Users,
   Calendar,
 } from "lucide-react";
 
@@ -237,40 +238,23 @@ const METADATA_COLS = {
     "sample_site",
     "source",
   ],
-  control: [
-    "is_control",
-    "control",
-    "is_nc",
-    "negative_control",
-    "sample_type",
-    "type",
-  ],
-  biomass: [
-    "biomass",
-    "dna_concentration",
-    "dna_yield",
-    "concentration",
-    "yield",
-    "ng_ul",
-    "dna_ng",
-  ],
   lowBiomass: ["low_biomass", "is_low_biomass", "lowbiomass"],
+  groupId: [
+    // Canonical name first
+    "group_id",
+    "group",
+    // Aliases for various study contexts (humans, animal cages, sites, etc.)
+    "related_group_id",
+    "related_group",
+    "family_id",
+    "family",
+    "cage_id",
+    "cage",
+    "site_id",
+    "household",
+    "household_id",
+  ],
 };
-
-/** Heuristic detection of a negative control by name when the metadata
-    doesn't carry an explicit `is_control` column. Looks for common
-    naming patterns: NC, NC1, NC_blank, blank, negative, ntc, etc. */
-function looksLikeControl(sampleId) {
-  if (!sampleId) return false;
-  const s = String(sampleId).toLowerCase().trim();
-  // Strict patterns that almost always denote controls
-  if (/^nc[\d_]*$/.test(s)) return true; // NC, NC1, NC_3, ...
-  if (/^ntc[\d_]*$/.test(s)) return true; // NTC, NTC1
-  if (/^pc[\d_]*$/.test(s)) return true; // PC, PC1 (positive controls — flag too)
-  if (/^blank/.test(s)) return true;
-  if (/(^|[_\-\s])(blank|negative|ntc|nc)([_\-\s\d]|$)/.test(s)) return true;
-  return false;
-}
 
 /** Truthy-ish parsing: accepts true/false, 1/0, yes/no, t/f. Returns a
     boolean or null if the value is empty/unrecognized. */
@@ -279,16 +263,6 @@ function parseBool(v) {
   const s = String(v).toLowerCase().trim();
   if (["1", "true", "t", "yes", "y"].includes(s)) return true;
   if (["0", "false", "f", "no", "n"].includes(s)) return false;
-  return null;
-}
-
-/** Some `sample_type` columns embed the control role inline; recognize those. */
-function isControlFromType(typeStr) {
-  if (!typeStr) return null;
-  const s = String(typeStr).toLowerCase().trim();
-  if (/^(nc|ntc|negative|negative.?control|blank|reagent.?blank)$/.test(s))
-    return true;
-  if (/^(pc|positive|positive.?control|zymo)$/.test(s)) return true;
   return null;
 }
 
@@ -302,9 +276,8 @@ function parseMetadata(text) {
     subject: pickCol(header, METADATA_COLS.subject),
     timepoint: pickCol(header, METADATA_COLS.timepoint),
     biome: pickCol(header, METADATA_COLS.biome),
-    control: pickCol(header, METADATA_COLS.control),
-    biomass: pickCol(header, METADATA_COLS.biomass),
     lowBiomass: pickCol(header, METADATA_COLS.lowBiomass),
+    groupId: pickCol(header, METADATA_COLS.groupId),
   };
   if (!cols.sample) throw new Error("sample_id column not found");
   if (!cols.subject) throw new Error("subject_id column not found");
@@ -312,102 +285,68 @@ function parseMetadata(text) {
   rows.forEach((r) => {
     const id = r[cols.sample];
     if (!id) return;
+    const biomeVal = cols.biome ? r[cols.biome] || "" : "";
+    // Control detection: solely from the biome column. Any biome value
+    // matching "control", "blank" or "negative" (case-insensitive) flags
+    // the sample as a negative control.
+    const isControl = /control|blank|negative/i.test(biomeVal);
     bySample[id] = {
       subject: r[cols.subject] || "",
       timepoint: cols.timepoint ? r[cols.timepoint] || "" : "",
-      biome: cols.biome ? r[cols.biome] || "" : "",
-      // is_control: explicit bool column wins; sample_type with a control
-      // value also counts; otherwise null (regex fallback handled later).
-      isControlExplicit:
-        parseBool(cols.control ? r[cols.control] : null) ??
-        isControlFromType(cols.control ? r[cols.control] : null),
-      biomassValue: cols.biomass
-        ? Number.parseFloat(r[cols.biomass])
-        : null,
+      biome: biomeVal,
+      isControl,
       lowBiomassExplicit: parseBool(
         cols.lowBiomass ? r[cols.lowBiomass] : null,
       ),
+      groupId: cols.groupId ? r[cols.groupId] || "" : "",
       extra: { ...r },
     };
   });
-
-  // Compute a relative low-biomass threshold (10th percentile) when
-  // numeric biomass values are present. Used as fallback when the
-  // metadata doesn't carry an explicit `low_biomass` column.
-  let biomassThreshold = null;
-  const biomassValues = Object.values(bySample)
-    .map((s) => s.biomassValue)
-    .filter((v) => Number.isFinite(v));
-  if (biomassValues.length >= 5) {
-    const sorted = [...biomassValues].sort((a, b) => a - b);
-    const idx = Math.floor(sorted.length * 0.1);
-    biomassThreshold = sorted[idx];
-  }
 
   return {
     cols,
     bySample,
     nSamples: Object.keys(bySample).length,
-    biomassThreshold,
     hasBiomeCol: !!cols.biome,
-    hasControlCol: !!cols.control,
-    hasBiomassCol: !!cols.biomass,
+    hasLowBiomassCol: !!cols.lowBiomass,
+    hasGroupIdCol: !!cols.groupId,
   };
 }
 
-/** Collect every sample-level flag we can derive from metadata + name regex.
-    Returns { isControl, controlSource, isLowBiomass, biome, subject, timepoint, other }.
-    `controlSource` is "metadata" or "name" so the UI can show how we figured it out. */
+/** Collect every sample-level flag we can derive from explicit metadata
+    columns. Returns { isControl, isLowBiomass, biome, subject, timepoint,
+    groupId, other }. */
 function flagSample(sampleId, metadata) {
   const flags = {
     isControl: false,
-    controlSource: null,
     isLowBiomass: false,
     biome: null,
     subject: null,
     timepoint: null,
+    groupId: null,
     other: {},
   };
   if (!sampleId) return flags;
   const meta = metadata?.bySample?.[sampleId];
+  if (!meta) return flags;
 
-  // 1) is_control
-  if (meta?.isControlExplicit === true) {
-    flags.isControl = true;
-    flags.controlSource = "metadata";
-  } else if (looksLikeControl(sampleId)) {
-    flags.isControl = true;
-    flags.controlSource = "name";
-  }
+  if (meta.isControl === true) flags.isControl = true;
+  if (meta.lowBiomassExplicit === true) flags.isLowBiomass = true;
+  if (meta.biome) flags.biome = meta.biome;
+  if (meta.subject) flags.subject = meta.subject;
+  if (meta.timepoint) flags.timepoint = meta.timepoint;
+  if (meta.groupId) flags.groupId = meta.groupId;
 
-  // 2) low_biomass: explicit column wins, then numeric threshold
-  if (meta?.lowBiomassExplicit === true) {
-    flags.isLowBiomass = true;
-  } else if (
-    meta &&
-    Number.isFinite(meta.biomassValue) &&
-    Number.isFinite(metadata?.biomassThreshold) &&
-    meta.biomassValue <= metadata.biomassThreshold
-  ) {
-    flags.isLowBiomass = true;
-  }
-
-  // 3) biome / subject / timepoint
-  if (meta?.biome) flags.biome = meta.biome;
-  if (meta?.subject) flags.subject = meta.subject;
-  if (meta?.timepoint) flags.timepoint = meta.timepoint;
-
-  // 4) other (extra columns the user provided that aren't in our standard set)
-  if (meta?.extra) {
+  // Other extra columns the user provided that aren't in our standard set
+  if (meta.extra) {
     const skip = new Set(
       [
         metadata.cols.sample,
         metadata.cols.subject,
         metadata.cols.timepoint,
         metadata.cols.biome,
-        metadata.cols.control,
-        metadata.cols.biomass,
         metadata.cols.lowBiomass,
+        metadata.cols.groupId,
       ].filter(Boolean),
     );
     Object.entries(meta.extra).forEach(([k, v]) => {
@@ -751,13 +690,21 @@ function detectCascades(events, abundance) {
 }
 
 /** Are source and target from the same subject? */
+/** Returns null if not enough metadata, otherwise an object describing
+    why two samples are related (or {related: false} if unrelated). */
 function areRelated(metadata, source, target) {
   if (!metadata) return null;
   const a = metadata.bySample[source];
   const b = metadata.bySample[target];
   if (!a || !b) return null;
+  if (a.subject && b.subject && a.subject === b.subject) {
+    return { related: true, kind: "subject", value: a.subject };
+  }
+  if (a.groupId && b.groupId && a.groupId === b.groupId) {
+    return { related: true, kind: "group", value: a.groupId };
+  }
   if (!a.subject || !b.subject) return null;
-  return a.subject === b.subject;
+  return { related: false };
 }
 
 /** Chebyshev distance on the plate */
@@ -813,7 +760,7 @@ const SampleFlags = ({ flags, compact = false }) => {
     items.push(
       <Pill key="ctrl" tone="bad">
         <ShieldAlert className="w-3 h-3" />
-        control{flags.controlSource === "name" ? " (by name)" : ""}
+        control
       </Pill>,
     );
   }
@@ -847,6 +794,14 @@ const SampleFlags = ({ flags, compact = false }) => {
         <Pill key="tp" tone="neutral">
           <Calendar className="w-3 h-3" />
           {flags.timepoint}
+        </Pill>,
+      );
+    }
+    if (flags.groupId) {
+      items.push(
+        <Pill key="grp" tone="violet">
+          <Users className="w-3 h-3" />
+          {flags.groupId}
         </Pill>,
       );
     }
@@ -2793,7 +2748,7 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
 
   const relatedCount = useMemo(() => {
     if (!metadata) return null;
-    return events.filter((e) => areRelated(metadata, e.source, e.target) === true).length;
+    return events.filter((e) => areRelated(metadata, e.source, e.target)?.related === true).length;
   }, [events, metadata]);
 
   const adjacentCount = useMemo(() => {
@@ -3051,6 +3006,14 @@ const EventsTable = ({
                     style={{ fontWeight: 600, color: "#275662" }}
                   >
                     {e.source}
+                    {metadata && (
+                      <div className="mt-1">
+                        <SampleFlags
+                          flags={flagSample(e.source, metadata)}
+                          compact
+                        />
+                      </div>
+                    )}
                   </td>
                   <td className="px-1" style={{ color: "#00a3a6" }}>→</td>
                   <td
@@ -3059,6 +3022,14 @@ const EventsTable = ({
                     style={{ fontWeight: 600, color: "#275662" }}
                   >
                     {e.target}
+                    {metadata && (
+                      <div className="mt-1">
+                        <SampleFlags
+                          flags={flagSample(e.target, metadata)}
+                          compact
+                        />
+                      </div>
+                    )}
                   </td>
                   <td
                     className="px-3 py-2.5 tabular text-right"
@@ -3072,7 +3043,11 @@ const EventsTable = ({
                   {hasContext && (
                     <td className="px-3 py-2.5">
                       <div className="flex gap-1 flex-wrap">
-                        {related === true && <Pill tone="warn">related</Pill>}
+                        {related?.related === true && (
+                          <Pill tone="warn">
+                            {related.kind === "group" ? "same group" : "related"}
+                          </Pill>
+                        )}
                         {pd && pd.samePlate && pd.distance != null && pd.distance <= 1 && (
                           <Pill tone="bad">adjacent</Pill>
                         )}
@@ -3345,11 +3320,15 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick }) => {
             </b>
           </span>
         </div>
-        {(related === true ||
+        {(related?.related === true ||
           (pd && pd.samePlate && pd.distance != null && pd.distance <= 2) ||
           event.cascade) && (
           <div className="flex flex-wrap gap-1">
-            {related === true && <Pill tone="warn">related</Pill>}
+            {related?.related === true && (
+              <Pill tone="warn">
+                {related.kind === "group" ? "same group" : "related"}
+              </Pill>
+            )}
             {pd && pd.samePlate && pd.distance != null && pd.distance <= 1 && (
               <Pill tone="bad">adjacent</Pill>
             )}
@@ -4790,51 +4769,57 @@ const ValidateTab = ({
                   style={{ background: "#f6f7f7", border: "1px solid #e6e8e8" }}
                 >
                   <div
-                    className="text-[10px] tracking-[0.15em] uppercase mb-2"
+                    className="text-[10px] tracking-[0.15em] uppercase mb-3"
                     style={{
                       color: "#ed6e6c",
                       fontWeight: 700,
                       fontFamily: '"Raleway", sans-serif',
                     }}
                   >
-                    Metadata
+                    Sample context
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-3">
                     <div>
-                      <div style={{ color: "#797870" }}>source</div>
-                      <div style={{ color: "#275662", fontWeight: 600 }}>
-                        {sel.source}
+                      <div className="flex items-center gap-2 mb-1">
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ background: "#00a3a6" }}
+                        />
+                        <span style={{ color: "#797870", fontSize: 11 }}>
+                          source
+                        </span>
+                        <span
+                          style={{
+                            color: "#275662",
+                            fontWeight: 600,
+                            fontFamily: '"Raleway", sans-serif',
+                          }}
+                        >
+                          {sel.source}
+                        </span>
                       </div>
-                      {metadata.bySample[sel.source] && (
-                        <div className="text-[11px]" style={{ color: "#797870" }}>
-                          {metadata.bySample[sel.source].subject && (
-                            <span>subject {metadata.bySample[sel.source].subject}</span>
-                          )}
-                          {metadata.bySample[sel.source].subject &&
-                            metadata.bySample[sel.source].timepoint && " · "}
-                          {metadata.bySample[sel.source].timepoint && (
-                            <span>t={metadata.bySample[sel.source].timepoint}</span>
-                          )}
-                        </div>
-                      )}
+                      <SampleFlags flags={flagSample(sel.source, metadata)} />
                     </div>
                     <div>
-                      <div style={{ color: "#797870" }}>target</div>
-                      <div style={{ color: "#275662", fontWeight: 600 }}>
-                        {sel.target}
+                      <div className="flex items-center gap-2 mb-1">
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ background: "#ed6e6c" }}
+                        />
+                        <span style={{ color: "#797870", fontSize: 11 }}>
+                          target
+                        </span>
+                        <span
+                          style={{
+                            color: "#275662",
+                            fontWeight: 600,
+                            fontFamily: '"Raleway", sans-serif',
+                          }}
+                        >
+                          {sel.target}
+                        </span>
                       </div>
-                      {metadata.bySample[sel.target] && (
-                        <div className="text-[11px]" style={{ color: "#797870" }}>
-                          {metadata.bySample[sel.target].subject && (
-                            <span>subject {metadata.bySample[sel.target].subject}</span>
-                          )}
-                          {metadata.bySample[sel.target].subject &&
-                            metadata.bySample[sel.target].timepoint && " · "}
-                          {metadata.bySample[sel.target].timepoint && (
-                            <span>t={metadata.bySample[sel.target].timepoint}</span>
-                          )}
-                        </div>
-                      )}
+                      <SampleFlags flags={flagSample(sel.target, metadata)} />
                     </div>
                   </div>
                 </div>
@@ -4935,14 +4920,17 @@ const ValidateTab = ({
               <ContextualCriterion
                 n="05"
                 title="Related samples"
-                hint="Longitudinal or same subject → false positive risk"
+                hint="Longitudinal, same subject or same related group → false positive risk"
                 verdict={
-                  related === true
+                  related?.related === true
                     ? {
                         tone: "bad",
-                        text: `same subject (${metadata.bySample[sel.source]?.subject})`,
+                        text:
+                          related.kind === "group"
+                            ? `same group (${related.value})`
+                            : `same subject (${related.value})`,
                       }
-                    : related === false
+                    : related?.related === false
                       ? { tone: "good", text: "different subjects" }
                       : { tone: "neutral", text: "sample not referenced" }
                 }
@@ -5267,7 +5255,7 @@ export default function App() {
       if (e.score < filter.minScore) return false;
       if (e.rate < filter.minRate) return false;
       if (filter.verdict !== "all" && e.verdict !== filter.verdict) return false;
-      if (filter.hideRelated && areRelated(metadata, e.source, e.target) === true)
+      if (filter.hideRelated && areRelated(metadata, e.source, e.target)?.related === true)
         return false;
       if (filter.adjacentOnly) {
         const pd = plateDistance(plateMap, e.source, e.target);
@@ -5489,7 +5477,7 @@ export default function App() {
         introduced_species: e.introduced,
         verdict: e.verdict,
         notes: e.notes,
-        related_samples: areRelated(metadata, e.source, e.target),
+        relatedness: areRelated(metadata, e.source, e.target),
         plate_distance: plateDistance(plateMap, e.source, e.target),
         cascade: e.cascade,
       })),
