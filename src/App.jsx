@@ -772,7 +772,9 @@ const SampleFlags = ({ flags, compact = false }) => {
       </Pill>,
     );
   }
-  if (flags.biome) {
+  // Skip the biome pill when it carries no info beyond "this is a control"
+  // (the shield pill above already conveys that).
+  if (flags.biome && !flags.isControl) {
     items.push(
       <Pill key="bio" tone="primary">
         <Beaker className="w-3 h-3" />
