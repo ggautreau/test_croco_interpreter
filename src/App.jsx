@@ -2896,7 +2896,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
   };
 
   return (
-    <div className="grid lg:grid-cols-[auto_1fr] gap-8">
+    <div className="grid lg:grid-cols-[auto_minmax(0,480px)] gap-8 lg:gap-10">
       <div ref={gridRef} tabIndex={0} style={{ outline: "none" }}>
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           <label
@@ -3066,7 +3066,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
         </div>
 
         <div
-          className="rounded-sm max-h-[500px] overflow-auto"
+          className="rounded-sm max-h-[520px] overflow-auto"
           style={{ border: "1px solid #e6e8e8" }}
         >
           {filteredSamples.map((s) => {
@@ -3598,7 +3598,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
           INSPECT MODE
           ============================================================ */}
       {mode === "inspect" && plateMap && plates.length > 0 && (
-        <div className="grid lg:grid-cols-[auto_minmax(0,520px)] gap-8 lg:gap-10">
+        <div className="grid lg:grid-cols-[auto_minmax(0,480px)] gap-8 lg:gap-10">
           <div>
             {/* Plate picker — pills for few, dropdown for many */}
             {plates.length > 1 && (
