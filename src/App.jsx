@@ -2825,7 +2825,13 @@ function shortenPath(v) {
 }
 
 const RunMetadataBlock = ({ meta }) => {
-  // Choose which fields to show, in this order, with friendly labels
+  // Choose which fields to show, in this order, with friendly labels.
+  // Optional `format(value)` lets a field clean up the raw string (e.g.
+  // strip a trailing ".0" so "25.0" → "25").
+  const formatInt = (v) => {
+    const n = parseFloat(v);
+    return Number.isFinite(n) && Number.isInteger(n) ? String(n) : v;
+  };
   const displayFields = [
     { key: "crocodeel version", label: "CroCoDeEL version" },
     { key: "datetime", label: "Run date" },
@@ -2833,20 +2839,26 @@ const RunMetadataBlock = ({ meta }) => {
     { key: "rf_model", label: "RF model", shorten: true },
     { key: "probability_cutoff", label: "Probability cutoff" },
     { key: "rate_cutoff", label: "Rate cutoff" },
-    { key: "filtering_ab_thr_factor", label: "Abundance filter" },
+    {
+      key: "filtering_ab_thr_factor",
+      label: "Abundance filter",
+      format: formatInt,
+    },
     { key: "username", label: "User" },
     { key: "hostname", label: "Host" },
   ];
   const items = displayFields
-    .map((f) => ({
-      label: f.label,
-      value: meta[f.key]
-        ? f.shorten
-          ? shortenPath(meta[f.key])
-          : meta[f.key]
-        : null,
-      raw: meta[f.key],
-    }))
+    .map((f) => {
+      let v = meta[f.key];
+      if (v && f.shorten) v = shortenPath(v);
+      if (v && f.format) v = f.format(v);
+      return {
+        label: f.label,
+        hint: f.hint,
+        value: v || null,
+        raw: meta[f.key],
+      };
+    })
     .filter((it) => it.value && it.value !== "None");
 
   if (items.length === 0) return null;
@@ -2882,10 +2894,14 @@ const RunMetadataBlock = ({ meta }) => {
           >
             <dt
               className="shrink-0"
+              title={it.hint || undefined}
               style={{
                 color: "#797870",
                 fontWeight: 600,
                 fontFamily: '"Raleway", sans-serif',
+                cursor: it.hint ? "help" : undefined,
+                textDecoration: it.hint ? "underline dotted" : undefined,
+                textUnderlineOffset: 2,
               }}
             >
               {it.label}:
@@ -3148,7 +3164,7 @@ const EventsTable = ({
                 whiteSpace: "nowrap",
               }}
             >
-              run cutoff: {cutoff}
+              probability_cutoff: {cutoff}
             </span>
           )}
         </div>
@@ -3186,7 +3202,7 @@ const EventsTable = ({
                   whiteSpace: "nowrap",
                 }}
               >
-                run cutoff: {rc}
+                rate_cutoff: {rc}
               </span>
             );
           })()}
