@@ -15,6 +15,8 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Search,
   BookOpen,
   MapPin,
@@ -2582,7 +2584,7 @@ const ContextualCriterion = ({ n, title, hint, verdict }) => {
 };
 
 /* ---------- verdict button ---------- */
-const VerdictBtn = ({ children, onClick, active, tone, icon: Icon }) => {
+const VerdictBtn = ({ children, onClick, active, tone, icon: Icon, shortcut, hint }) => {
   const palette = {
     good: { bg: "#00a3a6", border: "#00a3a6" },
     bad: { bg: "#ed6e6c", border: "#ed6e6c" },
@@ -2590,9 +2592,11 @@ const VerdictBtn = ({ children, onClick, active, tone, icon: Icon }) => {
     neutral: { bg: "#275662", border: "#275662" },
   };
   const p = palette[tone];
+  const title = hint || (shortcut ? `Keyboard shortcut: ${shortcut}` : undefined);
   return (
     <button
       onClick={onClick}
+      title={title}
       className="px-4 py-2 text-[13px] rounded-sm flex items-center gap-2"
       style={{
         border: `2px solid ${p.border}`,
@@ -2604,7 +2608,27 @@ const VerdictBtn = ({ children, onClick, active, tone, icon: Icon }) => {
       }}
     >
       <Icon className="w-4 h-4" />
-      {children}
+      <span>{children}</span>
+      {shortcut && (
+        <kbd
+          style={{
+            display: "inline-block",
+            minWidth: 18,
+            textAlign: "center",
+            padding: "1px 5px",
+            background: active ? "rgba(255,255,255,0.25)" : "#f6f7f7",
+            border: active ? "1px solid rgba(255,255,255,0.4)" : "1px solid #e6e8e8",
+            borderRadius: 2,
+            fontFamily: "ui-monospace, monospace",
+            fontSize: 10,
+            fontWeight: 700,
+            color: active ? "#fff" : "#797870",
+            marginLeft: 2,
+          }}
+        >
+          {shortcut}
+        </kbd>
+      )}
     </button>
   );
 };
@@ -4996,6 +5020,7 @@ const ValidateTab = ({
   metadata,
   plateMap,
   bulkMarkSameSubjectAsFP,
+  bulkMarkTowardNCAsTP,
   bulkResetAllVerdicts,
 }) => {
   const sel = selected || events[0];
@@ -5013,6 +5038,15 @@ const ValidateTab = ({
     }).length;
   }, [events, metadata]);
 
+  // Count pending events targeting a negative control.
+  const pendingTowardNCCount = useMemo(() => {
+    if (!metadata) return 0;
+    return events.filter((e) => {
+      const t = flagSample(e.target, metadata);
+      return t.isControl && e.verdict === "pending";
+    }).length;
+  }, [events, metadata]);
+
   // Count events that have either a verdict or a note — used to decide
   // whether to show the "Reset all" button.
   const decidedCount = useMemo(
@@ -5022,6 +5056,90 @@ const ValidateTab = ({
       ).length,
     [events],
   );
+
+  /* ---- Navigation helpers (pending-only) ---- */
+  const goPrevPending = () => {
+    for (let i = idx - 1; i >= 0; i--) {
+      if (events[i].verdict === "pending") {
+        onSelect(events[i].id);
+        return;
+      }
+    }
+  };
+  const goNextPending = () => {
+    for (let i = idx + 1; i < events.length; i++) {
+      if (events[i].verdict === "pending") {
+        onSelect(events[i].id);
+        return;
+      }
+    }
+  };
+  const hasPrevPending = useMemo(() => {
+    for (let i = idx - 1; i >= 0; i--) {
+      if (events[i].verdict === "pending") return true;
+    }
+    return false;
+  }, [events, idx]);
+  const hasNextPending = useMemo(() => {
+    for (let i = idx + 1; i < events.length; i++) {
+      if (events[i].verdict === "pending") return true;
+    }
+    return false;
+  }, [events, idx]);
+
+  /* ---- Keyboard shortcuts ---- */
+  // Hotkeys are active globally on this tab, EXCEPT when the user is
+  // typing in an input/textarea (so the notes field still works
+  // normally). We attach the listener to window and check the focused
+  // element on each keypress.
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  useEffect(() => {
+    const handler = (e) => {
+      const tag = (e.target?.tagName || "").toLowerCase();
+      const editable = e.target?.isContentEditable;
+      if (tag === "input" || tag === "textarea" || editable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      switch (e.key.toLowerCase()) {
+        case "t":
+          setVerdict(sel.id, "true_positive");
+          e.preventDefault();
+          break;
+        case "f":
+          setVerdict(sel.id, "false_positive");
+          e.preventDefault();
+          break;
+        case "u":
+          setVerdict(sel.id, "uncertain");
+          e.preventDefault();
+          break;
+        case "p":
+          setVerdict(sel.id, "pending");
+          e.preventDefault();
+          break;
+        case "arrowleft":
+          // Skip already-validated events: jump to the previous PENDING
+          goPrevPending();
+          e.preventDefault();
+          break;
+        case "arrowright":
+          // Skip already-validated events: jump to the next PENDING
+          goNextPending();
+          e.preventDefault();
+          break;
+        case "?":
+          setShowShortcutsHelp((v) => !v);
+          e.preventDefault();
+          break;
+        case "escape":
+          setShowShortcutsHelp(false);
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [sel.id, idx, events]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="grid lg:grid-cols-[260px_1fr] gap-8">
@@ -5067,6 +5185,34 @@ const ValidateTab = ({
             </span>
           </button>
         )}
+        {pendingTowardNCCount > 0 && bulkMarkTowardNCAsTP && (
+          <button
+            onClick={bulkMarkTowardNCAsTP}
+            className="w-full mb-2 px-3 py-2 text-[11px] rounded-sm flex items-center justify-center gap-1.5 text-left"
+            style={{
+              background: "#fff",
+              color: "#275662",
+              border: "1px solid #c4c0b3",
+              fontWeight: 600,
+              fontFamily: '"Raleway", sans-serif',
+              cursor: "pointer",
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.borderColor = "#00a3a6";
+              e.currentTarget.style.color = "#00a3a6";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.borderColor = "#c4c0b3";
+              e.currentTarget.style.color = "#275662";
+            }}
+            title="Bulk-classify events flowing into a negative control as true positives"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Mark all toward NC as TP ({pendingTowardNCCount} identified)
+            </span>
+          </button>
+        )}
         {decidedCount > 0 && bulkResetAllVerdicts && (
           <button
             onClick={bulkResetAllVerdicts}
@@ -5097,6 +5243,148 @@ const ValidateTab = ({
       </aside>
 
       <div>
+        {/* Navigation toolbar: previous/next pending event (skip validated) */}
+        <div
+          className="flex items-center gap-2 mb-4"
+          style={{ flexWrap: "wrap" }}
+        >
+          <button
+            onClick={goPrevPending}
+            disabled={!hasPrevPending}
+            title="Previous pending event (←)"
+            className="px-3 py-1.5 text-[11px] rounded-sm flex items-center gap-1.5"
+            style={{
+              background: "#fff",
+              color: hasPrevPending ? "#275662" : "#c4c0b3",
+              border: "1px solid #c4c0b3",
+              fontWeight: 600,
+              fontFamily: '"Raleway", sans-serif',
+              cursor: hasPrevPending ? "pointer" : "not-allowed",
+            }}
+          >
+            <ChevronLeft className="w-3 h-3" />
+            <span>previous pending</span>
+            <kbd
+              style={{
+                fontSize: 9,
+                padding: "1px 4px",
+                background: "#f6f7f7",
+                borderRadius: 2,
+                color: "#797870",
+                marginLeft: 2,
+              }}
+            >
+              ←
+            </kbd>
+          </button>
+          <button
+            onClick={goNextPending}
+            disabled={!hasNextPending}
+            title="Next pending event (→)"
+            className="px-3 py-1.5 text-[11px] rounded-sm flex items-center gap-1.5"
+            style={{
+              background: hasNextPending ? "#00a3a6" : "#fff",
+              color: hasNextPending ? "#fff" : "#c4c0b3",
+              border: hasNextPending ? "1px solid #00a3a6" : "1px solid #c4c0b3",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+              cursor: hasNextPending ? "pointer" : "not-allowed",
+            }}
+          >
+            <span>next pending</span>
+            <kbd
+              style={{
+                fontSize: 9,
+                padding: "1px 4px",
+                background: hasNextPending ? "rgba(255,255,255,0.25)" : "#f6f7f7",
+                borderRadius: 2,
+                color: hasNextPending ? "#fff" : "#797870",
+              }}
+            >
+              →
+            </kbd>
+            <ChevronRight className="w-3 h-3" />
+          </button>
+          <button
+            onClick={() => setShowShortcutsHelp((v) => !v)}
+            title="Keyboard shortcuts (?)"
+            className="ml-auto px-2 py-1.5 text-[11px] rounded-sm"
+            style={{
+              background: showShortcutsHelp ? "#275662" : "#fff",
+              color: showShortcutsHelp ? "#fff" : "#797870",
+              border: "1px solid #c4c0b3",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+              cursor: "pointer",
+              minWidth: 28,
+            }}
+          >
+            ?
+          </button>
+        </div>
+
+        {showShortcutsHelp && (
+          <div
+            className="mb-4 p-4 rounded-sm"
+            style={{
+              background: "#f6f7f7",
+              border: "1px solid #e6e8e8",
+              borderLeft: "4px solid #00a3a6",
+            }}
+          >
+            <div
+              className="text-[10px] tracking-[0.15em] uppercase mb-3"
+              style={{
+                color: "#ed6e6c",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              Keyboard shortcuts
+            </div>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-[12px]">
+              {[
+                ["T", "Mark current event as True positive"],
+                ["F", "Mark current event as False positive"],
+                ["U", "Mark current event as Uncertain"],
+                ["P", "Reset current event to Pending"],
+                ["←", "Previous pending event (skip validated)"],
+                ["→", "Next pending event (skip validated)"],
+                ["?", "Toggle this help"],
+                ["Esc", "Close this help"],
+              ].map(([key, desc]) => (
+                <div key={key} className="flex items-center gap-2">
+                  <kbd
+                    style={{
+                      display: "inline-block",
+                      minWidth: 28,
+                      textAlign: "center",
+                      padding: "2px 6px",
+                      background: "#fff",
+                      border: "1px solid #c4c0b3",
+                      borderRadius: 3,
+                      fontFamily: "ui-monospace, monospace",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: "#275662",
+                    }}
+                  >
+                    {key}
+                  </kbd>
+                  <span style={{ color: "#5a5550" }}>{desc}</span>
+                </div>
+              ))}
+            </div>
+            <div
+              className="text-[11px] mt-3"
+              style={{ color: "#797870", fontStyle: "italic" }}
+            >
+              Shortcuts are disabled while typing in the notes field. Use the
+              event queue in the sidebar to jump back to a validated event.
+            </div>
+          </div>
+        )}
+
         <SectionTitle
           eyebrow={`Event ${idx + 1} of ${events.length}`}
           title={`${sel.source} → ${sel.target}`}
@@ -5418,6 +5706,8 @@ const ValidateTab = ({
               onClick={() => setVerdict(sel.id, "true_positive")}
               tone="good"
               icon={CheckCircle2}
+              shortcut="T"
+              hint="Mark as True positive — keyboard shortcut: T"
             >
               True positive
             </VerdictBtn>
@@ -5426,6 +5716,8 @@ const ValidateTab = ({
               onClick={() => setVerdict(sel.id, "false_positive")}
               tone="bad"
               icon={XCircle}
+              shortcut="F"
+              hint="Mark as False positive — keyboard shortcut: F"
             >
               False positive
             </VerdictBtn>
@@ -5434,6 +5726,8 @@ const ValidateTab = ({
               onClick={() => setVerdict(sel.id, "uncertain")}
               tone="warn"
               icon={HelpCircle}
+              shortcut="U"
+              hint="Mark as Uncertain — keyboard shortcut: U"
             >
               Uncertain
             </VerdictBtn>
@@ -5442,6 +5736,8 @@ const ValidateTab = ({
               onClick={() => setVerdict(sel.id, "pending")}
               tone="neutral"
               icon={X}
+              shortcut="P"
+              hint="Reset to Pending — keyboard shortcut: P"
             >
               Reset
             </VerdictBtn>
@@ -6789,6 +7085,52 @@ export default function App() {
     });
   };
 
+  /** Bulk-classify all contaminations targeting a negative control as
+      true positives. A clean NC should have no contamination — any flag
+      flowing INTO an NC is therefore almost certainly real well-to-well
+      leakage or carry-over, even if other criteria are weak. */
+  const bulkMarkTowardNCAsTP = () => {
+    if (!metadata) {
+      setBulkConfirm({
+        kind: "info",
+        title: "Metadata required",
+        body: "Load metadata.tsv first so the app can identify which samples are negative controls.",
+      });
+      return;
+    }
+    const matches = events.filter((e) => {
+      const targetFlags = flagSample(e.target, metadata);
+      return targetFlags.isControl && e.verdict === "pending";
+    });
+    if (matches.length === 0) {
+      setBulkConfirm({
+        kind: "info",
+        title: "Nothing to classify",
+        body: "No pending events targeting a negative control were found.",
+      });
+      return;
+    }
+    setBulkConfirm({
+      kind: "confirm",
+      title: `Mark ${matches.length} event${matches.length > 1 ? "s" : ""} toward NC as true positive?`,
+      body:
+        "These events flow into a sample tagged as a negative control. A clean NC should not carry biological signal, so any contamination reaching it is almost certainly real (well-to-well leakage, carry-over, or reagent contamination).\n\n" +
+        "An explanatory note will be added to each. Already-validated events are not affected.",
+      confirmLabel: `Mark ${matches.length} as TP`,
+      onConfirm: () => {
+        const matchIds = new Set(matches.map((e) => e.id));
+        setRawEvents((prev) =>
+          prev.map((e) => {
+            if (!matchIds.has(e.id)) return e;
+            const autoNote = `Auto-classified as TP: contamination flowing into negative control "${e.target}".`;
+            const newNote = e.notes ? `${autoNote}\n\n${e.notes}` : autoNote;
+            return { ...e, verdict: "true_positive", notes: newNote };
+          }),
+        );
+      },
+    });
+  };
+
   /** Reset every event back to "pending" and clear notes. Used to start
       a curation session over from scratch. Asks for confirmation because
       this is destructive. */
@@ -7525,6 +7867,7 @@ export default function App() {
               metadata={metadata}
               plateMap={plateMap}
               bulkMarkSameSubjectAsFP={bulkMarkSameSubjectAsFP}
+              bulkMarkTowardNCAsTP={bulkMarkTowardNCAsTP}
               bulkResetAllVerdicts={bulkResetAllVerdicts}
             />
           )}
