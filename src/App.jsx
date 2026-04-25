@@ -2030,17 +2030,27 @@ const UploadCard = ({
   onDownload,
   onClear,
   info,
+  confirmDialog,
 }) => {
   const [drag, setDrag] = useState(false);
   const loaded = !!filename;
 
   const handleClear = () => {
     if (!onClear) return;
-    if (
-      window.confirm(
-        `Remove the loaded ${label}?\n\nThis only clears it from this browser session — your original file on disk is untouched.`,
-      )
-    ) {
+    // Prefer the React-controlled modal when the parent provides one
+    // (consistent UX across the app). Fall back to a plain native confirm
+    // if not provided, so the component still works in isolation.
+    if (confirmDialog) {
+      confirmDialog({
+        kind: "confirm",
+        title: `Remove the loaded ${label}?`,
+        body:
+          "This only clears it from this browser session — your original file on disk is untouched.",
+        confirmLabel: "Remove",
+        destructive: true,
+        onConfirm: onClear,
+      });
+    } else if (window.confirm(`Remove the loaded ${label}?`)) {
       onClear();
     }
   };
@@ -2181,7 +2191,7 @@ const UploadCard = ({
 };
 
 /* ---------- metadata / plate specialized upload cards ---------- */
-const MetadataUploadCard = ({ metadata, setMetadata, setErr }) => {
+const MetadataUploadCard = ({ metadata, setMetadata, setErr, confirmDialog }) => {
   const inputRef = useRef(null);
   const onFile = async (file) => {
     try {
@@ -2236,11 +2246,12 @@ const MetadataUploadCard = ({ metadata, setMetadata, setErr }) => {
           : undefined
       }
       onClear={metadata ? () => setMetadata(null) : undefined}
+      confirmDialog={confirmDialog}
     />
   );
 };
 
-const PlateUploadCard = ({ plateMap, setPlateMap, setErr }) => {
+const PlateUploadCard = ({ plateMap, setPlateMap, setErr, confirmDialog }) => {
   const inputRef = useRef(null);
   const onFile = async (file) => {
     try {
@@ -2286,6 +2297,7 @@ const PlateUploadCard = ({ plateMap, setPlateMap, setErr }) => {
           : undefined
       }
       onClear={plateMap ? () => setPlateMap(null) : undefined}
+      confirmDialog={confirmDialog}
     />
   );
 };
@@ -7562,20 +7574,25 @@ export default function App() {
             {(rawEvents.length > 0 || ab || metadata || plateMap) && (
               <button
                 onClick={() => {
-                  if (
-                    window.confirm(
-                      "Clear the entire session?\n\nThis removes the loaded events, abundance, metadata and plate map, plus all your verdicts and notes. The original files on disk are not affected.",
-                    )
-                  ) {
-                    setRawEvents([]);
-                    setRunMetadata(null);
-                    setAb(null);
-                    setMetadata(null);
-                    setPlateMap(null);
-                    setSelId(null);
-                    setErr(null);
-                    setTab("overview");
-                  }
+                  setBulkConfirm({
+                    kind: "confirm",
+                    title: "Clear the entire session?",
+                    body:
+                      "This removes the loaded events, abundance, metadata and plate map, plus all your verdicts and notes.\n\n" +
+                      "The original files on disk are not affected.",
+                    confirmLabel: "Clear session",
+                    destructive: true,
+                    onConfirm: () => {
+                      setRawEvents([]);
+                      setRunMetadata(null);
+                      setAb(null);
+                      setMetadata(null);
+                      setPlateMap(null);
+                      setSelId(null);
+                      setErr(null);
+                      setTab("overview");
+                    },
+                  });
                 }}
                 className="px-3 py-1.5 text-[11px] rounded-sm flex items-center gap-1.5"
                 style={{
@@ -7656,6 +7673,7 @@ export default function App() {
                     }
                   : undefined
               }
+              confirmDialog={setBulkConfirm}
             />
             <UploadCard
               label="species_abundance.tsv"
@@ -7686,16 +7704,19 @@ export default function App() {
                   : undefined
               }
               onClear={ab ? () => setAb(null) : undefined}
+              confirmDialog={setBulkConfirm}
             />
             <MetadataUploadCard
               metadata={metadata}
               setMetadata={setMetadata}
               setErr={setErr}
+              confirmDialog={setBulkConfirm}
             />
             <PlateUploadCard
               plateMap={plateMap}
               setPlateMap={setPlateMap}
               setErr={setErr}
+              confirmDialog={setBulkConfirm}
             />
           </div>
         </div>
@@ -7908,8 +7929,11 @@ export default function App() {
           )}
         </div>
 
-      {/* Confirm/info modal — used for bulk actions. Replaces window.confirm
-          which Chromium can suppress after rapid successive uses. */}
+      {/* Centralised confirm/info modal — used for ALL confirmation
+          prompts in the app (bulk validation actions, file removal,
+          session reset). Replaces window.confirm which Chromium can
+          suppress after rapid successive uses, and gives us a uniform
+          look across the app. */}
       {bulkConfirm && (
         <div
           onClick={() => setBulkConfirm(null)}
