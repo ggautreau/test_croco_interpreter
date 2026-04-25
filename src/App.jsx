@@ -2896,7 +2896,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
   };
 
   return (
-    <div className="grid lg:grid-cols-[auto_minmax(0,480px)] gap-8 lg:gap-10">
+    <div className="lg:flex lg:justify-between lg:gap-10 gap-8 flex-col lg:flex-row">
       <div ref={gridRef} tabIndex={0} style={{ outline: "none" }}>
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           <label
@@ -3015,7 +3015,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
         </div>
       </div>
 
-      <div>
+      <div className="lg:w-[480px] lg:flex-shrink-0">
         <div
           className="text-[10px] tracking-[0.15em] uppercase mb-3"
           style={{
@@ -3598,7 +3598,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
           INSPECT MODE
           ============================================================ */}
       {mode === "inspect" && plateMap && plates.length > 0 && (
-        <div className="grid lg:grid-cols-[auto_minmax(0,480px)] gap-8 lg:gap-10">
+        <div className="lg:flex lg:justify-between lg:gap-10 gap-8 flex-col lg:flex-row">
           <div>
             {/* Plate picker — pills for few, dropdown for many */}
             {plates.length > 1 && (
@@ -3789,7 +3789,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
             </div>
           </div>
 
-          <div>
+          <div className="lg:w-[480px] lg:flex-shrink-0">
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <div
                 className="text-[10px] tracking-[0.15em] uppercase"
