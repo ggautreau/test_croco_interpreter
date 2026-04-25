@@ -5,25 +5,25 @@ sample_id	subject_id	timepoint	biome	low_biomass	group_id	ncbi_code
 60D43	60	D43	infant gut	false	G_058_059_060	L3_060_043G1
 63D17	63	D17	infant gut	false		L3_063_017G1
 63D368	63	D368	infant gut	false		L3_063_368G1
-69M	69	D0	maternal gut	false		L3_069_000M1
+69M	M69	D0	maternal gut	false		L3_069_000M1
 69D51	69	D51	infant gut	false		L3_069_051G1
 72D11	72	D11	infant gut	false		L3_072_011G1
 72D63	72	D63	infant gut	false		L3_072_063G1
 79D127	79	D127	infant gut	false		L3_079_127G1
 82D243	82	D243	infant gut	false		L3_082_243G1
-40M	40	D0	maternal gut	false		L2_040_000M1
+40M	M40	D0	maternal gut	false		L2_040_000M1
 58D43	58	D43	infant gut	false	G_058_059_060	L3_058_043G1
 83D366	83	D366	infant gut	false		L3_083_366G1
 60D52	60	D52	infant gut	false	G_058_059_060	L3_060_052G1
 63D23	63	D23	infant gut	false		L3_063_023G1
-68M	68	D0	maternal gut	false		L3_068_000M1
+68M	M68	D0	maternal gut	false		L3_068_000M1
 69D4	69	D4	infant gut	true		L3_069_004G1
 69D61	69	D61	infant gut	false		L3_069_061G1
 72D17	72	D17	infant gut	false		L3_072_017G1
 72D123	72	D123	infant gut	false		L3_072_123G1
 79D234	79	D234	infant gut	false		L3_079_234G1
 82D361	82	D361	infant gut	false		L3_082_361G1
-58M	58	D0	maternal gut	false	G_058_059_060	L3_058_000M1
+58M	M58	D0	maternal gut	false	G_058_059_060	L3_058_000M1
 58D47	58	D47	infant gut	false	G_058_059_060	L3_058_047G1
 60D8	60	D8	infant gut	false	G_058_059_060	L3_060_008G1
 60D57	60	D57	infant gut	false	G_058_059_060	L3_060_057G1
@@ -43,7 +43,7 @@ sample_id	subject_id	timepoint	biome	low_biomass	group_id	ncbi_code
 69D115	69	D115	infant gut	false		L3_069_115G1
 72D25	72	D25	infant gut	false		L3_072_025G1
 72D362	72	D362	infant gut	false		L3_072_362G1
-82M	82	D0	maternal gut	false		L3_082_000M1
+82M	M82	D0	maternal gut	false		L3_082_000M1
 83D59	83	D59	infant gut	false		L3_083_059G1
 58D63	58	D63	infant gut	false	G_058_059_060	L3_058_063G1
 60D19	60	D19	infant gut	false	G_058_059_060	L3_060_019G1
@@ -53,7 +53,7 @@ sample_id	subject_id	timepoint	biome	low_biomass	group_id	ncbi_code
 69D24	69	D24	infant gut	false		L3_069_024G1
 69D242	69	D242	infant gut	false		L3_069_242G1
 72D32	72	D32	infant gut	false		L3_072_032G1
-79M	79	D0	maternal gut	false		L3_079_000M1
+79M	M79	D0	maternal gut	false		L3_079_000M1
 82D33	82	D33	infant gut	false		L3_082_033G1
 83D88	83	D88	infant gut	false		L3_083_088G1
 58D13	58	D13	infant gut	false	G_058_059_060	L3_058_013G1
@@ -74,7 +74,7 @@ sample_id	subject_id	timepoint	biome	low_biomass	group_id	ncbi_code
 63D126	63	D126	infant gut	false		L3_063_126G1
 68D243	68	D243	infant gut	false		L3_068_243G1
 69D36	69	D36	infant gut	false		L3_069_036G1
-72M	72	D0	maternal gut	false		L3_072_000M1
+72M	M72	D0	maternal gut	false		L3_072_000M1
 72D48	72	D48	infant gut	false		L3_072_048G1
 79D62	79	D62	infant gut	false		L3_079_062G1
 82D121	82	D121	infant gut	false		L3_082_121G1
