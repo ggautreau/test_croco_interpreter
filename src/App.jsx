@@ -6890,8 +6890,100 @@ const ExportTab = ({ counts, onExportTSV, onExportJSON }) => (
    8. MAIN APP
    ============================================================================ */
 
+/* Persistence: we keep the user's CURATION WORK alive across page
+   refreshes by stashing it in localStorage. We deliberately save ONLY
+   the events (with verdicts and notes) — the user re-loads their TSV
+   files (events, abundance, metadata, plate map) at each session.
+   This is by design: it keeps the storage footprint tiny and avoids
+   stale-data confusion (re-loaded files are always fresh). */
+const STORAGE_KEY = "crocodeel-interpreter-v1";
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!Array.isArray(parsed.rawEvents) || parsed.rawEvents.length === 0) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveToStorage(payload) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    return true;
+  } catch (e) {
+    // Most likely cause: quota exceeded. We prefer silent failure here
+    // rather than disrupting the user — they can still export manually.
+    console.warn("[crocodeel] localStorage save failed:", e?.message);
+    return false;
+  }
+}
+
+function clearStorage() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/** Floating "Saved" pill that appears briefly each time the curation
+    work is auto-saved. The parent passes a timestamp; whenever it
+    changes, we show the pill for 1.4s then fade. */
+const SavedPill = ({ timestamp }) => {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!timestamp) {
+      setVisible(false);
+      return undefined;
+    }
+    setVisible(true);
+    const t = setTimeout(() => setVisible(false), 1400);
+    return () => clearTimeout(t);
+  }, [timestamp]);
+
+  return (
+    <div
+      aria-live="polite"
+      style={{
+        position: "fixed",
+        bottom: 16,
+        right: 16,
+        zIndex: 900,
+        padding: "5px 10px",
+        background: "#275662",
+        color: "#fff",
+        fontSize: 11,
+        fontWeight: 600,
+        fontFamily: '"Raleway", sans-serif',
+        borderRadius: 3,
+        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+        opacity: visible ? 1 : 0,
+        transform: visible ? "translateY(0)" : "translateY(8px)",
+        transition: "opacity 0.3s, transform 0.3s",
+        pointerEvents: "none",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+      }}
+    >
+      <CheckCircle2 className="w-3 h-3" style={{ color: "#9dc544" }} />
+      <span>Saved</span>
+    </div>
+  );
+};
+
 export default function App() {
-  const [rawEvents, setRawEvents] = useState([]);
+  // Try to recover a previous session before initial render so the UI
+  // shows the data immediately (no flicker).
+  const initial = typeof window !== "undefined" ? loadFromStorage() : null;
+  const [rawEvents, setRawEvents] = useState(initial?.rawEvents || []);
   const [runMetadata, setRunMetadata] = useState(null);
   const [ab, setAb] = useState(null);
   const [metadata, setMetadata] = useState(null);
@@ -6910,6 +7002,33 @@ export default function App() {
   const [err, setErr] = useState(null);
   const eventFileRef = useRef(null);
   const abFileRef = useRef(null);
+
+  /* Save indicator: shows a discrete "Saved" pill briefly after each
+     auto-save. Set to a timestamp on save; the indicator fades out via
+     a separate timeout. */
+  const [savedAt, setSavedAt] = useState(null);
+
+  /* Auto-save the curation work to localStorage whenever events change.
+     Debounced to 200 ms so we don't hammer the disk when the user
+     blasts through events with keyboard shortcuts (T/F/U/...). */
+  useEffect(() => {
+    if (rawEvents.length === 0) {
+      // No data to save — actively clear storage so a previous session
+      // doesn't linger after the user clears everything.
+      clearStorage();
+      setSavedAt(null);
+      return undefined;
+    }
+    const handle = setTimeout(() => {
+      const ok = saveToStorage({
+        version: 1,
+        savedAt: new Date().toISOString(),
+        rawEvents,
+      });
+      if (ok) setSavedAt(Date.now());
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [rawEvents]);
 
   /* When a CroCoDeEL run header carries explicit cutoffs, pre-set the
      events-table filters to those values. The user can still lower them
@@ -7928,6 +8047,12 @@ export default function App() {
             </>
           )}
         </div>
+
+      {/* Discrete "Saved" indicator: appears bottom-right after each
+          successful auto-save and fades out after a couple of seconds.
+          Lets the user know the work is being persisted without
+          interrupting the flow. */}
+      <SavedPill timestamp={savedAt} />
 
       {/* Centralised confirm/info modal — used for ALL confirmation
           prompts in the app (bulk validation actions, file removal,
