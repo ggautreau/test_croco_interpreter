@@ -1277,11 +1277,12 @@ const PlateGrid = ({
                         : "1px dashed #e6e8e8",
                     color: highlight ? "#fff" : "#275662",
                     cursor: editable || onClickWell ? "pointer" : "default",
-                    fontSize: 8,
-                    fontFamily: "system-ui, monospace",
+                    fontSize: size >= 44 ? 9 : size >= 32 ? 8 : 7,
+                    fontFamily: "system-ui, sans-serif",
                     fontWeight: 600,
                     overflow: "hidden",
                     lineHeight: 1,
+                    padding: size >= 32 ? "2px" : 0,
                     boxShadow: isFocused
                       ? "0 0 0 2px #00a3a6, 0 0 0 3px #fff"
                       : "none",
@@ -1291,9 +1292,15 @@ const PlateGrid = ({
                   title={sid ? `${wellLabel(r, c)} · ${sid}` : wellLabel(r, c)}
                 >
                   {labelMode === "sample" && sid
-                    ? sid.length > 4
-                      ? sid.slice(0, 4)
-                      : sid
+                    ? (() => {
+                        // Character budget calibrated against the chosen font
+                        // size so even 8-char IDs like "sample10" fit cleanly.
+                        const maxChars =
+                          size >= 44 ? 8 : size >= 36 ? 6 : size >= 28 ? 4 : 3;
+                        return sid.length > maxChars
+                          ? sid.slice(0, maxChars - 1) + "…"
+                          : sid;
+                      })()
                     : labelMode === "well"
                       ? wellLabel(r, c)
                       : ""}
@@ -2896,7 +2903,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
   };
 
   return (
-    <div className="lg:flex lg:justify-between lg:gap-10 gap-8 flex-col lg:flex-row">
+    <div className="lg:flex lg:gap-10 gap-8 flex-col lg:flex-row">
       <div ref={gridRef} tabIndex={0} style={{ outline: "none" }}>
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           <label
@@ -2953,7 +2960,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
           focus={focus}
           editable
           labelMode="sample"
-          size={format.rows > 8 ? 22 : 32}
+          size={format.rows > 8 ? 24 : 44}
         />
 
         {/* Keyboard shortcuts cheatsheet */}
@@ -3598,7 +3605,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
           INSPECT MODE
           ============================================================ */}
       {mode === "inspect" && plateMap && plates.length > 0 && (
-        <div className="lg:flex lg:justify-between lg:gap-10 gap-8 flex-col lg:flex-row">
+        <div className="lg:flex lg:gap-10 gap-8 flex-col lg:flex-row">
           <div>
             {/* Plate picker — pills for few, dropdown for many */}
             {plates.length > 1 && (
@@ -3695,7 +3702,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
                     plateMap={plateMap}
                     highlightSamples={{ [hoverEvent.source]: "#00a3a6" }}
                     labelMode="sample"
-                    size={28}
+                    size={plateMap.format.rows > 8 ? 18 : 32}
                   />
                 </div>
                 <div>
@@ -3715,7 +3722,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
                     plateMap={plateMap}
                     highlightSamples={{ [hoverEvent.target]: "#ed6e6c" }}
                     labelMode="sample"
-                    size={28}
+                    size={plateMap.format.rows > 8 ? 18 : 32}
                   />
                 </div>
               </div>
@@ -3726,7 +3733,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
                 plateMap={plateMap}
                 highlightSamples={highlightSamples}
                 labelMode="sample"
-                size={32}
+                size={plateMap.format.rows > 8 ? 24 : 44}
                 arrows={plateArrows}
               />
             )}
