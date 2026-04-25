@@ -17,6 +17,7 @@ import {
   Search,
   BookOpen,
   MapPin,
+  ShieldCheck,
 } from "lucide-react";
 
 /* ============================================================================
@@ -5030,6 +5031,26 @@ export default function App() {
               and a guided validation workflow. Export a curated TSV when you are
               done.
             </p>
+            {/* Privacy badge — prominent, reassuring */}
+            <div
+              className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-sm"
+              style={{
+                background: "rgba(0, 163, 166, 0.08)",
+                border: "1px solid #00a3a6",
+              }}
+            >
+              <ShieldCheck className="w-4 h-4" style={{ color: "#00a3a6" }} />
+              <span
+                className="text-[12px]"
+                style={{
+                  color: "#275662",
+                  fontWeight: 600,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                100% browser-based — your files never leave your computer
+              </span>
+            </div>
           </div>
           <div className="text-right">
             <a
@@ -5042,9 +5063,6 @@ export default function App() {
               github.com/metagenopolis/CroCoDeEL{" "}
               <ArrowRight className="w-3.5 h-3.5" />
             </a>
-            <div className="text-[11px] text-stone-500 mt-1">
-              100% browser-based — no server upload
-            </div>
           </div>
         </div>
       </section>
@@ -5057,36 +5075,48 @@ export default function App() {
           borderBottom: "1px solid #e6e8e8",
         }}
       >
-        <div className="max-w-7xl mx-auto px-6 py-5 grid md:grid-cols-2 gap-4">
-          <UploadCard
-            label="contamination_events.tsv"
-            hint="CroCoDeEL output — required"
-            filename={events.length ? `${events.length} events loaded` : null}
-            onFile={loadEvents}
-            primary
-            inputRef={eventFileRef}
-          />
-          <UploadCard
-            label="species_abundance.tsv"
-            hint="Abundance table — enables scatterplots and automatic scoring"
-            filename={
-              ab
-                ? `${ab.samples.length} samples × ${ab.species.length} species`
-                : null
-            }
-            onFile={loadAbundance}
-            inputRef={abFileRef}
-          />
-          <MetadataUploadCard
-            metadata={metadata}
-            setMetadata={setMetadata}
-            setErr={setErr}
-          />
-          <PlateUploadCard
-            plateMap={plateMap}
-            setPlateMap={setPlateMap}
-            setErr={setErr}
-          />
+        <div className="max-w-7xl mx-auto px-6 py-5">
+          <div
+            className="flex items-center gap-2 mb-3 text-[11px]"
+            style={{ color: "#797870", fontFamily: '"Raleway", sans-serif' }}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" style={{ color: "#00a3a6" }} />
+            <span>
+              Files stay local: parsing happens entirely in your browser. No
+              data is sent to any server.
+            </span>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <UploadCard
+              label="contamination_events.tsv"
+              hint="CroCoDeEL output — required"
+              filename={events.length ? `${events.length} events loaded` : null}
+              onFile={loadEvents}
+              primary
+              inputRef={eventFileRef}
+            />
+            <UploadCard
+              label="species_abundance.tsv"
+              hint="Abundance table — enables scatterplots and automatic scoring"
+              filename={
+                ab
+                  ? `${ab.samples.length} samples × ${ab.species.length} species`
+                  : null
+              }
+              onFile={loadAbundance}
+              inputRef={abFileRef}
+            />
+            <MetadataUploadCard
+              metadata={metadata}
+              setMetadata={setMetadata}
+              setErr={setErr}
+            />
+            <PlateUploadCard
+              plateMap={plateMap}
+              setPlateMap={setPlateMap}
+              setErr={setErr}
+            />
+          </div>
         </div>
         {err && (
           <div className="max-w-7xl mx-auto px-6 pb-4">
