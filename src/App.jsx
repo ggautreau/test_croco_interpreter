@@ -132,11 +132,14 @@ function pickCol(header, candidates) {
 const EVENT_COLS = {
   source: ["source", "contamination_source", "source_sample"],
   target: ["target", "contaminated_sample", "target_sample", "contaminated"],
-  rate: ["contamination_rate", "rate", "estimated_rate"],
+  rate: ["rate", "contamination_rate", "estimated_rate"],
+  // Canonical column is `probability`. Older CroCoDeEL outputs write the
+  // model's probability into a column named `score` instead — accept it
+  // as a fallback alias. The value is shown as "probability" in the UI.
   score: ["probability", "score", "rf_score", "proba"],
   species: [
-    "introduced_species",
     "contamination_specific_species",
+    "introduced_species",
     "species_specifically_introduced",
     "species",
   ],
@@ -146,12 +149,24 @@ function normalizeEvent(raw, cols, idx) {
   const species = (raw[cols.species] || "")
     .split(/[,;]\s*/)
     .filter((s) => s.trim().length > 0);
+  // Probability resolution: prefer the canonical column, but fall back to
+  // an alternate column (typically `score` in older CroCoDeEL outputs)
+  // when the canonical one is empty for this row. Picks the first
+  // non-empty value across all known aliases.
+  let probValue = "";
+  for (const alias of EVENT_COLS.score) {
+    const v = raw[alias];
+    if (v != null && String(v).trim() !== "") {
+      probValue = v;
+      break;
+    }
+  }
   return {
     id: idx,
     source: raw[cols.source] || "",
     target: raw[cols.target] || "",
     rate: parseFloat(raw[cols.rate]) || 0,
-    score: parseFloat(raw[cols.score]) || 0,
+    score: parseFloat(probValue) || 0,
     introduced: species,
     verdict: "pending",
     notes: "",
@@ -170,7 +185,7 @@ function parseEvents(text) {
   };
   if (!cols.source || !cols.target) {
     throw new Error(
-      "Could not find source/target columns. Expected headers like 'source' and 'contaminated_sample'.",
+      "Could not find source/target columns. Expected headers like 'source' and 'target' (or 'contaminated_sample').",
     );
   }
   return {
@@ -428,14 +443,14 @@ function eventsToTSV(rawEvents, runMetadata) {
     const parts = Object.entries(runMetadata).map(([k, v]) => `${k}: ${v}`);
     lines.push(`# ${parts.join(" | ")}`);
   }
+  // Canonical CroCoDeEL output header (5 columns).
   lines.push(
     [
       "source",
-      "contaminated_sample",
+      "target",
       "rate",
       "probability",
-      "score",
-      "introduced_species",
+      "contamination_specific_species",
     ].join("\t"),
   );
   rawEvents.forEach((e) => {
@@ -444,7 +459,6 @@ function eventsToTSV(rawEvents, runMetadata) {
         e.source,
         e.target,
         e.rate ?? "",
-        e.probability ?? "",
         e.score ?? "",
         Array.isArray(e.introduced) ? e.introduced.join(",") : (e.species ?? ""),
       ].join("\t"),
@@ -1763,7 +1777,7 @@ const NetworkGraph = ({ events, onPick }) => {
           </span>
           <span className="text-stone-500 ml-2">rate:</span>{" "}
           {(hover.e.rate * 100).toFixed(2)}%
-          <span className="text-stone-500 ml-2">score:</span>{" "}
+          <span className="text-stone-500 ml-2">probability:</span>{" "}
           {hover.e.score.toFixed(3)}
           <span
             className="ml-auto text-[11px]"
@@ -2735,7 +2749,7 @@ const EmptyState = ({ onLoadDemo, demoLoading }) => (
           the target sample by leakage from the source.
         </p>
         <p className="text-[13px] leading-relaxed text-stone-700">
-          The Random Forest score reflects a probability, but CroCoDeEL itself
+          The Random Forest probability is informative, but CroCoDeEL itself
           requires inspecting every event's scatterplot.
         </p>
       </aside>
@@ -2920,7 +2934,7 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
     <div>
       <SectionTitle eyebrow="Overview" title="Your analysis at a glance">
         These are the events CroCoDeEL flagged. Your role: distinguish real contamination
-        from coincidental abundance similarity. Start from the highest-score events.
+        from coincidental abundance similarity. Start from the highest-probability events.
       </SectionTitle>
 
       {/* No-data banner — shown until the user uploads contamination_events.tsv */}
@@ -3018,7 +3032,7 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
           <div className="text-[13px] leading-relaxed">
             <strong>No abundance table loaded.</strong> You can still sort events by
-            score and rate, but scatterplots and the 4-criteria assisted score
+            probability and rate, but scatterplots and the 4-criteria assisted score
             require <code>species_abundance.tsv</code>.
           </div>
         </div>
@@ -3066,7 +3080,10 @@ const EventsTable = ({
   setVerdict,
   metadata,
   plateMap,
+  runMetadata,
 }) => {
+  const cutoff = parseFloat(runMetadata?.probability_cutoff);
+  const hasCutoff = Number.isFinite(cutoff) && cutoff > 0;
   const toggleSort = (by) =>
     setSort({
       by,
@@ -3101,7 +3118,7 @@ const EventsTable = ({
           />
         </div>
         <div className="flex items-center gap-2 text-[12px]">
-          <span style={{ color: "#797870" }}>min score</span>
+          <span style={{ color: "#797870" }}>min probability</span>
           <input
             type="range"
             min={0}
@@ -3119,6 +3136,21 @@ const EventsTable = ({
           >
             {filter.minScore.toFixed(2)}
           </span>
+          {hasCutoff && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded-sm"
+              title={`CroCoDeEL was run with probability_cutoff = ${cutoff} — events below were never written to the file`}
+              style={{
+                background: "rgba(0,163,166,0.12)",
+                color: "#275662",
+                fontWeight: 600,
+                fontFamily: '"Raleway", sans-serif',
+                whiteSpace: "nowrap",
+              }}
+            >
+              run cutoff: {cutoff}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 text-[12px]">
           <span style={{ color: "#797870" }}>min rate</span>
@@ -3139,6 +3171,25 @@ const EventsTable = ({
           >
             {(filter.minRate * 100).toFixed(0)}%
           </span>
+          {(() => {
+            const rc = parseFloat(runMetadata?.rate_cutoff);
+            if (!Number.isFinite(rc) || rc <= 0) return null;
+            return (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded-sm"
+                title={`CroCoDeEL was run with rate_cutoff = ${rc} — events below were never written to the file`}
+                style={{
+                  background: "rgba(0,163,166,0.12)",
+                  color: "#275662",
+                  fontWeight: 600,
+                  fontFamily: '"Raleway", sans-serif',
+                  whiteSpace: "nowrap",
+                }}
+              >
+                run cutoff: {rc}
+              </span>
+            );
+          })()}
         </div>
         <select
           value={filter.verdict}
@@ -3203,7 +3254,7 @@ const EventsTable = ({
                 Rate <SortIcon col="rate" />
               </Th>
               <Th onClick={() => toggleSort("score")} right>
-                Score <SortIcon col="score" />
+                Probability <SortIcon col="score" />
               </Th>
               {hasContext && <Th>Context</Th>}
               <Th right>Species</Th>
@@ -3533,7 +3584,7 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick }) => {
           style={{ color: "#797870" }}
         >
           <span>
-            score <b style={{ color: "#275662" }}>{event.score.toFixed(3)}</b>
+            probability <b style={{ color: "#275662" }}>{event.score.toFixed(3)}</b>
           </span>
           <span>
             rate{" "}
@@ -4827,7 +4878,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
                       className="text-[11px] mt-0.5"
                       style={{ color: "#797870" }}
                     >
-                      {e.source} → {e.target} · score {e.score.toFixed(2)}
+                      {e.source} → {e.target} · probability {e.score.toFixed(2)}
                     </div>
                   </button>
                 );
@@ -5538,7 +5589,7 @@ const HelpTab = () => {
           <p>
             CroCoDeEL detects cross-sample contamination in shotgun
             metagenomic studies by analysing species-abundance profiles. Its
-            output is a list of source → contaminated_sample events, each
+            output is a list of source → target events, each
             with a probability and a contamination rate.
           </p>
           <p>
@@ -5660,14 +5711,14 @@ const HelpTab = () => {
                 required
                 type="string"
                 desc="Sample suspected to be the source of the contamination."
-                example={`source     contaminated_sample  rate    probability  introduced_species\n83D88      NC3                  0.413   0.998        sp_A,sp_B\n58M        58D7                 0.625   1.000        sp_C\n63D250     63D9                 0.704   0.997        sp_D,sp_E,sp_F\n82D243     72D17                0.0083  0.872        sp_G`}
+                example={`source  target  rate    probability  contamination_specific_species\n83D88   NC3     0.413   0.998        sp_A,sp_B\n58M     58D7    0.625   1.000        sp_C\n63D250  63D9    0.704   0.997        sp_D,sp_E,sp_F\n82D243  72D17   0.0083  0.872        sp_G`}
               />
               <HelpCol
-                name="contaminated_sample"
+                name="target"
                 required
                 type="string"
                 desc="Sample suspected to be contaminated by the source."
-                aliases={["target"]}
+                aliases={["contaminated_sample", "target_sample", "contaminated"]}
               />
               <HelpCol
                 name="rate"
@@ -5680,21 +5731,15 @@ const HelpTab = () => {
                 name="probability"
                 required
                 type="float [0..1]"
-                desc="CroCoDeEL Random-Forest probability that the event is real."
-                aliases={["proba"]}
+                desc="CroCoDeEL Random-Forest probability that the event is real. Older CroCoDeEL outputs may write this value into a column named `score` instead — both are accepted; the first non-empty value is used."
+                aliases={["score", "rf_score", "proba"]}
               />
               <HelpCol
-                name="score"
-                recognized
-                type="float [0..1]"
-                desc="A scoring value used in some CroCoDeEL versions; equals probability if not provided."
-              />
-              <HelpCol
-                name="introduced_species"
+                name="contamination_specific_species"
                 recognized
                 type="comma-separated"
                 desc="Species detected in the contaminated sample that are most likely introduced from the source. Listed in the events table."
-                aliases={["species"]}
+                aliases={["introduced_species", "species_specifically_introduced", "species"]}
               />
             </tbody>
           </table>
@@ -6434,6 +6479,22 @@ export default function App() {
   const eventFileRef = useRef(null);
   const abFileRef = useRef(null);
 
+  /* When a CroCoDeEL run header carries explicit cutoffs, pre-set the
+     events-table filters to those values. The user can still lower them
+     manually if they want to inspect events the cutoff filtered out
+     (though CroCoDeEL itself wouldn't have written them anyway). */
+  useEffect(() => {
+    const probCutoff = parseFloat(runMetadata?.probability_cutoff);
+    const rateCutoff = parseFloat(runMetadata?.rate_cutoff);
+    setFilter((f) => ({
+      ...f,
+      minScore:
+        Number.isFinite(probCutoff) && probCutoff > 0 ? probCutoff : f.minScore,
+      minRate:
+        Number.isFinite(rateCutoff) && rateCutoff > 0 ? rateCutoff : f.minRate,
+    }));
+  }, [runMetadata]);
+
   /* ---- derived state ---- */
   const events = useMemo(
     () => detectCascades(rawEvents, ab),
@@ -6951,7 +7012,7 @@ export default function App() {
                   </code>
                   ,{" "}
                   <code style={{ fontFamily: "ui-monospace, monospace" }}>
-                    contaminated_sample
+                    target
                   </code>
                   ,{" "}
                   <code style={{ fontFamily: "ui-monospace, monospace" }}>
@@ -6961,13 +7022,9 @@ export default function App() {
                   <code style={{ fontFamily: "ui-monospace, monospace" }}>
                     probability
                   </code>
-                  . Optional:{" "}
-                  <code style={{ fontFamily: "ui-monospace, monospace" }}>
-                    score
-                  </code>
                   ,{" "}
                   <code style={{ fontFamily: "ui-monospace, monospace" }}>
-                    introduced_species
+                    contamination_specific_species
                   </code>
                   . An optional first comment line starting with{" "}
                   <code style={{ fontFamily: "ui-monospace, monospace" }}>#</code>{" "}
@@ -7171,6 +7228,7 @@ export default function App() {
               setSort={setSort}
               metadata={metadata}
               plateMap={plateMap}
+              runMetadata={runMetadata}
               onPick={(id) => {
                 setSelId(id);
                 setTab(ab ? "validate" : "scatter");
