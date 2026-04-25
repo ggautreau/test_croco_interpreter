@@ -6890,12 +6890,17 @@ const ExportTab = ({ counts, onExportTSV, onExportJSON }) => (
    8. MAIN APP
    ============================================================================ */
 
-/* Persistence: we keep the user's CURATION WORK alive across page
-   refreshes by stashing it in localStorage. We deliberately save ONLY
-   the events (with verdicts and notes) — the user re-loads their TSV
-   files (events, abundance, metadata, plate map) at each session.
-   This is by design: it keeps the storage footprint tiny and avoids
-   stale-data confusion (re-loaded files are always fresh). */
+/* Persistence: we keep the entire session alive across page refreshes
+   by stashing it in localStorage. We save:
+   - events (with verdicts and notes) — the curation work
+   - runMetadata (CroCoDeEL run params)
+   - metadata (sample annotations)
+   - plateMap (sample-to-well placement)
+   - ab (species abundance table)
+   The abundance table can be the largest piece. If it pushes us past
+   the localStorage quota (~5-10 MB depending on the browser), we fall
+   back gracefully to saving everything except the abundance — the user
+   keeps their curation work and re-loads only the abundance file. */
 const STORAGE_KEY = "crocodeel-interpreter-v1";
 
 function loadFromStorage() {
@@ -6914,15 +6919,41 @@ function loadFromStorage() {
 }
 
 function saveToStorage(payload) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-    return true;
-  } catch (e) {
-    // Most likely cause: quota exceeded. We prefer silent failure here
-    // rather than disrupting the user — they can still export manually.
-    console.warn("[crocodeel] localStorage save failed:", e?.message);
-    return false;
+  // Try the full payload first. If it exceeds the quota, retry without
+  // the abundance table (which is by far the largest piece). If THAT
+  // still fails, retry with events only as a last resort.
+  const attempts = [
+    { payload, dropped: null },
+    { payload: { ...payload, ab: null }, dropped: "ab" },
+    {
+      payload: {
+        version: payload.version,
+        savedAt: payload.savedAt,
+        rawEvents: payload.rawEvents,
+      },
+      dropped: "ab+metadata+plateMap+runMetadata",
+    },
+  ];
+  for (const { payload: p, dropped } of attempts) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+      if (dropped) {
+        console.warn(
+          `[crocodeel] localStorage quota tight — saved without: ${dropped}`,
+        );
+      }
+      return true;
+    } catch (e) {
+      // Try the next, smaller payload. If we exhaust all attempts the
+      // outer return false signals the failure.
+      if (e?.name !== "QuotaExceededError" && e?.code !== 22) {
+        console.warn("[crocodeel] localStorage save failed:", e?.message);
+        return false;
+      }
+    }
   }
+  console.warn("[crocodeel] localStorage save failed even with minimal payload");
+  return false;
 }
 
 function clearStorage() {
@@ -6984,10 +7015,10 @@ export default function App() {
   // shows the data immediately (no flicker).
   const initial = typeof window !== "undefined" ? loadFromStorage() : null;
   const [rawEvents, setRawEvents] = useState(initial?.rawEvents || []);
-  const [runMetadata, setRunMetadata] = useState(null);
-  const [ab, setAb] = useState(null);
-  const [metadata, setMetadata] = useState(null);
-  const [plateMap, setPlateMap] = useState(null);
+  const [runMetadata, setRunMetadata] = useState(initial?.runMetadata || null);
+  const [ab, setAb] = useState(initial?.ab || null);
+  const [metadata, setMetadata] = useState(initial?.metadata || null);
+  const [plateMap, setPlateMap] = useState(initial?.plateMap || null);
   const [tab, setTab] = useState("overview");
   const [selId, setSelId] = useState(null);
   const [filter, setFilter] = useState({
@@ -7008,9 +7039,9 @@ export default function App() {
      a separate timeout. */
   const [savedAt, setSavedAt] = useState(null);
 
-  /* Auto-save the curation work to localStorage whenever events change.
-     Debounced to 200 ms so we don't hammer the disk when the user
-     blasts through events with keyboard shortcuts (T/F/U/...). */
+  /* Auto-save the full session to localStorage whenever any persisted
+     state changes. Debounced to 200 ms so we don't hammer the disk
+     when the user blasts through events with keyboard shortcuts. */
   useEffect(() => {
     if (rawEvents.length === 0) {
       // No data to save — actively clear storage so a previous session
@@ -7024,11 +7055,15 @@ export default function App() {
         version: 1,
         savedAt: new Date().toISOString(),
         rawEvents,
+        runMetadata,
+        metadata,
+        plateMap,
+        ab,
       });
       if (ok) setSavedAt(Date.now());
     }, 200);
     return () => clearTimeout(handle);
-  }, [rawEvents]);
+  }, [rawEvents, runMetadata, metadata, plateMap, ab]);
 
   /* When a CroCoDeEL run header carries explicit cutoffs, pre-set the
      events-table filters to those values. The user can still lower them
