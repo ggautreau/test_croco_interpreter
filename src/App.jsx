@@ -2593,8 +2593,19 @@ const VerdictBtn = ({ children, onClick, active, tone, icon: Icon }) => {
    ============================================================================ */
 
 /* ---------- EMPTY STATE ---------- */
-const EmptyState = ({ onLoadDemo, demoLoading }) => (
-  <div className="max-w-7xl mx-auto px-6 py-16">
+const EmptyState = ({ onLoadDemo, demoLoading, compact = false }) => (
+  <div
+    className={
+      compact
+        ? "py-6 mb-8"
+        : "max-w-7xl mx-auto px-6 py-16"
+    }
+    style={
+      compact
+        ? { borderBottom: "1px solid #e6e8e8" }
+        : undefined
+    }
+  >
     <div className="grid md:grid-cols-[1fr_320px] gap-10">
       <div>
         <SectionTitle eyebrow="Getting started" title="Upload your events to begin">
@@ -7027,30 +7038,43 @@ export default function App() {
           style={{ borderBottom: "2px solid #e6e8e8" }}
         >
             {[
-              { id: "overview", label: "Overview", icon: BookOpen },
-              { id: "table", label: "Events table", icon: TableIcon },
-              { id: "scatter", label: "Scatterplots", icon: ScatterIcon },
-              { id: "network", label: "Network", icon: GitBranch },
-              { id: "plate", label: "Plate map", icon: MapPin },
-              { id: "validate", label: "Guided validation", icon: ClipboardCheck },
-              { id: "export", label: "Export", icon: Download },
-              { id: "help", label: "Help", icon: HelpCircle },
+              { id: "overview", label: "Overview", icon: BookOpen, requiresData: true },
+              { id: "table", label: "Events table", icon: TableIcon, requiresData: true },
+              { id: "scatter", label: "Scatterplots", icon: ScatterIcon, requiresData: true },
+              { id: "network", label: "Network", icon: GitBranch, requiresData: true },
+              { id: "plate", label: "Plate map", icon: MapPin, requiresData: true },
+              { id: "validate", label: "Guided validation", icon: ClipboardCheck, requiresData: true },
+              { id: "export", label: "Export", icon: Download, requiresData: true },
+              { id: "help", label: "Help", icon: HelpCircle, requiresData: false },
             ].map((t) => {
               const Icon = t.icon;
               const active = tab === t.id;
+              const disabled = t.requiresData && events.length === 0;
               return (
                 <button
                   key={t.id}
-                  onClick={() => setTab(t.id)}
+                  onClick={() => !disabled && setTab(t.id)}
+                  disabled={disabled}
+                  title={
+                    disabled
+                      ? "Load contamination_events.tsv first"
+                      : undefined
+                  }
                   className="px-5 py-3 text-[13px] flex items-center gap-2"
                   style={{
                     borderBottom: active
                       ? "3px solid #00a3a6"
                       : "3px solid transparent",
-                    color: active ? "#275662" : "#797870",
+                    color: disabled
+                      ? "#c4c0b3"
+                      : active
+                        ? "#275662"
+                        : "#797870",
                     fontWeight: active ? 700 : 500,
                     marginBottom: "-2px",
                     fontFamily: '"Raleway", sans-serif',
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    opacity: disabled ? 0.5 : 1,
                   }}
                 >
                   <Icon className="w-4 h-4" />
@@ -7060,9 +7084,15 @@ export default function App() {
             })}
           </nav>
 
-          {events.length === 0 && tab !== "help" ? (
-            <EmptyState onLoadDemo={loadDemo} demoLoading={demoLoading} />
-          ) : (
+          {events.length === 0 && (
+            <EmptyState
+              onLoadDemo={loadDemo}
+              demoLoading={demoLoading}
+              compact={tab === "help"}
+            />
+          )}
+
+          {(events.length > 0 || tab === "help") && (
             <>
           {tab === "overview" && (
             <Overview
