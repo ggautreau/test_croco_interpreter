@@ -27,6 +27,7 @@ import {
   User,
   Users,
   Calendar,
+  Github,
 } from "lucide-react";
 
 /* ============================================================================
@@ -7402,52 +7403,80 @@ export default function App() {
       {/* ==================== HEADER ==================== */}
       <header style={{ borderBottom: "3px solid #00a3a6", background: "#fff" }}>
         <div className="max-w-7xl mx-auto px-6 py-5">
-          <div className="flex items-center gap-8 flex-wrap">
-            <RepubliqueFrancaise height={46} />
-            <div style={{ width: 1, height: 46, background: "#c4c0b3" }} />
-            <InraeLogo height={36} />
-            <div style={{ width: 1, height: 46, background: "#c4c0b3" }} />
-            <div className="flex items-center gap-3">
-              <img
-                src={CROCODEEL_LOGO}
-                alt="CroCoDeEL"
+          <div className="flex items-center gap-3 flex-wrap">
+            <img
+              src={CROCODEEL_LOGO}
+              alt="CroCoDeEL"
+              style={{
+                height: 46,
+                width: 46,
+                borderRadius: "50%",
+                display: "block",
+              }}
+            />
+            <div className="leading-tight">
+              <div
+                className="text-[20px]"
                 style={{
-                  height: 46,
-                  width: 46,
-                  borderRadius: "50%",
-                  display: "block",
+                  color: "#275662",
+                  fontWeight: 800,
+                  letterSpacing: "-0.01em",
+                  fontFamily: '"Raleway", sans-serif',
                 }}
-              />
-              <div className="leading-tight">
-                <div
-                  className="text-[20px]"
-                  style={{
-                    color: "#275662",
-                    fontWeight: 800,
-                    letterSpacing: "-0.01em",
-                    fontFamily: '"Raleway", sans-serif',
-                  }}
-                >
-                  CroCoDeEL
-                </div>
-                <div
-                  className="text-[10px] uppercase tracking-[0.15em]"
-                  style={{
-                    color: "#797870",
-                    fontFamily: '"Raleway", sans-serif',
-                  }}
-                >
-                  Interpretation console
-                </div>
+              >
+                CroCoDeEL
+              </div>
+              <div
+                className="text-[10px] uppercase tracking-[0.15em]"
+                style={{
+                  color: "#797870",
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                Interpretation console
               </div>
             </div>
+            <a
+              href="https://github.com/metagenopolis/CroCoDeEL"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="View CroCoDeEL on GitHub (metagenopolis/CroCoDeEL)"
+              className="ml-auto flex items-center gap-2 px-4 py-2 rounded-sm"
+              style={{
+                background: "#275662",
+                color: "#fff",
+                border: "1px solid #275662",
+                fontSize: 13,
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+                textDecoration: "none",
+                letterSpacing: "0.02em",
+                transition: "all 0.15s",
+                boxShadow: "0 1px 3px rgba(39,86,98,0.2)",
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.background = "#00a3a6";
+                e.currentTarget.style.borderColor = "#00a3a6";
+                e.currentTarget.style.boxShadow =
+                  "0 2px 6px rgba(0,163,166,0.35)";
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.background = "#275662";
+                e.currentTarget.style.borderColor = "#275662";
+                e.currentTarget.style.boxShadow =
+                  "0 1px 3px rgba(39,86,98,0.2)";
+              }}
+            >
+              <Github className="w-4 h-4" />
+              <span>GitHub · metagenopolis/CroCoDeEL</span>
+            </a>
           </div>
         </div>
       </header>
 
       {/* ==================== SUB-BANNER ==================== */}
       <section className="bg-white">
-        <div className="max-w-7xl mx-auto px-6 py-8 grid md:grid-cols-[1fr_auto] gap-6 items-end">
+        <div className="max-w-7xl mx-auto px-6 py-8">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <Chevron size={14} color="#ed6e6c" />
@@ -7498,18 +7527,6 @@ export default function App() {
                 100% browser-based — your files never leave your computer
               </span>
             </div>
-          </div>
-          <div className="text-right">
-            <a
-              href="https://github.com/metagenopolis/CroCoDeEL"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-2 text-[12px] font-semibold hover:underline"
-              style={{ color: "#00a3a6", fontFamily: '"Raleway", sans-serif' }}
-            >
-              github.com/metagenopolis/CroCoDeEL{" "}
-              <ArrowRight className="w-3.5 h-3.5" />
-            </a>
           </div>
         </div>
       </section>
