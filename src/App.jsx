@@ -7785,7 +7785,7 @@ export default function App() {
                 }}
               >
                 <X className="w-3 h-3" />
-                Clear all session
+                Clear session
               </button>
             )}
           </div>
