@@ -4634,6 +4634,8 @@ export default function App() {
         ? path
         : path.replace(/\/[^/]*$/, "/") || "/";
       const join = (p) => `${base.replace(/\/$/, "")}/demo/${p}`;
+
+      // Required files
       const [evRes, abRes] = await Promise.all([
         fetch(join("contamination_events.tsv")),
         fetch(join("species_abundance.tsv")),
@@ -4645,6 +4647,27 @@ export default function App() {
       if (!parsedAb) throw new Error("Could not parse demo abundance table");
       setRawEvents(parseEvents(evText));
       setAb(parsedAb);
+
+      // Optional files — load if present, ignore 404s silently
+      try {
+        const pmRes = await fetch(join("plate_map.tsv"));
+        if (pmRes.ok) {
+          const pmText = await pmRes.text();
+          setPlateMap(parsePlateMap(pmText));
+        }
+      } catch {
+        // ignore
+      }
+      try {
+        const mdRes = await fetch(join("metadata.tsv"));
+        if (mdRes.ok) {
+          const mdText = await mdRes.text();
+          setMetadata(parseMetadata(mdText));
+        }
+      } catch {
+        // ignore
+      }
+
       setTab("overview");
     } catch (e) {
       setErr(
