@@ -214,45 +214,41 @@ const METADATA_COLS = {
   subject: [
     "subject_id",
     "subject",
-    "patient",
+    "subjectid",
     "patient_id",
+    "patient",
     "host",
     "individual",
-    "subjectid",
   ],
   timepoint: [
     "timepoint",
-    "time",
     "time_point",
+    "time",
     "day",
     "week",
     "visit",
-    "tp",
   ],
   biome: [
     "biome",
     "body_site",
     "bodysite",
-    "site",
     "tissue",
     "sample_site",
-    "source",
   ],
   lowBiomass: ["low_biomass", "is_low_biomass", "lowbiomass"],
   groupId: [
     // Canonical name first
     "group_id",
     "group",
-    // Aliases for various study contexts (humans, animal cages, sites, etc.)
+    // Aliases for various study contexts (humans, animal cages, etc.)
     "related_group_id",
     "related_group",
     "family_id",
     "family",
     "cage_id",
     "cage",
-    "site_id",
-    "household",
     "household_id",
+    "household",
   ],
 };
 
@@ -818,6 +814,109 @@ const SampleFlags = ({ flags, compact = false }) => {
 
   if (items.length === 0) return null;
   return <div className="flex flex-wrap items-center gap-1">{items}</div>;
+};
+
+/** Small "?" affordance with a contextual tooltip. Hover to peek, click
+    to lock open until the next click anywhere on the page. The tooltip
+    panel itself stops propagation so users can read or copy text inside
+    without it auto-closing. */
+const InfoTooltip = ({ children, side = "top", className = "" }) => {
+  const [hover, setHover] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const visible = hover || locked;
+
+  // Click-anywhere-to-close behaviour for the locked state.
+  useEffect(() => {
+    if (!locked) return undefined;
+    const onDown = () => setLocked(false);
+    // Defer so the click that opened it doesn't immediately close it
+    const t = setTimeout(() => {
+      window.addEventListener("mousedown", onDown);
+    }, 0);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [locked]);
+
+  const tooltipStyle = {
+    position: "absolute",
+    minWidth: 240,
+    maxWidth: 320,
+    padding: "10px 12px",
+    background: "#275662",
+    color: "#fff",
+    borderRadius: 3,
+    fontSize: 12,
+    lineHeight: 1.5,
+    fontFamily: '"Raleway", sans-serif',
+    fontWeight: 500,
+    boxShadow: "0 4px 12px rgba(39,86,98,0.25)",
+    zIndex: 50,
+    whiteSpace: "normal",
+    pointerEvents: "auto",
+  };
+
+  // Position panel relative to the trigger button.
+  if (side === "top") {
+    tooltipStyle.bottom = "calc(100% + 6px)";
+    tooltipStyle.left = "50%";
+    tooltipStyle.transform = "translateX(-50%)";
+  } else if (side === "right") {
+    tooltipStyle.left = "calc(100% + 6px)";
+    tooltipStyle.top = "50%";
+    tooltipStyle.transform = "translateY(-50%)";
+  } else if (side === "bottom") {
+    tooltipStyle.top = "calc(100% + 6px)";
+    tooltipStyle.left = "50%";
+    tooltipStyle.transform = "translateX(-50%)";
+  } else if (side === "left") {
+    tooltipStyle.right = "calc(100% + 6px)";
+    tooltipStyle.top = "50%";
+    tooltipStyle.transform = "translateY(-50%)";
+  }
+
+  return (
+    <span
+      className={`relative inline-flex ${className}`}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setLocked((v) => !v);
+        }}
+        aria-label="More info"
+        className="inline-flex items-center justify-center rounded-full"
+        style={{
+          width: 16,
+          height: 16,
+          background: visible ? "#00a3a6" : "#c4c0b3",
+          color: "#fff",
+          fontSize: 11,
+          fontWeight: 700,
+          fontFamily: '"Raleway", sans-serif',
+          cursor: "help",
+          border: "none",
+          lineHeight: 1,
+          transition: "background 0.15s",
+        }}
+      >
+        ?
+      </button>
+      {visible && (
+        <span
+          role="tooltip"
+          style={tooltipStyle}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {children}
+        </span>
+      )}
+    </span>
+  );
 };
 
 const SectionTitle = ({ eyebrow, title, children }) => (
@@ -1908,6 +2007,7 @@ const UploadCard = ({
   inputRef,
   onDownload,
   onClear,
+  info,
 }) => {
   const [drag, setDrag] = useState(false);
   const loaded = !!filename;
@@ -1963,6 +2063,7 @@ const UploadCard = ({
           >
             {label}
           </span>
+          {info && <InfoTooltip side="bottom">{info}</InfoTooltip>}
           {primary && <Pill tone="ink">required</Pill>}
         </div>
         <div className="text-[12px] text-stone-600 mt-0.5">{hint}</div>
@@ -2072,10 +2173,41 @@ const MetadataUploadCard = ({ metadata, setMetadata, setErr }) => {
   return (
     <UploadCard
       label="metadata.tsv"
-      hint="Optional — enables related-samples detection (same subject)"
+      hint="Optional — adds sample context (biome, controls, low biomass, related samples)"
       filename={metadata ? `${metadata.nSamples} samples annotated` : null}
       onFile={onFile}
       inputRef={inputRef}
+      info={
+        <>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>
+            Sample annotations (TSV)
+          </div>
+          Mandatory:{" "}
+          <code style={{ fontFamily: "ui-monospace, monospace" }}>
+            sample_id
+          </code>
+          . Recognized columns:{" "}
+          <code style={{ fontFamily: "ui-monospace, monospace" }}>
+            subject_id
+          </code>
+          ,{" "}
+          <code style={{ fontFamily: "ui-monospace, monospace" }}>
+            timepoint
+          </code>
+          ,{" "}
+          <code style={{ fontFamily: "ui-monospace, monospace" }}>biome</code>
+          ,{" "}
+          <code style={{ fontFamily: "ui-monospace, monospace" }}>
+            low_biomass
+          </code>
+          ,{" "}
+          <code style={{ fontFamily: "ui-monospace, monospace" }}>
+            group_id
+          </code>
+          . Any other column is shown as a generic key:value pill. See the
+          Help tab for accepted aliases (family_id, cage_id, host, etc.).
+        </>
+      }
       onDownload={
         metadata
           ? () => downloadText(metadataToTSV(metadata), "metadata.tsv")
@@ -2108,6 +2240,24 @@ const PlateUploadCard = ({ plateMap, setPlateMap, setErr }) => {
       }
       onFile={onFile}
       inputRef={inputRef}
+      info={
+        <>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>
+            Sample-to-well placement (TSV)
+          </div>
+          Three columns:{" "}
+          <code style={{ fontFamily: "ui-monospace, monospace" }}>
+            sample_id
+          </code>
+          ,{" "}
+          <code style={{ fontFamily: "ui-monospace, monospace" }}>plate</code>
+          ,{" "}
+          <code style={{ fontFamily: "ui-monospace, monospace" }}>well</code>
+          . Wells use letter-then-number coordinates (A01–H12 for 96-well,
+          A01–P24 for 384-well). Plate format is auto-detected. Loading this
+          unlocks the Plate map tab and the "Proximity on plate" criterion.
+        </>
+      }
       onDownload={
         plateMap
           ? () => downloadText(plateMapToTSV(plateMap), "plate_map.tsv")
@@ -5142,6 +5292,1012 @@ const ExportCard = ({ title, desc, action, onClick }) => (
   </div>
 );
 
+/* ---------- HELP TAB ---------- */
+
+const HelpSection = ({ id, eyebrow, title, children }) => (
+  <section id={id} className="mb-12 scroll-mt-24">
+    <div
+      className="text-[10px] tracking-[0.15em] uppercase mb-1"
+      style={{
+        color: "#ed6e6c",
+        fontWeight: 700,
+        fontFamily: '"Raleway", sans-serif',
+      }}
+    >
+      {eyebrow}
+    </div>
+    <h2
+      className="text-[24px] mb-3"
+      style={{
+        color: "#275662",
+        fontWeight: 700,
+        fontFamily: '"Raleway", sans-serif',
+      }}
+    >
+      {title}
+    </h2>
+    <div className="text-[14px] leading-relaxed text-stone-700 space-y-3">
+      {children}
+    </div>
+  </section>
+);
+
+const HelpCol = ({ name, required, recognized, type, desc, aliases, example }) => (
+  <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+    <td className="py-3 pr-4 align-top">
+      <div className="flex items-center gap-2 flex-wrap">
+        <code
+          className="text-[12px] px-1.5 py-0.5 rounded-sm"
+          style={{
+            background: required ? "#275662" : "#f6f7f7",
+            color: required ? "#fff" : "#275662",
+            fontFamily: "ui-monospace, monospace",
+            fontWeight: 700,
+          }}
+        >
+          {name}
+        </code>
+        {required && (
+          <span
+            className="text-[10px] px-1.5 rounded-sm"
+            style={{
+              background: "rgba(237,110,108,0.2)",
+              color: "#8a2422",
+              fontWeight: 700,
+            }}
+          >
+            mandatory
+          </span>
+        )}
+        {recognized && !required && (
+          <span
+            className="text-[10px] px-1.5 rounded-sm"
+            style={{
+              background: "rgba(0,163,166,0.15)",
+              color: "#275662",
+              fontWeight: 700,
+            }}
+          >
+            recognized
+          </span>
+        )}
+      </div>
+      {aliases && (
+        <div className="text-[11px] mt-1.5" style={{ color: "#797870" }}>
+          aliases: {aliases.map((a) => (
+            <code
+              key={a}
+              className="mr-1"
+              style={{ fontFamily: "ui-monospace, monospace" }}
+            >
+              {a}
+            </code>
+          ))}
+        </div>
+      )}
+    </td>
+    <td className="py-3 pr-4 align-top text-[12px]" style={{ color: "#797870" }}>
+      {type}
+    </td>
+    <td className="py-3 align-top text-[13px]">
+      <div>{desc}</div>
+      {example && (
+        <pre
+          className="mt-2 p-2 rounded-sm text-[11px]"
+          style={{
+            background: "#f6f7f7",
+            border: "1px solid #e6e8e8",
+            fontFamily: "ui-monospace, monospace",
+            color: "#275662",
+            overflowX: "auto",
+            margin: 0,
+          }}
+        >
+          {example}
+        </pre>
+      )}
+    </td>
+  </tr>
+);
+
+const HelpTab = () => {
+  const toc = [
+    { id: "h-intro", label: "What is this tool?" },
+    { id: "h-workflow", label: "Workflow" },
+    { id: "h-files", label: "Input files" },
+    { id: "h-events", label: "contamination_events.tsv" },
+    { id: "h-abundance", label: "species_abundance.tsv" },
+    { id: "h-metadata", label: "metadata.tsv" },
+    { id: "h-plate", label: "plate_map.tsv" },
+    { id: "h-tabs", label: "Tabs walkthrough" },
+    { id: "h-criteria", label: "Validation criteria" },
+    { id: "h-flags", label: "Sample flags reference" },
+    { id: "h-privacy", label: "Privacy & data flow" },
+    { id: "h-faq", label: "FAQ" },
+    { id: "h-cite", label: "Citing & references" },
+  ];
+
+  return (
+    <div className="grid lg:grid-cols-[220px_1fr] gap-10">
+      {/* Sticky sidebar TOC */}
+      <aside>
+        <div className="lg:sticky lg:top-6">
+          <div
+            className="text-[10px] tracking-[0.15em] uppercase mb-3"
+            style={{
+              color: "#ed6e6c",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+          >
+            On this page
+          </div>
+          <nav className="flex flex-col gap-1">
+            {toc.map((item) => (
+              <a
+                key={item.id}
+                href={`#${item.id}`}
+                className="text-[12px] py-1 hover:underline"
+                style={{
+                  color: "#275662",
+                  fontWeight: 600,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                {item.label}
+              </a>
+            ))}
+          </nav>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div>
+        <SectionTitle eyebrow="Help" title="How to use this tool">
+          A complete reference for the CroCoDeEL Interpretation Console — what
+          it does, what files it accepts, how it scores events, and how to
+          interpret the results.
+        </SectionTitle>
+
+        {/* ---------- Intro ---------- */}
+        <HelpSection
+          id="h-intro"
+          eyebrow="Overview"
+          title="What is this tool?"
+        >
+          <p>
+            CroCoDeEL detects cross-sample contamination in shotgun
+            metagenomic studies by analysing species-abundance profiles. Its
+            output is a list of source → contaminated_sample events, each
+            with a probability and a contamination rate.
+          </p>
+          <p>
+            CroCoDeEL flags more events than there are real contaminations —
+            many candidate events turn out to be biologically explained
+            (longitudinal samples from the same person, mother-infant
+            transmission, etc.) rather than true cross-contamination. This
+            tool helps you triage that list interactively: look at each
+            event's scatterplot, automatic diagnostics, plate position and
+            sample metadata, then mark each one as true positive, false
+            positive or uncertain. Export the curated TSV when done.
+          </p>
+          <p style={{ color: "#797870", fontSize: 12 }}>
+            CroCoDeEL itself is published in Goulet L. et al., bioRxiv 2025
+            (doi.org/10.1101/2025.01.15.633153). This interpretation tool was
+            built on top of it to replace the static PDF reports the
+            pipeline currently produces.
+          </p>
+        </HelpSection>
+
+        {/* ---------- Workflow ---------- */}
+        <HelpSection id="h-workflow" eyebrow="Steps" title="Workflow">
+          <ol className="list-decimal pl-5 space-y-2">
+            <li>
+              Upload your CroCoDeEL output (
+              <code style={{ fontFamily: "ui-monospace, monospace" }}>
+                contamination_events.tsv
+              </code>
+              ).
+            </li>
+            <li>
+              Optionally add the abundance table, sample metadata and plate
+              map. Each one unlocks new diagnostic features.
+            </li>
+            <li>
+              Browse the tabs to get an overview, scan the events table,
+              compare scatterplots, and explore the contamination network.
+            </li>
+            <li>
+              Open Guided validation to walk through events one by one:
+              read the automatic criteria, look at the plate position,
+              check the sample context, and assign a verdict (true positive
+              / false positive / uncertain).
+            </li>
+            <li>
+              Export your curated report (TSV or JSON with full audit
+              trail) from the Export tab.
+            </li>
+          </ol>
+        </HelpSection>
+
+        {/* ---------- Files ---------- */}
+        <HelpSection
+          id="h-files"
+          eyebrow="Inputs"
+          title="Input files at a glance"
+        >
+          <div
+            className="rounded-sm p-4 text-[13px]"
+            style={{
+              background: "rgba(0,163,166,0.06)",
+              border: "1px solid rgba(0,163,166,0.3)",
+            }}
+          >
+            <p className="mb-2" style={{ color: "#275662", fontWeight: 600 }}>
+              All files are TSV (tab-separated). Column names are matched
+              case-insensitively and many aliases are accepted — see each
+              file's section below for details.
+            </p>
+            <p style={{ color: "#797870" }}>
+              Files are parsed entirely in your browser. Nothing is uploaded
+              to any server.
+            </p>
+          </div>
+        </HelpSection>
+
+        {/* ---------- contamination_events.tsv ---------- */}
+        <HelpSection
+          id="h-events"
+          eyebrow="Required input"
+          title="contamination_events.tsv"
+        >
+          <p>
+            The output of CroCoDeEL. The file may begin with a single
+            comment line starting with{" "}
+            <code style={{ fontFamily: "ui-monospace, monospace" }}>#</code>{" "}
+            that contains run parameters in{" "}
+            <code style={{ fontFamily: "ui-monospace, monospace" }}>
+              key: value | …
+            </code>{" "}
+            format — these are parsed and shown in the Overview tab.
+          </p>
+          <table className="w-full text-left mt-3">
+            <thead>
+              <tr style={{ borderBottom: "2px solid #275662" }}>
+                <th
+                  className="py-2 pr-4 text-[11px] uppercase tracking-wider"
+                  style={{ color: "#275662" }}
+                >
+                  Column
+                </th>
+                <th
+                  className="py-2 pr-4 text-[11px] uppercase tracking-wider"
+                  style={{ color: "#275662" }}
+                >
+                  Type
+                </th>
+                <th
+                  className="py-2 text-[11px] uppercase tracking-wider"
+                  style={{ color: "#275662" }}
+                >
+                  Description
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <HelpCol
+                name="source"
+                required
+                type="string"
+                desc="Sample suspected to be the source of the contamination."
+                example={`source     contaminated_sample  rate    probability  introduced_species\n83D88      NC3                  0.413   0.998        sp_A,sp_B\n58M        58D7                 0.625   1.000        sp_C\n63D250     63D9                 0.704   0.997        sp_D,sp_E,sp_F\n82D243     72D17                0.0083  0.872        sp_G`}
+              />
+              <HelpCol
+                name="contaminated_sample"
+                required
+                type="string"
+                desc="Sample suspected to be contaminated by the source."
+                aliases={["target"]}
+              />
+              <HelpCol
+                name="rate"
+                required
+                type="float [0..1]"
+                desc="Estimated proportion of the contaminated sample that originates from the source."
+                aliases={["contamination_rate"]}
+              />
+              <HelpCol
+                name="probability"
+                required
+                type="float [0..1]"
+                desc="CroCoDeEL Random-Forest probability that the event is real."
+                aliases={["proba"]}
+              />
+              <HelpCol
+                name="score"
+                recognized
+                type="float [0..1]"
+                desc="A scoring value used in some CroCoDeEL versions; equals probability if not provided."
+              />
+              <HelpCol
+                name="introduced_species"
+                recognized
+                type="comma-separated"
+                desc="Species detected in the contaminated sample that are most likely introduced from the source. Listed in the events table."
+                aliases={["species"]}
+              />
+            </tbody>
+          </table>
+        </HelpSection>
+
+        {/* ---------- species_abundance.tsv ---------- */}
+        <HelpSection
+          id="h-abundance"
+          eyebrow="Optional input"
+          title="species_abundance.tsv"
+        >
+          <p>
+            Species × sample abundance matrix. Loading it activates:
+          </p>
+          <ul className="list-disc pl-5">
+            <li>The Scatterplots tab (each event plotted as source vs target).</li>
+            <li>
+              Automatic scoring criteria (e.g. the "above-line points"
+              count, the dominance check).
+            </li>
+            <li>Inline mini-scatterplots in the Guided validation tab.</li>
+          </ul>
+          <p>
+            Format: first column lists species names, every other column is a
+            sample. The parser normalizes each sample column to relative
+            abundances summing to 1.
+          </p>
+        </HelpSection>
+
+        {/* ---------- metadata.tsv ---------- */}
+        <HelpSection
+          id="h-metadata"
+          eyebrow="Optional input"
+          title="metadata.tsv"
+        >
+          <p>
+            Annotates samples with biological context. Mandatory column:{" "}
+            <code style={{ fontFamily: "ui-monospace, monospace" }}>
+              sample_id
+            </code>
+            . Five columns are <em>recognized</em> and trigger dedicated
+            features (pills, criteria). Any other column is shown as a generic
+            "key: value" pill in the Sample context panel.
+          </p>
+          <table className="w-full text-left mt-3">
+            <thead>
+              <tr style={{ borderBottom: "2px solid #275662" }}>
+                <th
+                  className="py-2 pr-4 text-[11px] uppercase tracking-wider"
+                  style={{ color: "#275662" }}
+                >
+                  Column
+                </th>
+                <th
+                  className="py-2 pr-4 text-[11px] uppercase tracking-wider"
+                  style={{ color: "#275662" }}
+                >
+                  Type
+                </th>
+                <th
+                  className="py-2 text-[11px] uppercase tracking-wider"
+                  style={{ color: "#275662" }}
+                >
+                  Effect
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <HelpCol
+                name="sample_id"
+                required
+                type="string"
+                desc="Unique sample identifier — must match samples used in events and abundance files."
+                aliases={["sample", "sampleid", "id"]}
+                example={`sample_id\n40D89\n58M\n58D7\nNC3\n83D239`}
+              />
+              <HelpCol
+                name="subject_id"
+                recognized
+                type="string"
+                desc="Person / individual the sample belongs to. Two samples sharing a subject_id trigger the 'same subject' criterion (longitudinal pair, often a false-positive risk)."
+                aliases={["subject", "subjectid", "patient_id", "patient", "host", "individual"]}
+                example={`sample_id  subject_id\n58D7       58\n58D28      58\n60D38      60\nNC3        NC3\n58M        M58`}
+              />
+              <HelpCol
+                name="timepoint"
+                recognized
+                type="string"
+                desc="Time-of-collection label (e.g. 'D0', 'week2'). Shown as a calendar pill."
+                aliases={["time_point", "time", "day", "week", "visit"]}
+                example={`sample_id  timepoint\n58D0       D0\n58D7       D7\n58D28      D28\n58D43      D43\n58D382     D382`}
+              />
+              <HelpCol
+                name="biome"
+                recognized
+                type="string"
+                desc="Biological compartment (e.g. 'infant gut', 'maternal gut', 'skin', 'control'). Shown as a beaker pill. Values containing 'control', 'blank' or 'negative' (case-insensitive) automatically tag the sample as a negative control (red shield pill)."
+                aliases={["body_site", "bodysite", "tissue", "sample_site"]}
+                example={`sample_id  biome\n58D7       infant gut\n58M        maternal gut\nNC3        control\n83D239     infant gut\n40M        maternal gut`}
+              />
+              <HelpCol
+                name="low_biomass"
+                recognized
+                type="bool"
+                desc="True/false flag for low-biomass samples (more vulnerable to contamination, per Lou et al. 2023). Shown as a droplet pill. Accepted values: true/1/yes or false/0/no."
+                aliases={["is_low_biomass", "lowbiomass"]}
+                example={`sample_id  low_biomass\n69D4       true\n72D6       true\nNC3        true\n58D43      false\n58M        false`}
+              />
+              <HelpCol
+                name="group_id"
+                recognized
+                type="string"
+                desc="Generic group identifier — could be a family, cage, household, etc. Two samples sharing a group_id trigger the 'same group' criterion in Guided validation."
+                aliases={[
+                  "group",
+                  "related_group_id",
+                  "related_group",
+                  "family_id",
+                  "family",
+                  "cage_id",
+                  "cage",
+                  "household_id",
+                  "household",
+                ]}
+                example={`sample_id  group_id\n58D7       G_058_059_060\n58M        G_058_059_060\n60D38      G_058_059_060\n63D9       G_063\n83D88      G_083`}
+              />
+              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+                <td className="py-3 pr-4 align-top">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <code
+                      className="text-[12px] px-1.5 py-0.5 rounded-sm"
+                      style={{
+                        background: "#f6f7f7",
+                        color: "#797870",
+                        fontFamily: "ui-monospace, monospace",
+                        fontWeight: 700,
+                        fontStyle: "italic",
+                      }}
+                    >
+                      any other column
+                    </code>
+                  </div>
+                </td>
+                <td
+                  className="py-3 pr-4 align-top text-[12px]"
+                  style={{ color: "#797870" }}
+                >
+                  any
+                </td>
+                <td className="py-3 align-top text-[13px]">
+                  Anything you add (cohort, study, dna_extraction_date,
+                  ncbi_code, …) is preserved and rendered as a neutral
+                  "key:&nbsp;value" pill in the Sample context panel of
+                  Guided validation. No extra logic, just visible context.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div
+            className="mt-4 p-4 rounded-sm text-[13px]"
+            style={{
+              background: "rgba(0,163,166,0.06)",
+              border: "1px solid rgba(0,163,166,0.3)",
+            }}
+          >
+            <p style={{ color: "#275662", fontWeight: 600 }}>
+              You can add as many extra columns as you want.
+            </p>
+            <p style={{ color: "#797870", marginTop: 4 }}>
+              Only the six columns above (sample_id + 5 recognized) trigger
+              dedicated UI features. Any other column you include —
+              treatment arm, batch number, sequencing depth, location, NCBI
+              code, you name it — will simply appear as a contextual pill
+              when you inspect a sample. Nothing is silently dropped.
+            </p>
+          </div>
+        </HelpSection>
+
+        {/* ---------- plate_map.tsv ---------- */}
+        <HelpSection
+          id="h-plate"
+          eyebrow="Optional input"
+          title="plate_map.tsv"
+        >
+          <p>Three columns: sample id, plate name, well coordinate.</p>
+          <table className="w-full text-left mt-3">
+            <thead>
+              <tr style={{ borderBottom: "2px solid #275662" }}>
+                <th className="py-2 pr-4 text-[11px] uppercase">Column</th>
+                <th className="py-2 pr-4 text-[11px] uppercase">Type</th>
+                <th className="py-2 text-[11px] uppercase">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <HelpCol
+                name="sample_id"
+                required
+                type="string"
+                desc="Sample identifier."
+                aliases={["sample", "id"]}
+                example={`sample_id  plate  well\n40D89      P3     A01\n58M        P3     C03\n58D7       P3     D03\nNC3        P3     H06\n83D239     P3     E10`}
+              />
+              <HelpCol
+                name="plate"
+                required
+                type="string"
+                desc="Plate name or identifier."
+                aliases={["plate_id", "plateid"]}
+              />
+              <HelpCol
+                name="well"
+                required
+                type="A01..H12 or A01..P24"
+                desc="Well coordinate. Both 96-well and 384-well plates are supported. Letter-then-number, e.g. 'A01', 'B7', 'P24'."
+                aliases={["position", "well_id", "pos"]}
+              />
+            </tbody>
+          </table>
+          <p>
+            With a plate map loaded, the Plate map tab opens an interactive
+            view of the plate(s), shows arrows for adjacent contamination
+            events, and the Guided validation tab can score the "Proximity
+            on plate" contextual criterion.
+          </p>
+        </HelpSection>
+
+        {/* ---------- Tabs walkthrough ---------- */}
+        <HelpSection
+          id="h-tabs"
+          eyebrow="Walkthrough"
+          title="Tabs walkthrough"
+        >
+          <div className="space-y-4">
+            <div>
+              <h4 style={{ color: "#275662", fontWeight: 700 }}>
+                Overview
+              </h4>
+              <p>
+                Counts of events by verdict, top contaminated samples, and
+                run parameters parsed from the events file header.
+              </p>
+            </div>
+            <div>
+              <h4 style={{ color: "#275662", fontWeight: 700 }}>
+                Events table
+              </h4>
+              <p>
+                Sortable, filterable list of every event. Each row shows
+                source / target sample names with their metadata flags
+                (control, low biomass, biome) and pills for context (related
+                samples, plate proximity, cascade). Click a row to jump into
+                Guided validation.
+              </p>
+            </div>
+            <div>
+              <h4 style={{ color: "#275662", fontWeight: 700 }}>
+                Scatterplots
+              </h4>
+              <p>
+                Gallery of source-vs-target scatterplots. Each species is a
+                point. Points above the y=x line indicate species more
+                abundant in the contaminated sample than in the source —
+                their count is one of the automatic criteria.
+              </p>
+            </div>
+            <div>
+              <h4 style={{ color: "#275662", fontWeight: 700 }}>Network</h4>
+              <p>
+                Directed graph of all events. Nodes coloured by role:
+                source-only (white), target-only (deep teal), cascade (both
+                sides — salmon). Edge thickness and colour intensity scale
+                with the contamination rate (log-scaled). Pan with drag,
+                zoom with scroll. Click an edge to open the event in Guided
+                validation.
+              </p>
+            </div>
+            <div>
+              <h4 style={{ color: "#275662", fontWeight: 700 }}>Plate map</h4>
+              <p>
+                Three sub-views: Overview (thumbnails of all plates),
+                Inspect (single plate with optional contamination arrows),
+                and Edit (drag samples between wells if you need to fix the
+                map manually).
+              </p>
+            </div>
+            <div>
+              <h4 style={{ color: "#275662", fontWeight: 700 }}>
+                Guided validation
+              </h4>
+              <p>
+                One event at a time, with the scatterplot, six diagnostic
+                criteria (see below), the plate position when relevant, and
+                a sample-context panel showing every metadata flag for both
+                source and target. Assign a verdict in three clicks.
+              </p>
+            </div>
+            <div>
+              <h4 style={{ color: "#275662", fontWeight: 700 }}>Export</h4>
+              <p>
+                Two TSV outputs (true positives only, or everything except
+                false positives), and a JSON audit trail with verdicts,
+                notes, metadata context and cascade flags.
+              </p>
+            </div>
+          </div>
+        </HelpSection>
+
+        {/* ---------- Criteria ---------- */}
+        <HelpSection
+          id="h-criteria"
+          eyebrow="Scoring"
+          title="Validation criteria"
+        >
+          <p>
+            Each event is evaluated on six criteria — four data-driven
+            (computed from the abundance table) and two context-driven (from
+            metadata + plate map). Criteria can pass (good), fail (bad) or
+            be inconclusive (neutral). The Guided validation tab summarizes
+            them visually.
+          </p>
+          <table className="w-full text-left mt-3">
+            <thead>
+              <tr style={{ borderBottom: "2px solid #275662" }}>
+                <th className="py-2 pr-3 text-[11px] uppercase">#</th>
+                <th className="py-2 pr-4 text-[11px] uppercase">Criterion</th>
+                <th className="py-2 text-[11px] uppercase">What it checks</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "#797870", fontWeight: 700 }}>01</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "#275662" }}>RF probability</td>
+                <td className="py-2.5 align-top text-[13px]">
+                  CroCoDeEL's own probability for this event. Higher is more
+                  confident.
+                </td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "#797870", fontWeight: 700 }}>02</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "#275662" }}>Contamination rate</td>
+                <td className="py-2.5 align-top text-[13px]">
+                  Magnitude of the contamination. Very small rates (&lt; 0.1%)
+                  are noisy; very high rates (&gt; 30%) are striking and often
+                  correspond to identical or near-identical samples.
+                </td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "#797870", fontWeight: 700 }}>03</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "#275662" }}>Missing-from-source species</td>
+                <td className="py-2.5 align-top text-[13px]">
+                  Number of species detected in the contaminated sample but
+                  absent from the alleged source. A real contamination should
+                  not introduce species that the source itself does not have.
+                </td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "#797870", fontWeight: 700 }}>04</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "#275662" }}>Above-line species</td>
+                <td className="py-2.5 align-top text-[13px]">
+                  Number of species more abundant in the contaminated sample
+                  than in the source (above the y=x diagonal in the
+                  scatterplot). A clean contamination should have very few
+                  such species.
+                </td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "#797870", fontWeight: 700 }}>05</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "#275662" }}>Related samples</td>
+                <td className="py-2.5 align-top text-[13px]">
+                  Are source and target the same subject (longitudinal) or in
+                  the same group (sibling, cage, site)? Both situations are
+                  classic false-positive triggers because the samples
+                  legitimately share microbes.
+                </td>
+              </tr>
+              <tr>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "#797870", fontWeight: 700 }}>06</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "#275662" }}>Proximity on plate</td>
+                <td className="py-2.5 align-top text-[13px]">
+                  Chebyshev distance between the two wells. Adjacent (Δ ≤ 1)
+                  is a strong well-to-well leakage signal; Δ = 2 is suspicious;
+                  different plates makes well-to-well unlikely.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </HelpSection>
+
+        {/* ---------- Sample flags ---------- */}
+        <HelpSection
+          id="h-flags"
+          eyebrow="Visual reference"
+          title="Sample flags reference"
+        >
+          <p>
+            Every flag derived from metadata appears as a coloured pill in
+            the events table and in the Sample context panel. Quick legend:
+          </p>
+          <table className="w-full text-left mt-3">
+            <thead>
+              <tr style={{ borderBottom: "2px solid #275662" }}>
+                <th className="py-2 pr-4 text-[11px] uppercase">Pill</th>
+                <th className="py-2 pr-4 text-[11px] uppercase">Source</th>
+                <th className="py-2 text-[11px] uppercase">Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+                <td className="py-3 pr-4 align-middle">
+                  <Pill tone="bad">
+                    <ShieldAlert className="w-3 h-3" />
+                    control
+                  </Pill>
+                </td>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                  biome contains "control" / "blank" / "negative"
+                </td>
+                <td className="py-3 align-middle text-[13px]">
+                  Negative control. Any contamination involving a control is
+                  critical and should be flagged as well-to-well leakage.
+                </td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+                <td className="py-3 pr-4 align-middle">
+                  <Pill tone="warn">
+                    <Droplets className="w-3 h-3" />
+                    low biomass
+                  </Pill>
+                </td>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                  low_biomass = true
+                </td>
+                <td className="py-3 align-middle text-[13px]">
+                  Low-biomass sample — more vulnerable to background
+                  contamination per Lou et al. 2023.
+                </td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+                <td className="py-3 pr-4 align-middle">
+                  <Pill tone="primary">
+                    <Beaker className="w-3 h-3" />
+                    infant gut
+                  </Pill>
+                </td>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                  biome value
+                </td>
+                <td className="py-3 align-middle text-[13px]">
+                  Biological compartment. Hidden when the sample is already
+                  flagged as a control to avoid duplicate display.
+                </td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+                <td className="py-3 pr-4 align-middle">
+                  <Pill tone="neutral">
+                    <User className="w-3 h-3" />
+                    58
+                  </Pill>
+                </td>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                  subject_id
+                </td>
+                <td className="py-3 align-middle text-[13px]">
+                  Subject / individual identifier.
+                </td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+                <td className="py-3 pr-4 align-middle">
+                  <Pill tone="neutral">
+                    <Calendar className="w-3 h-3" />
+                    D7
+                  </Pill>
+                </td>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                  timepoint
+                </td>
+                <td className="py-3 align-middle text-[13px]">
+                  Sample collection time-point.
+                </td>
+              </tr>
+              <tr>
+                <td className="py-3 pr-4 align-middle">
+                  <Pill tone="violet">
+                    <Users className="w-3 h-3" />
+                    G_058_059_060
+                  </Pill>
+                </td>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                  group_id
+                </td>
+                <td className="py-3 align-middle text-[13px]">
+                  Generic group — siblings, cage mates, household, etc. Two
+                  samples sharing this id trigger the "same group" criterion.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </HelpSection>
+
+        {/* ---------- Privacy ---------- */}
+        <HelpSection
+          id="h-privacy"
+          eyebrow="Data flow"
+          title="Privacy & how it works"
+        >
+          <div
+            className="rounded-sm p-4"
+            style={{
+              background: "rgba(0,163,166,0.08)",
+              border: "1px solid #00a3a6",
+            }}
+          >
+            <p style={{ color: "#275662", fontWeight: 600 }}>
+              The application runs entirely in your browser. No file you
+              load is ever uploaded to any server.
+            </p>
+          </div>
+          <p>
+            Parsing, scoring, network layout and verdict tracking all happen
+            in client-side JavaScript. All your data lives in the page's
+            memory — closing the tab discards it. Use the Export tab (or the
+            per-file Download buttons) to save your work.
+          </p>
+          <p>
+            The static HTML/JS bundle is served from GitHub Pages. There is
+            no analytics, no tracking pixel, no cookie set by the
+            application itself.
+          </p>
+        </HelpSection>
+
+        {/* ---------- FAQ ---------- */}
+        <HelpSection id="h-faq" eyebrow="Common questions" title="FAQ">
+          <div className="space-y-5">
+            <div>
+              <p style={{ color: "#275662", fontWeight: 700 }}>
+                Why does an event between two longitudinal samples (same
+                subject) appear with such a high contamination rate?
+              </p>
+              <p>
+                Longitudinal samples from the same person legitimately share
+                a large fraction of their microbial composition. CroCoDeEL's
+                model can flag that as a high-rate event even though no
+                cross-contamination occurred. The "same subject" criterion
+                in Guided validation exists precisely to catch these false
+                positives.
+              </p>
+            </div>
+            <div>
+              <p style={{ color: "#275662", fontWeight: 700 }}>
+                A negative control (NC) appears as a target — what does that
+                mean?
+              </p>
+              <p>
+                Any contamination flowing <em>into</em> a negative control is
+                a strong signal of well-to-well leakage in the extraction or
+                library-prep step, since a clean control should have
+                essentially no signal. Inspect the plate map: if the source
+                sits next to the NC, well-to-well is the most plausible
+                explanation.
+              </p>
+            </div>
+            <div>
+              <p style={{ color: "#275662", fontWeight: 700 }}>
+                What if my plate has a different format from yours
+                (e.g. 384-well, custom labels)?
+              </p>
+              <p>
+                Both 96-well (A01–H12) and 384-well (A01–P24) plates are
+                supported automatically based on the highest row letter and
+                column number found in the file. Custom plate names are
+                preserved as-is.
+              </p>
+            </div>
+            <div>
+              <p style={{ color: "#275662", fontWeight: 700 }}>
+                Can I edit the plate map directly in the app?
+              </p>
+              <p>
+                Yes — the Plate map tab has an "Edit" sub-view where you can
+                drag samples between wells with arrow keys + Enter or
+                cut-and-paste. Edited plate maps can be re-downloaded with
+                the Download button on the upload card.
+              </p>
+            </div>
+            <div>
+              <p style={{ color: "#275662", fontWeight: 700 }}>
+                Does refreshing the page lose my work?
+              </p>
+              <p>
+                Yes — verdicts and notes only live in the page's memory.
+                Use the Export tab regularly, or download the JSON audit
+                trail when you take a break.
+              </p>
+            </div>
+          </div>
+        </HelpSection>
+
+        {/* ---------- Citing ---------- */}
+        <HelpSection
+          id="h-cite"
+          eyebrow="Citing"
+          title="References"
+        >
+          <p>
+            If you use this tool in published work, cite the underlying
+            CroCoDeEL paper:
+          </p>
+          <div
+            className="p-4 rounded-sm text-[13px]"
+            style={{
+              background: "#f6f7f7",
+              border: "1px solid #e6e8e8",
+            }}
+          >
+            Goulet L. et al.,{" "}
+            <em>
+              CroCoDeEL: Cross-sample Contamination Detection in
+              metagenomics
+            </em>
+            , bioRxiv 2025.{" "}
+            <a
+              href="https://doi.org/10.1101/2025.01.15.633153"
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "#00a3a6", fontWeight: 600 }}
+            >
+              doi.org/10.1101/2025.01.15.633153
+            </a>
+          </div>
+          <p>
+            The demonstration dataset is from the strain-resolved
+            contamination analysis of Lou et al.:
+          </p>
+          <div
+            className="p-4 rounded-sm text-[13px]"
+            style={{
+              background: "#f6f7f7",
+              border: "1px solid #e6e8e8",
+            }}
+          >
+            Lou Y.C. et al.,{" "}
+            <em>
+              Using strain-resolved analysis to identify contamination in
+              metagenomics data
+            </em>
+            , Microbiome 11, 36 (2023).{" "}
+            <a
+              href="https://doi.org/10.1186/s40168-023-01477-2"
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "#00a3a6", fontWeight: 600 }}
+            >
+              doi.org/10.1186/s40168-023-01477-2
+            </a>
+          </div>
+          <p style={{ color: "#797870", fontSize: 12 }}>
+            CroCoDeEL is developed at INRAE / Metagenopolis. Source code:{" "}
+            <a
+              href="https://github.com/metagenopolis/CroCoDeEL"
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "#00a3a6" }}
+            >
+              github.com/metagenopolis/CroCoDeEL
+            </a>
+            .
+          </p>
+        </HelpSection>
+      </div>
+    </div>
+  );
+};
+
 const ExportTab = ({ counts, onExportTSV, onExportJSON }) => (
   <div>
     <SectionTitle eyebrow="Export" title="Save your curated report">
@@ -5714,6 +6870,41 @@ export default function App() {
               onFile={loadEvents}
               primary
               inputRef={eventFileRef}
+              info={
+                <>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                    CroCoDeEL output file (TSV)
+                  </div>
+                  Required columns:{" "}
+                  <code style={{ fontFamily: "ui-monospace, monospace" }}>
+                    source
+                  </code>
+                  ,{" "}
+                  <code style={{ fontFamily: "ui-monospace, monospace" }}>
+                    contaminated_sample
+                  </code>
+                  ,{" "}
+                  <code style={{ fontFamily: "ui-monospace, monospace" }}>
+                    rate
+                  </code>
+                  ,{" "}
+                  <code style={{ fontFamily: "ui-monospace, monospace" }}>
+                    probability
+                  </code>
+                  . Optional:{" "}
+                  <code style={{ fontFamily: "ui-monospace, monospace" }}>
+                    score
+                  </code>
+                  ,{" "}
+                  <code style={{ fontFamily: "ui-monospace, monospace" }}>
+                    introduced_species
+                  </code>
+                  . An optional first comment line starting with{" "}
+                  <code style={{ fontFamily: "ui-monospace, monospace" }}>#</code>{" "}
+                  carries CroCoDeEL run parameters and is shown in the
+                  Overview tab.
+                </>
+              }
               onDownload={
                 rawEvents.length
                   ? () =>
@@ -5743,6 +6934,18 @@ export default function App() {
               }
               onFile={loadAbundance}
               inputRef={abFileRef}
+              info={
+                <>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                    Species × sample abundance matrix (TSV)
+                  </div>
+                  First column lists species names, every other column is a
+                  sample. Values are normalized to relative abundances
+                  (summing to 1 per sample) at parse time. Loading this file
+                  unlocks scatterplots, automatic scoring criteria, and
+                  inline mini-scatterplots in Guided validation.
+                </>
+              }
               onDownload={
                 ab
                   ? () =>
@@ -5818,14 +7021,11 @@ export default function App() {
       </section>
 
       {/* ==================== CONTENT ==================== */}
-      {events.length === 0 ? (
-        <EmptyState onLoadDemo={loadDemo} demoLoading={demoLoading} />
-      ) : (
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <nav
-            className="flex flex-wrap gap-0 mb-8"
-            style={{ borderBottom: "2px solid #e6e8e8" }}
-          >
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        <nav
+          className="flex flex-wrap gap-0 mb-8"
+          style={{ borderBottom: "2px solid #e6e8e8" }}
+        >
             {[
               { id: "overview", label: "Overview", icon: BookOpen },
               { id: "table", label: "Events table", icon: TableIcon },
@@ -5834,6 +7034,7 @@ export default function App() {
               { id: "plate", label: "Plate map", icon: MapPin },
               { id: "validate", label: "Guided validation", icon: ClipboardCheck },
               { id: "export", label: "Export", icon: Download },
+              { id: "help", label: "Help", icon: HelpCircle },
             ].map((t) => {
               const Icon = t.icon;
               const active = tab === t.id;
@@ -5859,6 +7060,10 @@ export default function App() {
             })}
           </nav>
 
+          {events.length === 0 && tab !== "help" ? (
+            <EmptyState onLoadDemo={loadDemo} demoLoading={demoLoading} />
+          ) : (
+            <>
           {tab === "overview" && (
             <Overview
               counts={counts}
@@ -5947,8 +7152,10 @@ export default function App() {
               onExportJSON={exportJSON}
             />
           )}
+          {tab === "help" && <HelpTab />}
+            </>
+          )}
         </div>
-      )}
 
       {/* ==================== FOOTER ==================== */}
       <footer
