@@ -3598,7 +3598,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick }) => {
           INSPECT MODE
           ============================================================ */}
       {mode === "inspect" && plateMap && plates.length > 0 && (
-        <div className="grid lg:grid-cols-[auto_1fr] gap-8">
+        <div className="grid lg:grid-cols-[auto_minmax(0,520px)] gap-8 lg:gap-10">
           <div>
             {/* Plate picker — pills for few, dropdown for many */}
             {plates.length > 1 && (
