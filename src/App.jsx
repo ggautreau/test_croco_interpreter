@@ -19,6 +19,11 @@ import {
   BookOpen,
   MapPin,
   ShieldCheck,
+  ShieldAlert,
+  Beaker,
+  Droplets,
+  User,
+  Calendar,
 } from "lucide-react";
 
 /* ============================================================================
@@ -223,7 +228,69 @@ const METADATA_COLS = {
     "visit",
     "tp",
   ],
+  biome: [
+    "biome",
+    "body_site",
+    "bodysite",
+    "site",
+    "tissue",
+    "sample_site",
+    "source",
+  ],
+  control: [
+    "is_control",
+    "control",
+    "is_nc",
+    "negative_control",
+    "sample_type",
+    "type",
+  ],
+  biomass: [
+    "biomass",
+    "dna_concentration",
+    "dna_yield",
+    "concentration",
+    "yield",
+    "ng_ul",
+    "dna_ng",
+  ],
+  lowBiomass: ["low_biomass", "is_low_biomass", "lowbiomass"],
 };
+
+/** Heuristic detection of a negative control by name when the metadata
+    doesn't carry an explicit `is_control` column. Looks for common
+    naming patterns: NC, NC1, NC_blank, blank, negative, ntc, etc. */
+function looksLikeControl(sampleId) {
+  if (!sampleId) return false;
+  const s = String(sampleId).toLowerCase().trim();
+  // Strict patterns that almost always denote controls
+  if (/^nc[\d_]*$/.test(s)) return true; // NC, NC1, NC_3, ...
+  if (/^ntc[\d_]*$/.test(s)) return true; // NTC, NTC1
+  if (/^pc[\d_]*$/.test(s)) return true; // PC, PC1 (positive controls — flag too)
+  if (/^blank/.test(s)) return true;
+  if (/(^|[_\-\s])(blank|negative|ntc|nc)([_\-\s\d]|$)/.test(s)) return true;
+  return false;
+}
+
+/** Truthy-ish parsing: accepts true/false, 1/0, yes/no, t/f. Returns a
+    boolean or null if the value is empty/unrecognized. */
+function parseBool(v) {
+  if (v === undefined || v === null || v === "") return null;
+  const s = String(v).toLowerCase().trim();
+  if (["1", "true", "t", "yes", "y"].includes(s)) return true;
+  if (["0", "false", "f", "no", "n"].includes(s)) return false;
+  return null;
+}
+
+/** Some `sample_type` columns embed the control role inline; recognize those. */
+function isControlFromType(typeStr) {
+  if (!typeStr) return null;
+  const s = String(typeStr).toLowerCase().trim();
+  if (/^(nc|ntc|negative|negative.?control|blank|reagent.?blank)$/.test(s))
+    return true;
+  if (/^(pc|positive|positive.?control|zymo)$/.test(s)) return true;
+  return null;
+}
 
 function parseMetadata(text) {
   const { header, rows } = parseTSV(text);
@@ -234,6 +301,10 @@ function parseMetadata(text) {
     sample: pickCol(header, METADATA_COLS.sample),
     subject: pickCol(header, METADATA_COLS.subject),
     timepoint: pickCol(header, METADATA_COLS.timepoint),
+    biome: pickCol(header, METADATA_COLS.biome),
+    control: pickCol(header, METADATA_COLS.control),
+    biomass: pickCol(header, METADATA_COLS.biomass),
+    lowBiomass: pickCol(header, METADATA_COLS.lowBiomass),
   };
   if (!cols.sample) throw new Error("sample_id column not found");
   if (!cols.subject) throw new Error("subject_id column not found");
@@ -244,14 +315,109 @@ function parseMetadata(text) {
     bySample[id] = {
       subject: r[cols.subject] || "",
       timepoint: cols.timepoint ? r[cols.timepoint] || "" : "",
+      biome: cols.biome ? r[cols.biome] || "" : "",
+      // is_control: explicit bool column wins; sample_type with a control
+      // value also counts; otherwise null (regex fallback handled later).
+      isControlExplicit:
+        parseBool(cols.control ? r[cols.control] : null) ??
+        isControlFromType(cols.control ? r[cols.control] : null),
+      biomassValue: cols.biomass
+        ? Number.parseFloat(r[cols.biomass])
+        : null,
+      lowBiomassExplicit: parseBool(
+        cols.lowBiomass ? r[cols.lowBiomass] : null,
+      ),
       extra: { ...r },
     };
   });
+
+  // Compute a relative low-biomass threshold (10th percentile) when
+  // numeric biomass values are present. Used as fallback when the
+  // metadata doesn't carry an explicit `low_biomass` column.
+  let biomassThreshold = null;
+  const biomassValues = Object.values(bySample)
+    .map((s) => s.biomassValue)
+    .filter((v) => Number.isFinite(v));
+  if (biomassValues.length >= 5) {
+    const sorted = [...biomassValues].sort((a, b) => a - b);
+    const idx = Math.floor(sorted.length * 0.1);
+    biomassThreshold = sorted[idx];
+  }
+
   return {
     cols,
     bySample,
     nSamples: Object.keys(bySample).length,
+    biomassThreshold,
+    hasBiomeCol: !!cols.biome,
+    hasControlCol: !!cols.control,
+    hasBiomassCol: !!cols.biomass,
   };
+}
+
+/** Collect every sample-level flag we can derive from metadata + name regex.
+    Returns { isControl, controlSource, isLowBiomass, biome, subject, timepoint, other }.
+    `controlSource` is "metadata" or "name" so the UI can show how we figured it out. */
+function flagSample(sampleId, metadata) {
+  const flags = {
+    isControl: false,
+    controlSource: null,
+    isLowBiomass: false,
+    biome: null,
+    subject: null,
+    timepoint: null,
+    other: {},
+  };
+  if (!sampleId) return flags;
+  const meta = metadata?.bySample?.[sampleId];
+
+  // 1) is_control
+  if (meta?.isControlExplicit === true) {
+    flags.isControl = true;
+    flags.controlSource = "metadata";
+  } else if (looksLikeControl(sampleId)) {
+    flags.isControl = true;
+    flags.controlSource = "name";
+  }
+
+  // 2) low_biomass: explicit column wins, then numeric threshold
+  if (meta?.lowBiomassExplicit === true) {
+    flags.isLowBiomass = true;
+  } else if (
+    meta &&
+    Number.isFinite(meta.biomassValue) &&
+    Number.isFinite(metadata?.biomassThreshold) &&
+    meta.biomassValue <= metadata.biomassThreshold
+  ) {
+    flags.isLowBiomass = true;
+  }
+
+  // 3) biome / subject / timepoint
+  if (meta?.biome) flags.biome = meta.biome;
+  if (meta?.subject) flags.subject = meta.subject;
+  if (meta?.timepoint) flags.timepoint = meta.timepoint;
+
+  // 4) other (extra columns the user provided that aren't in our standard set)
+  if (meta?.extra) {
+    const skip = new Set(
+      [
+        metadata.cols.sample,
+        metadata.cols.subject,
+        metadata.cols.timepoint,
+        metadata.cols.biome,
+        metadata.cols.control,
+        metadata.cols.biomass,
+        metadata.cols.lowBiomass,
+      ].filter(Boolean),
+    );
+    Object.entries(meta.extra).forEach(([k, v]) => {
+      if (!skip.has(k) && v !== "" && v !== null && v !== undefined) {
+        flags.other[k] = v;
+      }
+    });
+  }
+
+  return flags;
 }
 
 /* ---------- plate_map.tsv ---------- */
@@ -634,6 +800,67 @@ const Pill = ({ children, tone = "neutral", className = "" }) => {
       {children}
     </span>
   );
+};
+
+/** Renders a row of metadata-derived pills for a single sample.
+    `compact` skips the lower-priority flags (subject, timepoint, other)
+    so it doesn't dominate dense tables. */
+const SampleFlags = ({ flags, compact = false }) => {
+  if (!flags) return null;
+  const items = [];
+
+  if (flags.isControl) {
+    items.push(
+      <Pill key="ctrl" tone="bad">
+        <ShieldAlert className="w-3 h-3" />
+        control{flags.controlSource === "name" ? " (by name)" : ""}
+      </Pill>,
+    );
+  }
+  if (flags.isLowBiomass) {
+    items.push(
+      <Pill key="lb" tone="warn">
+        <Droplets className="w-3 h-3" />
+        low biomass
+      </Pill>,
+    );
+  }
+  if (flags.biome) {
+    items.push(
+      <Pill key="bio" tone="primary">
+        <Beaker className="w-3 h-3" />
+        {flags.biome}
+      </Pill>,
+    );
+  }
+  if (!compact) {
+    if (flags.subject) {
+      items.push(
+        <Pill key="subj" tone="neutral">
+          <User className="w-3 h-3" />
+          {flags.subject}
+        </Pill>,
+      );
+    }
+    if (flags.timepoint) {
+      items.push(
+        <Pill key="tp" tone="neutral">
+          <Calendar className="w-3 h-3" />
+          {flags.timepoint}
+        </Pill>,
+      );
+    }
+    Object.entries(flags.other || {}).forEach(([k, v]) => {
+      items.push(
+        <Pill key={`o-${k}`} tone="neutral">
+          <span style={{ opacity: 0.6, fontWeight: 500 }}>{k}:</span> {v}
+        </Pill>,
+      );
+    });
+  }
+
+  if (items.length === 0) return null;
+  return <div className="flex flex-wrap items-center gap-1">{items}</div>;
 };
 
 const SectionTitle = ({ eyebrow, title, children }) => (
@@ -2265,7 +2492,7 @@ const EmptyState = ({ onLoadDemo, demoLoading }) => (
       <div>
         <SectionTitle eyebrow="Getting started" title="Upload your events to begin">
           CroCoDeEL flags cross-sample contamination events but clearly warns that some
-          are false positives requiring human inspection. This tool replaces the PDF.
+          are false positives requiring human inspection.
         </SectionTitle>
 
         {onLoadDemo && (
@@ -5745,18 +5972,14 @@ export default function App() {
           <div className="flex flex-col items-center text-center gap-4">
             <Chevron size={18} color="#00a3a6" />
             <div
-              className="text-[13px]"
+              className="text-[13px] whitespace-nowrap"
               style={{
                 color: "#275662",
                 fontWeight: 600,
                 fontFamily: '"Raleway", sans-serif',
               }}
             >
-              Institut National de Recherche pour
-              <br />
-              <span style={{ fontWeight: 800 }}>
-                l'Agriculture, l'Alimentation et l'Environnement (INRAE)
-              </span>
+              Institut National de Recherche pour l'Agriculture, l'Alimentation et l'Environnement (INRAE)
             </div>
             <div className="flex items-center gap-6 mt-2">
               <RepubliqueFrancaise height={40} />
