@@ -1930,11 +1930,26 @@ const EmptyState = ({ onLoadDemo, demoLoading }) => (
                   fontFamily: '"Raleway", sans-serif',
                 }}
               >
-                No data handy?
+                No data of your own?
               </div>
               <div className="text-[13px]" style={{ color: "#275662" }}>
-                Load a small demo run (14 samples · 1990 species · 7 flagged
-                events) to explore the tool immediately.
+                Try the tool on real data from{" "}
+                <a
+                  href="https://doi.org/10.1186/s40168-023-01477-2"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "#00a3a6",
+                    fontWeight: 600,
+                    textDecoration: "underline",
+                  }}
+                >
+                  Lou et al. 2023
+                </a>{" "}
+                — extraction plate P3 from a study of preterm and full-term
+                infant fecal samples (NCBI BioProject PRJNA698986). The authors
+                identified clear well-to-well contamination on this plate using
+                a strain-resolution approach.
               </div>
             </div>
             <button
@@ -5293,8 +5308,20 @@ export default function App() {
               className="text-[11px] mt-4 max-w-2xl leading-relaxed"
               style={{ color: "#797870" }}
             >
-              Interpretation aid for CroCoDeEL results. Cite: Goulet, L. et al., bioRxiv 2025,
-              doi:10.1101/2025.01.15.633153.
+              Interpretation aid for CroCoDeEL results. Cite: Goulet L. et al.,
+              bioRxiv 2025,{" "}
+              <a
+                href="https://doi.org/10.1101/2025.01.15.633153"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: "#00a3a6",
+                  textDecoration: "underline",
+                }}
+              >
+                doi.org/10.1101/2025.01.15.633153
+              </a>
+              .
             </div>
             <div
               className="text-[11px] mt-1 italic"
