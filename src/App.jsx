@@ -2897,6 +2897,8 @@ const RunMetadataBlock = ({ meta }) => {
 const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOpen, onLoadDemo, demoLoading }) => {
   const topByScore = [...events].sort((a, b) => b.score - a.score).slice(0, 5);
   const topByRate = [...events].sort((a, b) => b.rate - a.rate).slice(0, 5);
+  const bottomByScore = [...events].sort((a, b) => a.score - b.score).slice(0, 5);
+  const bottomByRate = [...events].sort((a, b) => a.rate - b.rate).slice(0, 5);
   const noData = events.length === 0;
 
   const relatedCount = useMemo(() => {
@@ -3024,16 +3026,28 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
 
       <div className="grid md:grid-cols-2 gap-8">
         <TopList
+          title="Top 5 by contamination rate"
+          items={topByRate}
+          onOpen={onOpen}
+          fmt={(e) => `${(e.rate * 100).toFixed(2)}%`}
+        />
+        <TopList
           title="Top 5 by probability"
           items={topByScore}
           onOpen={onOpen}
           fmt={(e) => e.score.toFixed(3)}
         />
         <TopList
-          title="Top 5 by contamination rate"
-          items={topByRate}
+          title="Bottom 5 by contamination rate"
+          items={bottomByRate}
           onOpen={onOpen}
           fmt={(e) => `${(e.rate * 100).toFixed(2)}%`}
+        />
+        <TopList
+          title="Bottom 5 by probability"
+          items={bottomByScore}
+          onOpen={onOpen}
+          fmt={(e) => e.score.toFixed(3)}
         />
       </div>
     </div>
