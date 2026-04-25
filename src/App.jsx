@@ -832,30 +832,146 @@ const Scatterplot = ({ scatter, width = 560, height = 500 }) => {
 };
 
 /* ---------- NETWORK GRAPH ---------- */
+/** Build connected components from a list of (source, target) edges,
+    treating the graph as undirected for grouping purposes. */
+function buildComponents(events) {
+  const parent = {};
+  const find = (x) => {
+    if (parent[x] !== x) parent[x] = find(parent[x]);
+    return parent[x];
+  };
+  const union = (a, b) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[ra] = rb;
+  };
+
+  events.forEach((e) => {
+    if (parent[e.source] === undefined) parent[e.source] = e.source;
+    if (parent[e.target] === undefined) parent[e.target] = e.target;
+    union(e.source, e.target);
+  });
+
+  const comps = {};
+  Object.keys(parent).forEach((node) => {
+    const root = find(node);
+    if (!comps[root]) comps[root] = { nodes: new Set(), edges: [] };
+    comps[root].nodes.add(node);
+  });
+  events.forEach((e) => {
+    const root = find(e.source);
+    comps[root].edges.push(e);
+  });
+
+  // Convert to array, sort by size descending so big components go first
+  return Object.values(comps)
+    .map((c) => ({ nodes: Array.from(c.nodes), edges: c.edges }))
+    .sort((a, b) => b.nodes.length - a.nodes.length);
+}
+
+/** Lay out one connected component inside its allocated cell. Returns
+    { nodes: [{id, x, y}], edges: events_unchanged }. */
+function layoutComponent(comp, cellWidth, cellHeight) {
+  const { nodes, edges } = comp;
+  const cx = cellWidth / 2;
+  const cy = cellHeight / 2;
+  const positions = {};
+
+  if (nodes.length === 1) {
+    positions[nodes[0]] = { x: cx, y: cy };
+  } else if (nodes.length === 2 && edges.length === 1) {
+    // Simple pair: horizontal arrow
+    const e = edges[0];
+    positions[e.source] = { x: cellWidth * 0.28, y: cy };
+    positions[e.target] = { x: cellWidth * 0.72, y: cy };
+  } else {
+    // Larger component: use a layered layout based on in/out-degrees.
+    const inDeg = {};
+    const outDeg = {};
+    nodes.forEach((n) => {
+      inDeg[n] = 0;
+      outDeg[n] = 0;
+    });
+    edges.forEach((e) => {
+      inDeg[e.target]++;
+      outDeg[e.source]++;
+    });
+    // Pure sources (in=0) on the left, pure targets on the right, both in middle
+    const sources = nodes.filter((n) => inDeg[n] === 0 && outDeg[n] > 0);
+    const targets = nodes.filter((n) => outDeg[n] === 0 && inDeg[n] > 0);
+    const middles = nodes.filter((n) => inDeg[n] > 0 && outDeg[n] > 0);
+
+    const placeColumn = (list, x) => {
+      const n = list.length;
+      list.forEach((id, i) => {
+        const y = n === 1 ? cy : 30 + (i * (cellHeight - 60)) / (n - 1);
+        positions[id] = { x, y };
+      });
+    };
+    placeColumn(sources, cellWidth * 0.2);
+    placeColumn(middles, cellWidth * 0.5);
+    placeColumn(targets, cellWidth * 0.8);
+    // Any node still unplaced (isolated, shouldn't happen but safety)
+    nodes.forEach((n) => {
+      if (!positions[n]) positions[n] = { x: cx, y: cy };
+    });
+  }
+
+  return {
+    nodes: nodes.map((id) => ({ id, ...positions[id] })),
+    edges,
+  };
+}
+
 const NetworkGraph = ({ events, onPick }) => {
   const [hover, setHover] = useState(null);
 
-  const nodes = useMemo(() => {
-    const set = new Set();
-    events.forEach((e) => {
-      set.add(e.source);
-      set.add(e.target);
+  const components = useMemo(() => buildComponents(events), [events]);
+
+  // Choose grid arrangement based on component count
+  const grid = useMemo(() => {
+    const n = components.length;
+    if (n === 0) return { cols: 1, rows: 1 };
+    if (n <= 2) return { cols: n, rows: 1 };
+    if (n <= 4) return { cols: 2, rows: Math.ceil(n / 2) };
+    if (n <= 9) return { cols: 3, rows: Math.ceil(n / 3) };
+    return { cols: 4, rows: Math.ceil(n / 4) };
+  }, [components]);
+
+  const cellWidth = 280;
+  const cellHeight = 180;
+  const totalWidth = grid.cols * cellWidth;
+  const totalHeight = grid.rows * cellHeight + 40; // +40 for legend
+
+  // Lay out each component, then translate to its grid cell
+  const laidOut = useMemo(() => {
+    return components.map((comp, i) => {
+      const col = i % grid.cols;
+      const row = Math.floor(i / grid.cols);
+      const layout = layoutComponent(comp, cellWidth, cellHeight);
+      const ox = col * cellWidth;
+      const oy = 40 + row * cellHeight;
+      const positioned = {};
+      layout.nodes.forEach((n) => {
+        positioned[n.id] = { id: n.id, x: ox + n.x, y: oy + n.y };
+      });
+      return { nodes: positioned, edges: layout.edges };
     });
-    const arr = Array.from(set);
-    const R = 200;
-    const cx = 300;
-    const cy = 250;
-    return arr.map((id, i) => {
-      const a = (i / arr.length) * Math.PI * 2 - Math.PI / 2;
-      return { id, x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) };
+  }, [components, grid]);
+
+  const allNodes = useMemo(() => {
+    const out = [];
+    laidOut.forEach((c) => {
+      Object.values(c.nodes).forEach((n) => out.push(n));
     });
-  }, [events]);
+    return out;
+  }, [laidOut]);
 
   const nodeIdx = useMemo(() => {
     const m = new Map();
-    nodes.forEach((n) => m.set(n.id, n));
+    allNodes.forEach((n) => m.set(n.id, n));
     return m;
-  }, [nodes]);
+  }, [allNodes]);
 
   const inDeg = useMemo(() => {
     const d = {};
@@ -869,8 +985,12 @@ const NetworkGraph = ({ events, onPick }) => {
   }, [events]);
 
   return (
-    <div className="border border-stone-300 rounded-sm bg-white">
-      <svg width={600} height={500}>
+    <div className="border border-stone-300 rounded-sm bg-white overflow-x-auto">
+      <svg
+        width={totalWidth}
+        height={totalHeight}
+        style={{ display: "block" }}
+      >
         <defs>
           <marker
             id="arrow-inrae"
@@ -884,54 +1004,114 @@ const NetworkGraph = ({ events, onPick }) => {
             <path d="M 0 0 L 10 5 L 0 10 z" fill="#00a3a6" />
           </marker>
         </defs>
-        {events.map((e) => {
-          const a = nodeIdx.get(e.source);
-          const b = nodeIdx.get(e.target);
-          if (!a || !b) return null;
-          const rejected = e.verdict === "false_positive";
-          const accepted = e.verdict === "true_positive";
-          return (
-            <g key={e.id}>
-              {/* wider invisible hit line for easier clicking */}
-              <line
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
-                stroke="transparent"
-                strokeWidth="10"
-                onMouseEnter={() => setHover({ kind: "edge", e })}
-                onMouseLeave={() => setHover(null)}
-                onClick={() => onPick && onPick(e.id)}
-                style={{ cursor: "pointer" }}
-              />
-              {/* visible line */}
-              <line
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
-                stroke={rejected ? "#c4c0b3" : accepted ? "#00a3a6" : "#275662"}
-                strokeOpacity={
-                  hover?.kind === "edge" && hover.e.id === e.id
-                    ? 1
-                    : rejected
-                      ? 0.5
-                      : 0.8
-                }
-                strokeWidth={
-                  (hover?.kind === "edge" && hover.e.id === e.id ? 2 : 0) +
-                  1.2 +
-                  (e.score || 0) * 2.5
-                }
-                strokeDasharray={rejected ? "3 3" : undefined}
-                markerEnd="url(#arrow-inrae)"
-                style={{ pointerEvents: "none" }}
-              />
-            </g>
-          );
-        })}
-        {nodes.map((n) => {
+
+        {/* Legend (top-left) */}
+        <g transform="translate(12, 10)">
+          <text fontSize="10" fontFamily="Raleway" fontWeight="700" fill="#275662" y="10">
+            LEGEND
+          </text>
+          <g transform="translate(70, 6)">
+            <circle cx="6" cy="4" r="5" fill="#fff" stroke="#275662" strokeWidth="1.2" />
+            <text x="16" y="7" fontSize="10" fill="#275662">source only</text>
+          </g>
+          <g transform="translate(180, 6)">
+            <circle cx="6" cy="4" r="5" fill="#275662" />
+            <text x="16" y="7" fontSize="10" fill="#275662">target only</text>
+          </g>
+          <g transform="translate(290, 6)">
+            <circle cx="6" cy="4" r="5" fill="#ed6e6c" />
+            <text x="16" y="7" fontSize="10" fill="#275662">cascade (both)</text>
+          </g>
+        </g>
+
+        {/* Edges (drawn first so nodes overlay endpoints) */}
+        {laidOut.map((c) =>
+          c.edges.map((e) => {
+            const a = c.nodes[e.source];
+            const b = c.nodes[e.target];
+            if (!a || !b) return null;
+            const rejected = e.verdict === "false_positive";
+            const accepted = e.verdict === "true_positive";
+            const isHovered = hover?.kind === "edge" && hover.e.id === e.id;
+
+            // Trim endpoints back from the node circles (radius 14)
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            const ux = dx / dist;
+            const uy = dy / dist;
+            const r = 16;
+            const x1 = a.x + ux * r;
+            const y1 = a.y + uy * r;
+            const x2 = b.x - ux * r;
+            const y2 = b.y - uy * r;
+            const mx = (x1 + x2) / 2;
+            const my = (y1 + y2) / 2;
+
+            return (
+              <g key={e.id}>
+                {/* invisible wider hit line */}
+                <line
+                  x1={x1}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  stroke="transparent"
+                  strokeWidth="14"
+                  onMouseEnter={() => setHover({ kind: "edge", e })}
+                  onMouseLeave={() => setHover(null)}
+                  onClick={() => onPick && onPick(e.id)}
+                  style={{ cursor: "pointer" }}
+                />
+                {/* visible edge */}
+                <line
+                  x1={x1}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  stroke={rejected ? "#c4c0b3" : accepted ? "#00a3a6" : "#275662"}
+                  strokeOpacity={isHovered ? 1 : rejected ? 0.4 : 0.75}
+                  strokeWidth={(isHovered ? 2 : 0) + 1.4 + (e.score || 0) * 2.4}
+                  strokeDasharray={rejected ? "3 3" : undefined}
+                  markerEnd="url(#arrow-inrae)"
+                  style={{ pointerEvents: "none" }}
+                />
+                {/* rate badge on the edge */}
+                {dist > 50 && (
+                  <g pointerEvents="none">
+                    <rect
+                      x={mx - 22}
+                      y={my - 9}
+                      width="44"
+                      height="14"
+                      rx="2"
+                      fill="#fff"
+                      stroke={
+                        rejected ? "#c4c0b3" : accepted ? "#00a3a6" : "#275662"
+                      }
+                      strokeWidth="0.8"
+                      opacity={isHovered ? 1 : 0.95}
+                    />
+                    <text
+                      x={mx}
+                      y={my + 1}
+                      textAnchor="middle"
+                      fontSize="9"
+                      fontFamily="system-ui, sans-serif"
+                      fontWeight="600"
+                      fill="#275662"
+                    >
+                      {(e.rate * 100).toFixed(1)}%
+                    </text>
+                  </g>
+                )}
+              </g>
+            );
+          }),
+        )}
+
+        {/* Nodes — circle + external label below */}
+        {allNodes.map((n) => {
           const isSource = (outDeg[n.id] || 0) > 0 && (inDeg[n.id] || 0) === 0;
           const isTarget = (inDeg[n.id] || 0) > 0 && (outDeg[n.id] || 0) === 0;
           const isBoth = (inDeg[n.id] || 0) > 0 && (outDeg[n.id] || 0) > 0;
@@ -942,56 +1122,49 @@ const NetworkGraph = ({ events, onPick }) => {
               : isBoth
                 ? "#ed6e6c"
                 : "#fff";
-          const text = isTarget ? "#fff" : isBoth ? "#fff" : "#275662";
+          const isNodeHover = hover?.kind === "node" && hover.n.id === n.id;
           return (
             <g
               key={n.id}
               onMouseEnter={() => setHover({ kind: "node", n })}
               onMouseLeave={() => setHover(null)}
+              style={{ cursor: "pointer" }}
             >
-              <circle cx={n.x} cy={n.y} r={14} fill={fill} stroke="#275662" strokeWidth="1.5" />
+              <circle
+                cx={n.x}
+                cy={n.y}
+                r={isNodeHover ? 13 : 11}
+                fill={fill}
+                stroke="#275662"
+                strokeWidth={isNodeHover ? 2.5 : 1.5}
+              />
+              {/* External label below node */}
               <text
                 x={n.x}
-                y={n.y + 3}
+                y={n.y + 26}
                 textAnchor="middle"
-                fontSize="9"
-                fontFamily="system-ui, monospace"
+                fontSize="11"
+                fontFamily="system-ui, sans-serif"
                 fontWeight="600"
-                fill={text}
+                fill="#275662"
               >
-                {n.id.length > 8 ? n.id.slice(0, 6) + "…" : n.id}
+                {n.id}
               </text>
             </g>
           );
         })}
-
-        <g transform="translate(16, 16)">
-          <rect x="0" y="0" width="160" height="80" fill="#fff" stroke="#c4c0b3" />
-          <text x="8" y="14" fontSize="10" fontFamily="Raleway" fontWeight="700" fill="#275662">
-            LEGEND
-          </text>
-          <circle cx="14" cy="32" r="5" fill="#fff" stroke="#275662" />
-          <text x="26" y="35" fontSize="10" fontFamily="system-ui, sans-serif" fill="#275662">
-            source only
-          </text>
-          <circle cx="14" cy="50" r="5" fill="#275662" />
-          <text x="26" y="53" fontSize="10" fontFamily="system-ui, sans-serif" fill="#275662">
-            target only
-          </text>
-          <circle cx="14" cy="68" r="5" fill="#ed6e6c" />
-          <text x="26" y="71" fontSize="10" fontFamily="system-ui, sans-serif" fill="#275662">
-            cascade (both)
-          </text>
-        </g>
       </svg>
+
       {hover?.kind === "node" && (
         <div className="px-3 py-2 text-[12px] border-t border-stone-300 bg-[#f6f7f7]">
           <span className="text-stone-500">sample:</span>{" "}
           <span className="font-semibold" style={{ color: "#275662" }}>
             {hover.n.id}
           </span>
-          <span className="text-stone-500 ml-3">contaminates:</span> {outDeg[hover.n.id] || 0}
-          <span className="text-stone-500 ml-3">contaminated by:</span> {inDeg[hover.n.id] || 0}
+          <span className="text-stone-500 ml-3">contaminates:</span>{" "}
+          {outDeg[hover.n.id] || 0}
+          <span className="text-stone-500 ml-3">contaminated by:</span>{" "}
+          {inDeg[hover.n.id] || 0}
         </div>
       )}
       {hover?.kind === "edge" && (
