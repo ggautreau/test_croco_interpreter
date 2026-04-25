@@ -1723,9 +1723,22 @@ const UploadCard = ({
   primary,
   inputRef,
   onDownload,
+  onClear,
 }) => {
   const [drag, setDrag] = useState(false);
   const loaded = !!filename;
+
+  const handleClear = () => {
+    if (!onClear) return;
+    if (
+      window.confirm(
+        `Remove the loaded ${label}?\n\nThis only clears it from this browser session — your original file on disk is untouched.`,
+      )
+    ) {
+      onClear();
+    }
+  };
+
   return (
     <div
       onDragOver={(e) => {
@@ -1830,6 +1843,31 @@ const UploadCard = ({
             Download
           </button>
         )}
+        {loaded && onClear && (
+          <button
+            onClick={handleClear}
+            title="Remove this file from the session"
+            className="px-2 py-1 text-[11px] rounded-sm flex items-center justify-center gap-1"
+            style={{
+              background: "#fff",
+              color: "#797870",
+              border: "1px solid #e6e8e8",
+              fontWeight: 600,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.borderColor = "#ed6e6c";
+              e.currentTarget.style.color = "#ed6e6c";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.borderColor = "#e6e8e8";
+              e.currentTarget.style.color = "#797870";
+            }}
+          >
+            <X className="w-3 h-3" />
+            Clear
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1859,6 +1897,7 @@ const MetadataUploadCard = ({ metadata, setMetadata, setErr }) => {
           ? () => downloadText(metadataToTSV(metadata), "metadata.tsv")
           : undefined
       }
+      onClear={metadata ? () => setMetadata(null) : undefined}
     />
   );
 };
@@ -1890,6 +1929,7 @@ const PlateUploadCard = ({ plateMap, setPlateMap, setErr }) => {
           ? () => downloadText(plateMapToTSV(plateMap), "plate_map.tsv")
           : undefined
       }
+      onClear={plateMap ? () => setPlateMap(null) : undefined}
     />
   );
 };
@@ -5398,15 +5438,56 @@ export default function App() {
         }}
       >
         <div className="max-w-7xl mx-auto px-6 py-5">
-          <div
-            className="flex items-center gap-2 mb-3 text-[11px]"
-            style={{ color: "#797870", fontFamily: '"Raleway", sans-serif' }}
-          >
-            <ShieldCheck className="w-3.5 h-3.5" style={{ color: "#00a3a6" }} />
-            <span>
-              Files stay local: parsing happens entirely in your browser. No
-              data is sent to any server.
-            </span>
+          <div className="flex items-center justify-between gap-4 mb-3 flex-wrap">
+            <div
+              className="flex items-center gap-2 text-[11px]"
+              style={{ color: "#797870", fontFamily: '"Raleway", sans-serif' }}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" style={{ color: "#00a3a6" }} />
+              <span>
+                Files stay local: parsing happens entirely in your browser. No
+                data is sent to any server.
+              </span>
+            </div>
+            {(rawEvents.length > 0 || ab || metadata || plateMap) && (
+              <button
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Clear the entire session?\n\nThis removes the loaded events, abundance, metadata and plate map, plus all your verdicts and notes. The original files on disk are not affected.",
+                    )
+                  ) {
+                    setRawEvents([]);
+                    setRunMetadata(null);
+                    setAb(null);
+                    setMetadata(null);
+                    setPlateMap(null);
+                    setSelId(null);
+                    setErr(null);
+                    setTab("overview");
+                  }
+                }}
+                className="px-3 py-1.5 text-[11px] rounded-sm flex items-center gap-1.5"
+                style={{
+                  background: "#fff",
+                  color: "#797870",
+                  border: "1px solid #e6e8e8",
+                  fontWeight: 600,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.borderColor = "#ed6e6c";
+                  e.currentTarget.style.color = "#ed6e6c";
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.borderColor = "#e6e8e8";
+                  e.currentTarget.style.color = "#797870";
+                }}
+              >
+                <X className="w-3 h-3" />
+                Clear all session
+              </button>
+            )}
           </div>
           <div className="grid md:grid-cols-2 gap-4">
             <UploadCard
@@ -5423,6 +5504,15 @@ export default function App() {
                         eventsToTSV(rawEvents, runMetadata),
                         "contamination_events.tsv",
                       )
+                  : undefined
+              }
+              onClear={
+                rawEvents.length
+                  ? () => {
+                      setRawEvents([]);
+                      setRunMetadata(null);
+                      setSelId(null);
+                    }
                   : undefined
               }
             />
@@ -5442,6 +5532,7 @@ export default function App() {
                       downloadText(abundanceToTSV(ab), "species_abundance.tsv")
                   : undefined
               }
+              onClear={ab ? () => setAb(null) : undefined}
             />
             <MetadataUploadCard
               metadata={metadata}
