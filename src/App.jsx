@@ -67,8 +67,20 @@ const RepubliqueFrancaise = ({ height = 46 }) => (
    ============================================================================ */
 
 function parseTSV(text) {
-  const lines = text.replace(/\r/g, "").split("\n").filter((l) => l.length > 0);
-  if (lines.length === 0) return { header: [], rows: [] };
+  const allLines = text.replace(/\r/g, "").split("\n").filter((l) => l.length > 0);
+  // Separate hash-prefixed header lines (e.g. CroCoDeEL run params) from data
+  const headerComments = [];
+  let firstDataIdx = 0;
+  for (let i = 0; i < allLines.length; i++) {
+    if (allLines[i].startsWith("#")) {
+      headerComments.push(allLines[i].replace(/^#\s*/, ""));
+      firstDataIdx = i + 1;
+    } else {
+      break;
+    }
+  }
+  const lines = allLines.slice(firstDataIdx);
+  if (lines.length === 0) return { header: [], rows: [], headerComments };
   const header = lines[0].split("\t");
   const rows = lines.slice(1).map((line) => {
     const cells = line.split("\t");
@@ -76,7 +88,23 @@ function parseTSV(text) {
     header.forEach((h, i) => (obj[h] = cells[i] ?? ""));
     return obj;
   });
-  return { header, rows };
+  return { header, rows, headerComments };
+}
+
+/** Parse a CroCoDeEL-style "key: value | key: value | ..." metadata header. */
+function parseRunMetadata(headerComments) {
+  if (!headerComments || headerComments.length === 0) return null;
+  const meta = {};
+  headerComments.forEach((line) => {
+    line.split("|").forEach((kv) => {
+      const idx = kv.indexOf(":");
+      if (idx < 0) return;
+      const key = kv.slice(0, idx).trim();
+      const val = kv.slice(idx + 1).trim();
+      if (key) meta[key] = val;
+    });
+  });
+  return Object.keys(meta).length > 0 ? meta : null;
 }
 
 function pickCol(header, candidates) {
@@ -123,7 +151,7 @@ function normalizeEvent(raw, cols, idx) {
 }
 
 function parseEvents(text) {
-  const { header, rows } = parseTSV(text);
+  const { header, rows, headerComments } = parseTSV(text);
   if (rows.length === 0) throw new Error("Empty file or no rows");
   const cols = {
     source: pickCol(header, EVENT_COLS.source),
@@ -137,7 +165,10 @@ function parseEvents(text) {
       "Could not find source/target columns. Expected headers like 'source' and 'contaminated_sample'.",
     );
   }
-  return rows.map((r, i) => normalizeEvent(r, cols, i));
+  return {
+    events: rows.map((r, i) => normalizeEvent(r, cols, i)),
+    runMetadata: parseRunMetadata(headerComments),
+  };
 }
 
 /* ---------- species_abundance.tsv ---------- */
@@ -2064,7 +2095,101 @@ const TopList = ({ title, items, onOpen, fmt }) => (
   </div>
 );
 
-const Overview = ({ counts, events, hasAb, metadata, plateMap, onOpen }) => {
+/* ---------- RUN METADATA BLOCK (Overview tab) ---------- */
+
+/** Format a path-like value for compact display: keep just the basename. */
+function shortenPath(v) {
+  if (!v || typeof v !== "string") return v;
+  if (v.includes("/")) return v.slice(v.lastIndexOf("/") + 1);
+  if (v.includes("\\")) return v.slice(v.lastIndexOf("\\") + 1);
+  return v;
+}
+
+const RunMetadataBlock = ({ meta }) => {
+  // Choose which fields to show, in this order, with friendly labels
+  const displayFields = [
+    { key: "crocodeel version", label: "CroCoDeEL version" },
+    { key: "datetime", label: "Run date" },
+    { key: "species_ab_table", label: "Abundance table", shorten: true },
+    { key: "rf_model", label: "RF model", shorten: true },
+    { key: "probability_cutoff", label: "Probability cutoff" },
+    { key: "rate_cutoff", label: "Rate cutoff" },
+    { key: "filtering_ab_thr_factor", label: "Abundance filter" },
+    { key: "username", label: "User" },
+    { key: "hostname", label: "Host" },
+  ];
+  const items = displayFields
+    .map((f) => ({
+      label: f.label,
+      value: meta[f.key]
+        ? f.shorten
+          ? shortenPath(meta[f.key])
+          : meta[f.key]
+        : null,
+      raw: meta[f.key],
+    }))
+    .filter((it) => it.value && it.value !== "None");
+
+  if (items.length === 0) return null;
+
+  return (
+    <div
+      className="mt-4 p-4 rounded-sm"
+      style={{
+        background: "#f6f7f7",
+        border: "1px solid #e6e8e8",
+        borderLeft: "4px solid #00a3a6",
+      }}
+    >
+      <div
+        className="text-[10px] tracking-[0.15em] uppercase mb-2"
+        style={{
+          color: "#ed6e6c",
+          fontWeight: 700,
+          fontFamily: '"Raleway", sans-serif',
+        }}
+      >
+        Run parameters
+      </div>
+      <dl
+        className="grid gap-x-6 gap-y-1.5"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}
+      >
+        {items.map((it) => (
+          <div
+            key={it.label}
+            className="flex items-baseline gap-2 text-[12px]"
+            style={{ minWidth: 0 }}
+          >
+            <dt
+              className="shrink-0"
+              style={{
+                color: "#797870",
+                fontWeight: 600,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              {it.label}:
+            </dt>
+            <dd
+              title={it.raw !== it.value ? it.raw : undefined}
+              className="truncate"
+              style={{
+                color: "#275662",
+                fontFamily: "system-ui, monospace",
+                fontWeight: 500,
+              }}
+            >
+              {it.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+};
+
+const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOpen }) => {
   const topByScore = [...events].sort((a, b) => b.score - a.score).slice(0, 5);
   const topByRate = [...events].sort((a, b) => b.rate - a.rate).slice(0, 5);
 
@@ -2089,6 +2214,8 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, onOpen }) => {
         These are the events CroCoDeEL flagged. Your role: distinguish real contamination
         from coincidental abundance similarity. Start from the highest-score events.
       </SectionTitle>
+
+      {runMetadata && <RunMetadataBlock meta={runMetadata} />}
 
       <div className="grid md:grid-cols-5 gap-3 mt-8 mb-4">
         <Stat label="Events" value={counts.total} />
@@ -4467,6 +4594,7 @@ const ExportTab = ({ counts, onExportTSV, onExportJSON }) => (
 
 export default function App() {
   const [rawEvents, setRawEvents] = useState([]);
+  const [runMetadata, setRunMetadata] = useState(null);
   const [ab, setAb] = useState(null);
   const [metadata, setMetadata] = useState(null);
   const [plateMap, setPlateMap] = useState(null);
@@ -4607,7 +4735,9 @@ export default function App() {
   const loadEvents = async (file) => {
     try {
       const text = await file.text();
-      setRawEvents(parseEvents(text));
+      const parsed = parseEvents(text);
+      setRawEvents(parsed.events);
+      setRunMetadata(parsed.runMetadata);
       setErr(null);
       setTab("overview");
     } catch (e) {
@@ -4652,7 +4782,9 @@ export default function App() {
       const [evText, abText] = await Promise.all([evRes.text(), abRes.text()]);
       const parsedAb = parseAbundance(abText);
       if (!parsedAb) throw new Error("Could not parse demo abundance table");
-      setRawEvents(parseEvents(evText));
+      const parsedEvents = parseEvents(evText);
+      setRawEvents(parsedEvents.events);
+      setRunMetadata(parsedEvents.runMetadata);
       setAb(parsedAb);
 
       // Optional files — load if present, ignore 404s silently
@@ -5044,6 +5176,7 @@ export default function App() {
               hasAb={!!ab}
               metadata={metadata}
               plateMap={plateMap}
+              runMetadata={runMetadata}
               onOpen={(id) => {
                 setSelId(id);
                 setTab("validate");
