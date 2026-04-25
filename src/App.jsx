@@ -7024,6 +7024,38 @@ export default function App() {
         ::-webkit-scrollbar-thumb:hover { background: #00a3a6; }
       `}</style>
 
+      {/* ==================== BETA BANNER ==================== */}
+      <div
+        style={{
+          background: "#ed6e6c",
+          color: "#fff",
+          textAlign: "center",
+          padding: "6px 16px",
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: "0.04em",
+          fontFamily: '"Raleway", sans-serif',
+        }}
+      >
+        <span
+          style={{
+            display: "inline-block",
+            background: "#fff",
+            color: "#ed6e6c",
+            padding: "1px 8px",
+            borderRadius: 2,
+            marginRight: 10,
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: "0.08em",
+            verticalAlign: "1px",
+          }}
+        >
+          BETA
+        </span>
+        Active development — feedback welcome and bugs expected. Verify findings before publication.
+      </div>
+
       {/* ==================== HEADER ==================== */}
       <header style={{ borderBottom: "3px solid #00a3a6", background: "#fff" }}>
         <div className="max-w-7xl mx-auto px-6 py-5">
@@ -7617,16 +7649,18 @@ export default function App() {
       >
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="flex flex-col items-center text-center gap-4">
-            <Chevron size={18} color="#00a3a6" />
-            <div
-              className="text-[13px] whitespace-nowrap"
-              style={{
-                color: "#275662",
-                fontWeight: 600,
-                fontFamily: '"Raleway", sans-serif',
-              }}
-            >
-              Institut National de Recherche pour l'Agriculture, l'Alimentation et l'Environnement (INRAE)
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <Chevron size={18} color="#00a3a6" />
+              <span
+                className="text-[13px] whitespace-nowrap"
+                style={{
+                  color: "#275662",
+                  fontWeight: 600,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                Institut National de Recherche pour l'Agriculture, l'Alimentation et l'Environnement (INRAE)
+              </span>
             </div>
             <div className="flex items-center gap-6 mt-2">
               <RepubliqueFrancaise height={40} />
