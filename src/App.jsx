@@ -2680,7 +2680,7 @@ const EmptyState = ({ onLoadDemo, demoLoading }) => (
               >
                 species_abundance.tsv
               </code>{" "}
-              to enable scatterplots and the automatic score.
+              to enable scatterplots and the assisted score.
             </span>],
             ["03", <span key="s3">Optionally add{" "}
               <code
@@ -3018,7 +3018,7 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
           <div className="text-[13px] leading-relaxed">
             <strong>No abundance table loaded.</strong> You can still sort events by
-            score and rate, but scatterplots and the 4-criteria automatic score
+            score and rate, but scatterplots and the 4-criteria assisted score
             require <code>species_abundance.tsv</code>.
           </div>
         </div>
@@ -4927,7 +4927,7 @@ const ValidateTab = ({
           eyebrow={`Event ${idx + 1} of ${events.length}`}
           title={`${sel.source} → ${sel.target}`}
         >
-          The four criteria from the CroCoDeEL wiki. The automatic score is a hint,
+          The four criteria from the CroCoDeEL wiki. The assisted score is a hint,
           not a verdict — the plot is the final arbiter.
         </SectionTitle>
 
@@ -4946,7 +4946,7 @@ const ValidateTab = ({
                 style={{ background: "#fdeceb", border: "1px solid #ed6e6c", color: "#8a2422" }}
               >
                 Upload <code>species_abundance.tsv</code> to see the plot and
-                enable automatic diagnostics.
+                enable assisted diagnostics.
               </div>
             )}
             <div className="mt-4 grid grid-cols-2 gap-2">
@@ -5062,7 +5062,7 @@ const ValidateTab = ({
                     fontFamily: '"Raleway", sans-serif',
                   }}
                 >
-                  Automatic score
+                  Assisted score
                 </div>
                 <div
                   className="tabular"
@@ -5547,7 +5547,7 @@ const HelpTab = () => {
             (longitudinal samples from the same person, mother-infant
             transmission, etc.) rather than true cross-contamination. This
             tool helps you triage that list interactively: look at each
-            event's scatterplot, automatic diagnostics, plate position and
+            event's scatterplot, assisted diagnostics, plate position and
             sample metadata, then mark each one as true positive, false
             positive or uncertain. Export the curated TSV when done.
           </p>
@@ -5579,7 +5579,7 @@ const HelpTab = () => {
             </li>
             <li>
               Open Guided validation to walk through events one by one:
-              read the automatic criteria, look at the plate position,
+              read the assisted criteria, look at the plate position,
               check the sample context, and assign a verdict (true positive
               / false positive / uncertain).
             </li>
@@ -5712,7 +5712,7 @@ const HelpTab = () => {
           <ul className="list-disc pl-5">
             <li>The Scatterplots tab (each event plotted as source vs target).</li>
             <li>
-              Automatic scoring criteria (e.g. the "above-line points"
+              Assisted scoring criteria (e.g. the "above-line points"
               count, the dominance check).
             </li>
             <li>Inline mini-scatterplots in the Guided validation tab.</li>
@@ -5957,7 +5957,7 @@ const HelpTab = () => {
                 Gallery of source-vs-target scatterplots. Each species is a
                 point. Points above the y=x line indicate species more
                 abundant in the contaminated sample than in the source —
-                their count is one of the automatic criteria.
+                their count is one of the assisted criteria.
               </p>
             </div>
             <div>
@@ -6832,7 +6832,7 @@ export default function App() {
             </h1>
             <p className="mt-3 text-[15px] leading-relaxed text-stone-700 max-w-2xl">
               Upload your events file and abundance table, then walk through each
-              flagged pair with interactive scatterplots, automatic diagnostics
+              flagged pair with interactive scatterplots, assisted diagnostics
               and a guided validation workflow. Export a curated TSV when you are
               done.
             </p>
@@ -6996,7 +6996,7 @@ export default function App() {
             />
             <UploadCard
               label="species_abundance.tsv"
-              hint="Abundance table — enables scatterplots and automatic scoring"
+              hint="Abundance table — enables scatterplots and assisted scoring"
               filename={
                 ab
                   ? `${ab.samples.length} samples × ${ab.species.length} species`
@@ -7012,7 +7012,7 @@ export default function App() {
                   First column lists species names, every other column is a
                   sample. Values are normalized to relative abundances
                   (summing to 1 per sample) at parse time. Loading this file
-                  unlocks scatterplots, automatic scoring criteria, and
+                  unlocks scatterplots, assisted scoring criteria, and
                   inline mini-scatterplots in Guided validation.
                 </>
               }
