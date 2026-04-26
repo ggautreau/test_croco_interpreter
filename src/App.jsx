@@ -7434,12 +7434,24 @@ const LearnTab = () => {
   return (
     <div>
       <SectionTitle eyebrow="Learn" title="Reading a CroCoDeEL scatterplot">
-        Each event is a story told by a scatterplot. This page is a
-        reference to the patterns you'll encounter, organised the way
-        Goulet et al. 2025 organise them in their figure 3: cases CroCoDeEL
-        gets right, cases it over-calls (false positives), and cases it
-        misses (false negatives). The plots are illustrative; they
-        reproduce the visual style of the paper, not specific events.
+        Each contamination event is a story told by a scatterplot and
+        contextual data. This page is a reference to the patterns you'll
+        encounter, organised the way{" "}
+        <a
+          href="https://www.biorxiv.org/content/10.1101/2025.01.15.633153"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: "#00a3a6",
+            textDecoration: "underline",
+            textUnderlineOffset: 2,
+          }}
+        >
+          Goulet et al. 2025
+        </a>{" "}
+        organise them in their figure 3: cases CroCoDeEL gets right,
+        cases it over-calls (false positives), and cases it misses
+        (false negatives).
       </SectionTitle>
 
       <div
