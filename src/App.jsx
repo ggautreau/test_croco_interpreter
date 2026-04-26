@@ -7932,9 +7932,7 @@ const LearnTab = () => {
         }}
       >
         Cases A-L mirror the categorisation in Goulet et al. 2025, figure
-        3 (bioRxiv DOI 10.1101/2025.01.15.633153). More learning modes
-        coming: case studies on real Lou et al. 2023 events, and a
-        visual quiz.
+        3 (bioRxiv DOI 10.1101/2025.01.15.633153).
       </div>
     </div>
   );
