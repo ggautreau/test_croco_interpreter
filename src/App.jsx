@@ -2736,7 +2736,7 @@ const EmptyState = ({ onLoadDemo, demoLoading }) => (
               >
                 species_abundance.tsv
               </code>{" "}
-              to enable scatterplots and the assisted score.
+              to enable scatterplots and the diagnostic checks.
             </span>],
             ["03", <span key="s3">Optionally add{" "}
               <code
@@ -3102,7 +3102,7 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
           <div className="text-[13px] leading-relaxed">
             <strong>No abundance table loaded.</strong> You can still sort events by
-            probability and rate, but scatterplots and the 4-criteria assisted score
+            probability and rate, but scatterplots and the 4-criteria diagnostic checks
             require <code>species_abundance.tsv</code>.
           </div>
         </div>
@@ -5424,8 +5424,10 @@ const ValidateTab = ({
           eyebrow={`Event ${idx + 1} of ${events.length}`}
           title={`${sel.source} → ${sel.target}`}
         >
-          The four criteria from the CroCoDeEL wiki. The assisted score is a hint,
-          not a verdict — the plot is the final arbiter.
+          The four criteria from the CroCoDeEL wiki. Each is a hint —
+          read the plot, not the count. A high pass rate doesn't override
+          a visibly poor fit, and one critical failure (criterion 03)
+          usually points to false positive on its own.
         </SectionTitle>
 
         <CascadeBanner
@@ -5443,7 +5445,7 @@ const ValidateTab = ({
                 style={{ background: "#fdeceb", border: "1px solid #ed6e6c", color: "#8a2422" }}
               >
                 Upload <code>species_abundance.tsv</code> to see the plot and
-                enable assisted diagnostics.
+                enable diagnostic checks.
               </div>
             )}
             <div className="mt-4 grid grid-cols-2 gap-2">
@@ -5550,26 +5552,23 @@ const ValidateTab = ({
               className="p-4 mb-4 rounded-sm"
               style={{ background: "#f6f7f7", border: "1px solid #e6e8e8" }}
             >
-              <div className="flex items-center justify-between mb-3">
-                <div
-                  className="text-[10px] tracking-[0.15em] uppercase"
-                  style={{
-                    color: "#ed6e6c",
-                    fontWeight: 700,
-                    fontFamily: '"Raleway", sans-serif',
-                  }}
-                >
-                  Assisted score
-                </div>
-                <div
-                  className="tabular"
-                  style={{ color: "#275662", fontFamily: '"Raleway", sans-serif' }}
-                >
-                  <span style={{ fontSize: 32, fontWeight: 800 }}>{autoScore.good}</span>
-                  <span style={{ fontSize: 16, color: "#797870" }}>
-                    /{autoScore.total}
-                  </span>
-                </div>
+              <div
+                className="text-[10px] tracking-[0.15em] uppercase mb-2"
+                style={{
+                  color: "#ed6e6c",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                Diagnostic checks
+              </div>
+              <div
+                className="text-[11px] mb-3"
+                style={{ color: "#5a5550", lineHeight: 1.5, fontStyle: "italic" }}
+              >
+                Each check is a hint, not a verdict. Failing criterion 03
+                (missing source species) is the strongest red flag — a single
+                failure there usually means false positive.
               </div>
               <div className="space-y-1.5">
                 {autoScore.reasons.length === 0 && (
@@ -8074,7 +8073,7 @@ const HelpTab = ({ onStartTour }) => {
             (longitudinal samples from the same person, mother-infant
             transmission, etc.) rather than true cross-contamination. This
             tool helps you triage that list interactively: look at each
-            event's scatterplot, assisted diagnostics, plate position and
+            event's scatterplot, diagnostic checks, plate position and
             sample metadata, then mark each one as true positive, false
             positive or uncertain. Export the curated TSV when done.
           </p>
@@ -8234,7 +8233,7 @@ const HelpTab = ({ onStartTour }) => {
           <ul className="list-disc pl-5">
             <li>The Scatterplots tab (each event plotted as source vs target).</li>
             <li>
-              Assisted scoring criteria (e.g. the "above-line points"
+              Diagnostic checks (e.g. the "above-line points"
               count, the dominance check).
             </li>
             <li>Inline mini-scatterplots in the Guided validation tab.</li>
@@ -10562,7 +10561,7 @@ export default function App() {
               </h1>
               <p className="mt-3 text-[15px] leading-relaxed text-stone-700 max-w-xl">
                 Upload your events file and abundance table, then walk through each
-                flagged pair with interactive scatterplots, assisted diagnostics
+                flagged pair with interactive scatterplots, diagnostic checks
                 and a guided validation workflow. Export a curated TSV when you are
                 done.
               </p>
