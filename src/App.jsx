@@ -10498,7 +10498,7 @@ export default function App() {
 
       {/* ==================== SUB-BANNER ==================== */}
       <section className="bg-white">
-        <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="max-w-7xl mx-auto px-6 py-6">
           <div
             className="flex flex-wrap gap-6 items-end justify-between"
           >
@@ -10526,7 +10526,7 @@ export default function App() {
               >
                 Interpreting CroCoDeEL results
               </h1>
-              <p className="mt-3 text-[15px] leading-relaxed text-stone-700 max-w-2xl">
+              <p className="mt-3 text-[15px] leading-relaxed text-stone-700 max-w-xl">
                 Upload your events file and abundance table, then walk through each
                 flagged pair with interactive scatterplots, assisted diagnostics
                 and a guided validation workflow. Export a curated TSV when you are
@@ -10582,7 +10582,7 @@ export default function App() {
           borderBottom: "1px solid #e6e8e8",
         }}
       >
-        <div className="max-w-7xl mx-auto px-6 py-5">
+        <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between gap-4 mb-3 flex-wrap">
             <div
               className="flex items-center gap-2 text-[11px]"
@@ -10798,9 +10798,9 @@ export default function App() {
       </section>
 
       {/* ==================== CONTENT ==================== */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="max-w-7xl mx-auto px-6 py-5">
         <nav
-          className="flex flex-wrap gap-0 mb-8"
+          className="flex flex-wrap gap-0 mb-6"
           style={{ borderBottom: "2px solid #e6e8e8" }}
         >
             {[
