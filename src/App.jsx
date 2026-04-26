@@ -24,7 +24,6 @@ import {
   ShieldAlert,
   Beaker,
   Droplets,
-  Droplet,
   User,
   Users,
   Calendar,
@@ -10726,7 +10725,7 @@ export default function App() {
         >
             {[
               { id: "overview", label: "Overview", icon: BookOpen, requiresData: false },
-              { id: "table", label: "Events table", icon: Droplet, requiresData: true },
+              { id: "table", label: "Events table", icon: Droplets, requiresData: true },
               { id: "scatter", label: "Scatterplots", icon: ScatterIcon, requiresData: true },
               { id: "network", label: "Network", icon: GitBranch, requiresData: true },
               { id: "plate", label: "Plate map", icon: Grid3x3, requiresData: true },
@@ -10775,7 +10774,7 @@ export default function App() {
                     opacity: disabled ? 0.5 : 1,
                   }}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className={t.iconClass || "w-4 h-4"} />
                   {t.label}
                 </button>
               );
