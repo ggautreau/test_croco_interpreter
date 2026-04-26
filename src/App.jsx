@@ -9821,9 +9821,10 @@ export default function App() {
   const handleTutorialAction = (action) => {
     switch (action) {
       case "tabOverviewAndLoadDemo":
-        // Always go to Overview (it's where the welcome step belongs),
-        // and trigger the demo load only if the user hasn't already
-        // loaded data — we don't want to overwrite their work.
+        // Always go to Overview (it's where the welcome step belongs).
+        // Trigger the demo load only if the session is empty — by the
+        // time we get here the user has either started fresh or already
+        // confirmed replacing their data via startTutorial().
         setTab("overview");
         if (rawEvents.length === 0 && !demoLoading) loadDemo();
         break;
@@ -10256,6 +10257,39 @@ export default function App() {
     } finally {
       setDemoLoading(false);
     }
+  };
+
+  /** Open the guided tour. The tour assumes the bundled demo dataset is
+      loaded (it walks through tabs whose content references known demo
+      events, plate layout, etc.). If the user already has their own
+      data loaded, ask via the centralised confirm modal before we wipe
+      it and fetch the demo. Cancelling leaves the session untouched. */
+  const startTutorial = () => {
+    const hasData = rawEvents.length > 0 || ab || metadata || plateMap;
+    if (!hasData) {
+      setTutorialOpen(true);
+      return;
+    }
+    setBulkConfirm({
+      kind: "confirm",
+      title: "Replace your session with the demo dataset?",
+      body:
+        "The guided tour walks through the bundled Lou et al. 2023 P3 demo dataset. To run it, your currently-loaded events, abundance, metadata, plate map and verdicts will be replaced.\n\n" +
+        "The original files on disk are not affected — you can re-upload them after the tour.",
+      confirmLabel: "Replace and start tour",
+      destructive: true,
+      onConfirm: () => {
+        // Clear current session so the welcome step can load demo cleanly
+        setRawEvents([]);
+        setRunMetadata(null);
+        setAb(null);
+        setMetadata(null);
+        setPlateMap(null);
+        setSelId(null);
+        setErr(null);
+        setTutorialOpen(true);
+      },
+    });
   };
 
   /* ---- export ---- */
@@ -10960,7 +10994,7 @@ export default function App() {
           )}
           {tab === "learn" && <LearnTab />}
           {tab === "help" && (
-            <HelpTab onStartTour={() => setTutorialOpen(true)} />
+            <HelpTab onStartTour={startTutorial} />
           )}
             </>
           )}
@@ -10979,7 +11013,7 @@ export default function App() {
         <TutorialWelcome
           onStart={() => {
             setWelcomeOpen(false);
-            setTutorialOpen(true);
+            startTutorial();
           }}
           onSkip={() => {
             tutorialMarkSeen();
