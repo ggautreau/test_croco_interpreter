@@ -577,7 +577,7 @@ function lineDiagnostics(scatter) {
   if (!scatter) return null;
   const pts = scatter.points.filter((p) => p.onLine && p.x > 0 && p.y > 0);
   const n = pts.length;
-  if (n < 2) return { n, r2: null, slope: null };
+  if (n < 2) return { n, r2: null, slope: null, decadeRange: null };
   const logs = pts.map((p) => ({ x: Math.log10(p.x), y: Math.log10(p.y) }));
   const mx = logs.reduce((s, p) => s + p.x, 0) / n;
   const my = logs.reduce((s, p) => s + p.y, 0) / n;
@@ -591,7 +591,18 @@ function lineDiagnostics(scatter) {
   });
   const slope = sxx > 0 ? sxy / sxx : 0;
   const r2 = sxx * syy > 0 ? (sxy * sxy) / (sxx * syy) : 0;
-  return { n, r2, slope };
+  // Spread of the line in log space — how many decades of source
+  // abundance the contamination line spans. A real (mechanical)
+  // contamination transfers ALL species proportionally, so the line is
+  // visible across many decades of abundance (typically 3+). Biological
+  // similarity tends to share only the abundant species, so the
+  // "apparent line" is concentrated within 1-2 decades. This is a
+  // strong discriminator between TP and FP that complements R² (which
+  // only measures linearity).
+  const xMin = Math.min(...logs.map((p) => p.x));
+  const xMax = Math.max(...logs.map((p) => p.x));
+  const decadeRange = xMax - xMin;
+  return { n, r2, slope, decadeRange };
 }
 
 function pointsAboveLine(scatter) {
@@ -619,7 +630,7 @@ function missingAbundantFromSource(ab, source, target, threshold = 1e-3) {
   return missing;
 }
 
-function automaticScore(diag, nAbove, nMissing) {
+function automaticScore(diag, nAbove, nMissing, cascade) {
   let good = 0;
   const reasons = [];
   if (diag && diag.r2 != null) {
@@ -631,11 +642,33 @@ function automaticScore(diag, nAbove, nMissing) {
     }
   }
   if (diag && diag.n != null) {
-    if (diag.n >= 10) {
+    if (diag.n > 10) {
       good++;
-      reasons.push({ ok: true, label: `${diag.n} species on line (≥ 10)` });
+      reasons.push({ ok: true, label: `${diag.n} species on line (> 10)` });
     } else {
       reasons.push({ ok: false, label: `Only ${diag.n} species on line` });
+    }
+  }
+  // Decade range of the contamination line — a real (mechanical)
+  // contamination transfers ALL species proportionally, so the line
+  // spans many decades of abundance (TP cases C and D in the paper:
+  // 4-5 decades). Biological similarity shares only the most abundant
+  // species, concentrating the apparent line in 1-2 decades. Threshold
+  // ≥ 2 decades is permissive enough not to penalise genuine low-rate
+  // TPs but flags the typical FP-by-shared-microbiota pattern.
+  if (diag && diag.decadeRange != null) {
+    const dr = diag.decadeRange;
+    if (dr >= 2) {
+      good++;
+      reasons.push({
+        ok: true,
+        label: `Line spans ${dr.toFixed(1)} decades of abundance (≥ 2)`,
+      });
+    } else {
+      reasons.push({
+        ok: false,
+        label: `Line concentrated in ${dr.toFixed(1)} decades — possibly only abundant species shared`,
+      });
     }
   }
   if (nMissing != null) {
@@ -646,15 +679,31 @@ function automaticScore(diag, nAbove, nMissing) {
       reasons.push({ ok: false, label: `${nMissing} abundant source species missing from target` });
     }
   }
+  // Above-line points: ANY point above the contamination line is a
+  // signal — pure mechanical contamination cannot produce points where
+  // target > source (you can't have more of a species in the recipient
+  // than in the donor). The exception is cascade contamination: when
+  // the source itself was contaminated upstream, species reaching the
+  // target through that upstream path can show up above the direct
+  // line. We surface this as a failed check to keep the curator alert,
+  // but soften the wording when a cascade is actually detected.
   if (nAbove != null) {
-    if (nAbove <= 3) {
+    if (nAbove === 0) {
       good++;
-      reasons.push({ ok: true, label: `${nAbove} points above line (tolerable)` });
+      reasons.push({ ok: true, label: `No points above the line` });
+    } else if (cascade) {
+      reasons.push({
+        ok: false,
+        label: `${nAbove} points above line — explained by detected cascade (tolerable)`,
+      });
     } else {
-      reasons.push({ ok: false, label: `${nAbove} points above line (check for cascade)` });
+      reasons.push({
+        ok: false,
+        label: `${nAbove} points above line (no cascade detected — investigate)`,
+      });
     }
   }
-  return { good, total: 4, reasons };
+  return { good, total: 5, reasons };
 }
 
 /** A cascade is suspected when event A→B has many points above the line AND
@@ -3102,7 +3151,7 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
           <div className="text-[13px] leading-relaxed">
             <strong>No abundance table loaded.</strong> You can still sort events by
-            probability and rate, but scatterplots and the 4-criteria diagnostic checks
+            probability and rate, but scatterplots and the 5-criteria diagnostic checks
             require <code>species_abundance.tsv</code>.
           </div>
         </div>
@@ -5424,9 +5473,9 @@ const ValidateTab = ({
           eyebrow={`Event ${idx + 1} of ${events.length}`}
           title={`${sel.source} → ${sel.target}`}
         >
-          The four criteria from the CroCoDeEL wiki. Each is a hint —
+          The five criteria adapted from the CroCoDeEL wiki. Each is a hint —
           read the plot, not the count. A high pass rate doesn't override
-          a visibly poor fit, and one critical failure (criterion 03)
+          a visibly poor fit, and one critical failure (criterion 04)
           usually points to false positive on its own.
         </SectionTitle>
 
@@ -5550,25 +5599,63 @@ const ValidateTab = ({
           <div>
             <div
               className="p-4 mb-4 rounded-sm"
-              style={{ background: "#f6f7f7", border: "1px solid #e6e8e8" }}
+              style={{
+                background:
+                  autoScore.total > 0 && autoScore.good < autoScore.total
+                    ? "#fdf2f1"
+                    : "#f6f7f7",
+                border:
+                  autoScore.total > 0 && autoScore.good < autoScore.total
+                    ? "1px solid #f4b5b3"
+                    : "1px solid #e6e8e8",
+              }}
             >
-              <div
-                className="text-[10px] tracking-[0.15em] uppercase mb-2"
-                style={{
-                  color: "#ed6e6c",
-                  fontWeight: 700,
-                  fontFamily: '"Raleway", sans-serif',
-                }}
-              >
-                Diagnostic checks
+              <div className="flex items-center justify-between mb-2">
+                <div
+                  className="text-[10px] tracking-[0.15em] uppercase"
+                  style={{
+                    color:
+                      autoScore.total > 0 && autoScore.good < autoScore.total
+                        ? "#b84442"
+                        : "#ed6e6c",
+                    fontWeight: 700,
+                    fontFamily: '"Raleway", sans-serif',
+                  }}
+                >
+                  Diagnostic checks
+                </div>
+                {autoScore.total > 0 && (
+                  <div
+                    className="tabular"
+                    style={{
+                      color:
+                        autoScore.good === autoScore.total
+                          ? "#00a3a6"
+                          : autoScore.good >= 3
+                            ? "#275662"
+                            : "#b84442",
+                      fontFamily: '"Raleway", sans-serif',
+                    }}
+                  >
+                    <span style={{ fontSize: 22, fontWeight: 800 }}>
+                      {autoScore.good}
+                    </span>
+                    <span style={{ fontSize: 13, color: "#797870" }}>
+                      {" "}
+                      / {autoScore.total}
+                    </span>
+                  </div>
+                )}
               </div>
               <div
                 className="text-[11px] mb-3"
                 style={{ color: "#5a5550", lineHeight: 1.5, fontStyle: "italic" }}
               >
-                Each check is a hint, not a verdict. Failing criterion 03
-                (missing source species) is the strongest red flag — a single
-                failure there usually means false positive.
+                Each check is a hint, not a verdict. The grade is informative
+                — failing criterion 04 (missing source species) alone is a
+                strong signal toward false positive, regardless of the
+                aggregate. Criterion 03 (line spread across decades) is the
+                second-strongest red flag.
               </div>
               <div className="space-y-1.5">
                 {autoScore.reasons.length === 0 && (
@@ -5609,14 +5696,25 @@ const ValidateTab = ({
             <Criterion
               n="02"
               title="Number of points on the line"
-              wiki="Fewer than ~10 species → possibly random."
-              pass={diag?.n != null ? diag.n >= 10 : null}
+              wiki="More than 10 species expected. Below this threshold the alignment may be statistical noise."
+              pass={diag?.n != null ? diag.n > 10 : null}
               value={
                 diag?.n != null ? `${diag.n} species` : "abundance table required"
               }
             />
             <Criterion
               n="03"
+              title="Spread of the contamination line"
+              wiki="A real contamination transfers ALL species proportionally, so the line spans many decades of abundance. Biological similarity tends to share only abundant species — line concentrated in 1-2 decades."
+              pass={diag?.decadeRange != null ? diag.decadeRange >= 2 : null}
+              value={
+                diag?.decadeRange != null
+                  ? `${diag.decadeRange.toFixed(1)} decades`
+                  : "abundance table required"
+              }
+            />
+            <Criterion
+              n="04"
               title="Abundant source species present in target"
               wiki="All abundant species in the source should appear in the target."
               pass={missing != null ? missing <= 2 : null}
@@ -5625,18 +5723,22 @@ const ValidateTab = ({
               }
             />
             <Criterion
-              n="04"
+              n="05"
               title="Points above the contamination line"
-              wiki="Near zero expected. A few tolerable if the source is itself contaminated (cascade)."
-              pass={above != null ? above <= 3 : null}
+              wiki="Pure mechanical contamination cannot put more of a species in the target than in the source. ANY point above the line is a signal — unless the source is itself contaminated (cascade), in which case those upstream-transferred species explain the excess."
+              pass={above != null ? above === 0 : null}
               value={
-                above != null ? `${above} above` : "abundance table required"
+                above != null
+                  ? sel?.cascade
+                    ? `${above} above (cascade detected — tolerable)`
+                    : `${above} above`
+                  : "abundance table required"
               }
             />
 
             {metadata && (
               <ContextualCriterion
-                n="05"
+                n="06"
                 title="Related samples"
                 hint="Longitudinal, same subject or same related group → false positive risk"
                 verdict={
@@ -10385,8 +10487,8 @@ export default function App() {
     [ab, selected],
   );
   const autoScore = useMemo(
-    () => automaticScore(diag, above, missing),
-    [diag, above, missing],
+    () => automaticScore(diag, above, missing, selected?.cascade),
+    [diag, above, missing, selected],
   );
 
   /* ============================================================
