@@ -4505,6 +4505,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata }) 
               key={m.id}
               onClick={() => setMode(m.id)}
               disabled={disabled}
+              data-tutorial={`plate-mode-${m.id}`}
               className="px-4 py-1.5 text-[12px] rounded-sm"
               style={{
                 background: active ? "#275662" : "#fff",
@@ -4655,7 +4656,10 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata }) 
           INSPECT MODE
           ============================================================ */}
       {mode === "inspect" && plateMap && plates.length > 0 && (
-        <div className="lg:flex lg:gap-10 gap-8 flex-col lg:flex-row">
+        <div
+          className="lg:flex lg:gap-10 gap-8 flex-col lg:flex-row"
+          data-tutorial="plate-inspect"
+        >
           <div>
             {/* Plate picker — pills for few, dropdown for many */}
             {plates.length > 1 && (
@@ -4858,7 +4862,10 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata }) 
               >
                 Events ({filteredEvents.length})
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
+              <div
+                className="flex items-center gap-2 flex-wrap"
+                data-tutorial="plate-controls"
+              >
                 <label
                   className="flex items-center gap-1 text-[11px] cursor-pointer select-none"
                   style={{ color: "#275662", fontWeight: 600 }}
@@ -4991,11 +4998,13 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata }) 
           EDIT MODE
           ============================================================ */}
       {mode === "edit" && (
-        <PlateEditor
-          samples={samples}
-          plateMap={plateMap}
-          setPlateMap={setPlateMap}
-        />
+        <div data-tutorial="plate-edit">
+          <PlateEditor
+            samples={samples}
+            plateMap={plateMap}
+            setPlateMap={setPlateMap}
+          />
+        </div>
       )}
 
       {/* Empty-state messages */}
@@ -7715,12 +7724,42 @@ export default function App() {
         highlight: '[data-tutorial="tab-network"]',
       },
       {
-        title: "Plate map — well-to-well visualization",
+        title: "Plate map — three views",
         body:
-          "If you provide a plate_map.tsv, the Plate map tab shows arrows between source and contaminated wells.\n\n" +
-          "Adjacent wells (Δ ≤ 1) are a strong signal of well-to-well leakage during library prep. Arrow thickness scales with the contamination rate.",
+          "The Plate map tab opens with three sub-modes you can switch between:\n\n" +
+          "• Overview — thumbnails of every plate at once\n" +
+          "• Inspect — one plate full-size with contamination arrows\n" +
+          "• Edit — drag samples between wells to fix the map\n\n" +
+          "We'll go through each one.",
         action: "tabPlate",
         highlight: '[data-tutorial="tab-plate"]',
+      },
+      {
+        title: "Plate Inspect — well-to-well leakage",
+        body:
+          "Inspect mode draws an arrow from source to contaminated well for every event involving the current plate.\n\n" +
+          "Arrow color = the well-to-well distance: red for adjacent wells (Δ = 1, very suspicious), orange for Δ = 2, gray for further apart, violet for cascade events. Arrow thickness scales with the contamination rate.\n\n" +
+          "Adjacent wells with high rates almost always indicate liquid carry-over during pipetting or extraction.",
+        action: "tabPlateInspect",
+        highlight: '[data-tutorial="plate-inspect"]',
+      },
+      {
+        title: "Filter what you see on the plate",
+        body:
+          "Use the filters in Inspect mode to focus your investigation:\n\n" +
+          "• Show only this plate / inter-plate / adjacent (Δ ≤ 1)\n" +
+          "• Hide arrows entirely if the plate is too crowded\n" +
+          "• Hide same-subject events to remove longitudinal noise\n\n" +
+          "Hovering a well also highlights every event touching it.",
+        highlight: '[data-tutorial="plate-controls"]',
+      },
+      {
+        title: "Plate Edit — fix the map manually",
+        body:
+          "Edit mode lets you drag samples between wells if the original plate_map.tsv has typos or missing entries.\n\n" +
+          "Drop unmapped samples into wells, swap two samples by dropping one onto the other, or remove a placement by dragging it off the plate. Once you're happy, the Download button on the upload card exports your corrected plate_map.tsv.",
+        action: "tabPlateEdit",
+        highlight: '[data-tutorial="plate-edit"]',
       },
       {
         title: "Guided validation — make verdicts",
@@ -7796,6 +7835,25 @@ export default function App() {
         break;
       case "tabPlate":
         setTab("plate");
+        break;
+      case "tabPlateInspect":
+        setTab("plate");
+        // Switch to Inspect sub-mode by clicking its button — that mode
+        // state lives inside PlateTab and we don't want to refactor it
+        // for this one-off animation.
+        setTimeout(() => {
+          document
+            .querySelector('[data-tutorial="plate-mode-inspect"]')
+            ?.click();
+        }, 100);
+        break;
+      case "tabPlateEdit":
+        setTab("plate");
+        setTimeout(() => {
+          document
+            .querySelector('[data-tutorial="plate-mode-edit"]')
+            ?.click();
+        }, 100);
         break;
       case "tabExport":
         setTab("export");
