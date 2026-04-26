@@ -608,29 +608,93 @@ function lineDiagnostics(scatter) {
 function pointsAboveLine(scatter) {
   if (!scatter || scatter.logC == null) return null;
   let above = 0;
+  let maxDist = 0;
+  let farAbove = 0; // points ≥ 0.5 decade above the line
   scatter.points.forEach((p) => {
     if (p.x <= 0 || p.y <= 0 || p.onLine) return;
     const threshold = Math.log10(p.x) - scatter.logC;
-    if (Math.log10(p.y) > threshold + 0.3) above++;
+    const dist = Math.log10(p.y) - threshold;
+    if (dist > 0.3) {
+      above++;
+      if (dist > maxDist) maxDist = dist;
+      if (dist >= 0.5) farAbove++;
+    }
   });
-  return above;
+  return { count: above, maxDist, farAbove };
 }
 
-function missingAbundantFromSource(ab, source, target, threshold = 1e-3) {
+/** How many source species that SHOULD show up in the target (given
+    the contamination rate) are nonetheless absent or below detection?
+
+    Logic — a species qualifies as "missing despite being expected" when
+    all three conditions hold:
+      1. It is part of the source's "core" abundant species — defined
+         adaptively as the species in the source whose cumulative
+         abundance reaches 80%. This adapts to whatever the dataset
+         looks like (16S amplicon shallow vs. shotgun deep, human gut
+         vs. soil, etc.) instead of using a fixed 1% threshold that
+         may exclude the true abundant species in highly diversified
+         communities.
+      2. Its expected contribution to the target, computed as
+         rate × source_abundance, exceeds the target sample's empirical
+         limit-of-detection (the smallest non-zero value observed in
+         that target). Below that, even a real contamination would not
+         produce a detectable signal — so the species being "missing"
+         doesn't mean anything.
+      3. It is genuinely absent or below LOD in the target.
+
+    The rate-awareness combined with empirical LOD makes this robust
+    to deep/shallow sequencing differences AND to low/high contamination
+    rates. */
+function missingAbundantFromSource(ab, source, target, rate) {
   if (!ab) return null;
   const srcKey = resolveSample(ab, source);
   const tgtKey = resolveSample(ab, target);
   if (!srcKey || !tgtKey) return null;
-  let missing = 0;
+
+  // 1. Adaptive empirical LOD for the target — the smallest non-zero
+  //    abundance observed in this specific sample. Falls back to a
+  //    conservative 1e-5 if the target has zero or one species.
+  const targetValues = [];
   ab.species.forEach((sp) => {
+    const v = ab.matrix[sp][tgtKey] || 0;
+    if (v > 0) targetValues.push(v);
+  });
+  const targetLOD = targetValues.length > 0 ? Math.min(...targetValues) : 1e-5;
+
+  // 2. Adaptive "core abundant species" of the source — the smallest
+  //    set of species whose cumulative abundance reaches 80% of the
+  //    source. These are the species whose absence in the target would
+  //    be most informative.
+  const sourceAbundances = [];
+  ab.species.forEach((sp) => {
+    const v = ab.matrix[sp][srcKey] || 0;
+    if (v > 0) sourceAbundances.push({ sp, v });
+  });
+  sourceAbundances.sort((a, b) => b.v - a.v);
+  const totalSource = sourceAbundances.reduce((s, x) => s + x.v, 0);
+  const coreSet = new Set();
+  let cumul = 0;
+  for (const x of sourceAbundances) {
+    coreSet.add(x.sp);
+    cumul += x.v;
+    if (cumul / totalSource >= 0.8) break;
+  }
+
+  let missing = 0;
+  let evaluated = 0;
+  coreSet.forEach((sp) => {
     const ys = ab.matrix[sp][srcKey] || 0;
     const xs = ab.matrix[sp][tgtKey] || 0;
-    if (ys > threshold && xs === 0) missing++;
+    const expected = (rate || 0) * ys;
+    if (expected < targetLOD) return; // would not be detectable in this target
+    evaluated++;
+    if (xs < targetLOD) missing++;
   });
-  return missing;
+  return { count: missing, evaluated, targetLOD, coreSize: coreSet.size };
 }
 
-function automaticScore(diag, nAbove, nMissing, cascade) {
+function automaticScore(diag, aboveInfo, nMissing, cascade) {
   let good = 0;
   const reasons = [];
   if (diag && diag.r2 != null) {
@@ -653,16 +717,16 @@ function automaticScore(diag, nAbove, nMissing, cascade) {
   // contamination transfers ALL species proportionally, so the line
   // spans many decades of abundance (TP cases C and D in the paper:
   // 4-5 decades). Biological similarity shares only the most abundant
-  // species, concentrating the apparent line in 1-2 decades. Threshold
-  // ≥ 2 decades is permissive enough not to penalise genuine low-rate
+  // species, concentrating the apparent line in 1-1.5 decades. Threshold
+  // ≥ 1.5 decades is permissive enough not to penalise genuine low-rate
   // TPs but flags the typical FP-by-shared-microbiota pattern.
   if (diag && diag.decadeRange != null) {
     const dr = diag.decadeRange;
-    if (dr >= 2) {
+    if (dr >= 1.5) {
       good++;
       reasons.push({
         ok: true,
-        label: `Line spans ${dr.toFixed(1)} decades of abundance (≥ 2)`,
+        label: `Line spans ${dr.toFixed(1)} decades of abundance (≥ 1.5)`,
       });
     } else {
       reasons.push({
@@ -672,34 +736,64 @@ function automaticScore(diag, nAbove, nMissing, cascade) {
     }
   }
   if (nMissing != null) {
-    if (nMissing <= 2) {
-      good++;
-      reasons.push({ ok: true, label: `${nMissing} abundant source species missing in target` });
-    } else {
-      reasons.push({ ok: false, label: `${nMissing} abundant source species missing from target` });
-    }
-  }
-  // Above-line points: ANY point above the contamination line is a
-  // signal — pure mechanical contamination cannot produce points where
-  // target > source (you can't have more of a species in the recipient
-  // than in the donor). The exception is cascade contamination: when
-  // the source itself was contaminated upstream, species reaching the
-  // target through that upstream path can show up above the direct
-  // line. We surface this as a failed check to keep the curator alert,
-  // but soften the wording when a cascade is actually detected.
-  if (nAbove != null) {
-    if (nAbove === 0) {
-      good++;
-      reasons.push({ ok: true, label: `No points above the line` });
-    } else if (cascade) {
+    const { count: missingCount, evaluated } = nMissing;
+    if (evaluated === 0) {
+      // No species passed the filter (none abundant enough or rate too
+      // low to expect any detectable signal). Cannot inform the verdict.
       reasons.push({
-        ok: false,
-        label: `${nAbove} points above line — explained by detected cascade (tolerable)`,
+        ok: true,
+        label: `Missing-species check not informative (no species expected above LOD given rate)`,
+      });
+      good++;
+    } else if (missingCount === 0) {
+      good++;
+      reasons.push({
+        ok: true,
+        label: `All ${evaluated} expected source species present in target`,
+      });
+    } else if (missingCount <= 2) {
+      good++;
+      reasons.push({
+        ok: true,
+        label: `${missingCount}/${evaluated} expected source species missing (tolerable)`,
       });
     } else {
       reasons.push({
         ok: false,
-        label: `${nAbove} points above line (no cascade detected — investigate)`,
+        label: `${missingCount}/${evaluated} expected source species missing from target`,
+      });
+    }
+  }
+  // Above-line points: pure mechanical contamination cannot produce
+  // points where target > source-predicted-abundance. ANY point above
+  // the line is a signal, but the magnitude matters more than the
+  // count: a single point 3 decades above is much stronger evidence of
+  // biological similarity than 5 points slightly above. Threshold:
+  // PASS if no point is more than 0.5 decade above the line (tight
+  // tolerance — anything beyond that means target has 3×+ more of a
+  // species than mechanical contamination could deliver); FAIL
+  // otherwise. The exception is cascade contamination — we soften the
+  // wording when a cascade has been detected upstream.
+  if (aboveInfo != null) {
+    const { count: nAbove, maxDist, farAbove } = aboveInfo;
+    if (nAbove === 0) {
+      good++;
+      reasons.push({ ok: true, label: `No points above the line` });
+    } else if (maxDist < 0.5) {
+      good++;
+      reasons.push({
+        ok: true,
+        label: `${nAbove} points above the line, all within 0.5 decade (tolerable)`,
+      });
+    } else if (cascade) {
+      reasons.push({
+        ok: false,
+        label: `${farAbove} points ≥ 0.5 decade above (max ${maxDist.toFixed(1)}) — explained by detected cascade`,
+      });
+    } else {
+      reasons.push({
+        ok: false,
+        label: `${farAbove} points ≥ 0.5 decade above (max ${maxDist.toFixed(1)}) — strong biological signal, no cascade detected`,
       });
     }
   }
@@ -719,8 +813,8 @@ function detectCascades(events, abundance) {
   return events.map((e) => {
     if (!abundance) return { ...e, cascade: null };
     const scatter = buildScatter(abundance, e);
-    const above = pointsAboveLine(scatter);
-    if (above == null || above <= 3) return { ...e, cascade: null };
+    const aboveInfo = pointsAboveLine(scatter);
+    if (aboveInfo == null || aboveInfo.count <= 3) return { ...e, cascade: null };
     const upstream = incoming[e.source] || [];
     if (upstream.length === 0) return { ...e, cascade: null };
     const explained = [];
@@ -745,7 +839,7 @@ function detectCascades(events, abundance) {
     if (explained.length === 0) return { ...e, cascade: null };
     return {
       ...e,
-      cascade: { points_above: above, explained },
+      cascade: { points_above: aboveInfo.count, explained },
     };
   });
 }
@@ -5611,22 +5705,46 @@ const ValidateTab = ({
               }}
             >
               <div className="flex items-center justify-between mb-2">
-                <div
-                  className="text-[10px] tracking-[0.15em] uppercase"
-                  style={{
-                    color:
-                      autoScore.total > 0 && autoScore.good < autoScore.total
-                        ? "#b84442"
-                        : "#ed6e6c",
-                    fontWeight: 700,
-                    fontFamily: '"Raleway", sans-serif',
-                  }}
-                >
-                  Diagnostic checks
+                <div>
+                  <div
+                    className="text-[10px] tracking-[0.15em] uppercase"
+                    style={{
+                      color:
+                        autoScore.total > 0 && autoScore.good < autoScore.total
+                          ? "#b84442"
+                          : "#ed6e6c",
+                      fontWeight: 700,
+                      fontFamily: '"Raleway", sans-serif',
+                    }}
+                  >
+                    Diagnostic checks
+                  </div>
+                  {autoScore.total > 0 && (
+                    <div
+                      className="text-[11px] mt-0.5"
+                      style={{
+                        color:
+                          autoScore.good === autoScore.total
+                            ? "#00a3a6"
+                            : autoScore.good >= Math.ceil(autoScore.total * 0.6)
+                              ? "#d97a3c"
+                              : "#b84442",
+                        fontWeight: 700,
+                        fontFamily: '"Raleway", sans-serif',
+                        letterSpacing: "0.02em",
+                      }}
+                    >
+                      {autoScore.good === autoScore.total
+                        ? "CONTAMINATED — CroCoDeEL is probably right"
+                        : autoScore.good >= Math.ceil(autoScore.total * 0.6)
+                          ? "POSSIBLY NOT CONTAMINATED — use CroCoDeEL's call with prudence"
+                          : "PROBABLY NOT CONTAMINATED — review carefully before validating"}
+                    </div>
+                  )}
                 </div>
                 {autoScore.total > 0 && (
                   <div
-                    className="tabular"
+                    className="tabular shrink-0"
                     style={{
                       color:
                         autoScore.good === autoScore.total
@@ -5654,8 +5772,11 @@ const ValidateTab = ({
                 Each check is a hint, not a verdict. The grade is informative
                 — failing criterion 04 (missing source species) alone is a
                 strong signal toward false positive, regardless of the
-                aggregate. Criterion 03 (line spread across decades) is the
-                second-strongest red flag.
+                aggregate. Criterion 03 (line spread) and 05 (above-line
+                magnitude) are the second-tier red flags: a line concentrated
+                in 1-2 decades or even one point sitting far above the line
+                point toward biological similarity rather than mechanical
+                contamination.
               </div>
               <div className="space-y-1.5">
                 {autoScore.reasons.length === 0 && (
@@ -5705,8 +5826,8 @@ const ValidateTab = ({
             <Criterion
               n="03"
               title="Spread of the contamination line"
-              wiki="A real contamination transfers ALL species proportionally, so the line spans many decades of abundance. Biological similarity tends to share only abundant species — line concentrated in 1-2 decades."
-              pass={diag?.decadeRange != null ? diag.decadeRange >= 2 : null}
+              wiki="A real contamination transfers ALL species proportionally, so the line spans many decades of abundance. Biological similarity tends to share only abundant species — line concentrated in 1-1.5 decades."
+              pass={diag?.decadeRange != null ? diag.decadeRange >= 1.5 : null}
               value={
                 diag?.decadeRange != null
                   ? `${diag.decadeRange.toFixed(1)} decades`
@@ -5716,22 +5837,34 @@ const ValidateTab = ({
             <Criterion
               n="04"
               title="Abundant source species present in target"
-              wiki="All abundant species in the source should appear in the target."
-              pass={missing != null ? missing <= 2 : null}
+              wiki="Source 'core' species (those whose cumulative abundance reaches 80% of the source) should appear in the target if the contamination is real. Each species is checked against the target's own empirical limit of detection (smallest observed value), and only species whose expected target abundance (rate × source) exceeds that LOD are evaluated — so the threshold adapts to sequencing depth and contamination rate."
+              pass={
+                missing != null
+                  ? missing.evaluated === 0 || missing.count <= 2
+                  : null
+              }
               value={
-                missing != null ? `${missing} missing` : "abundance table required"
+                missing != null
+                  ? missing.evaluated === 0
+                    ? "no species testable"
+                    : `${missing.count} / ${missing.evaluated} missing`
+                  : "abundance table required"
               }
             />
             <Criterion
               n="05"
               title="Points above the contamination line"
-              wiki="Pure mechanical contamination cannot put more of a species in the target than in the source. ANY point above the line is a signal — unless the source is itself contaminated (cascade), in which case those upstream-transferred species explain the excess."
-              pass={above != null ? above === 0 : null}
+              wiki="Pure mechanical contamination cannot put more of a species in the target than in the source. A few points slightly above (within 0.5 decade) can be tolerable biological noise, but ANY point sitting 0.5+ decade above means the target has ≥ 3× more of that species than the contamination could deliver — strong evidence the species belongs to the target's own biology."
+              pass={above != null ? above.count === 0 || above.maxDist < 0.5 : null}
               value={
                 above != null
-                  ? sel?.cascade
-                    ? `${above} above (cascade detected — tolerable)`
-                    : `${above} above`
+                  ? above.count === 0
+                    ? "0 above"
+                    : above.maxDist < 0.5
+                      ? `${above.count} above (max ${above.maxDist.toFixed(1)} decade — tolerable)`
+                      : sel?.cascade
+                        ? `${above.farAbove}/${above.count} ≥ 0.5 decade above (max ${above.maxDist.toFixed(1)} — cascade explains)`
+                        : `${above.farAbove}/${above.count} ≥ 0.5 decade above (max ${above.maxDist.toFixed(1)})`
                   : "abundance table required"
               }
             />
@@ -5759,7 +5892,7 @@ const ValidateTab = ({
 
             {plateMap && (
               <ContextualCriterion
-                n="06"
+                n="07"
                 title="Proximity on plate"
                 hint="Well-to-well leakage → immediate neighbors = strong suspicion"
                 verdict={
@@ -10482,7 +10615,7 @@ export default function App() {
   const missing = useMemo(
     () =>
       selected && ab
-        ? missingAbundantFromSource(ab, selected.source, selected.target)
+        ? missingAbundantFromSource(ab, selected.source, selected.target, selected.rate)
         : null,
     [ab, selected],
   );
