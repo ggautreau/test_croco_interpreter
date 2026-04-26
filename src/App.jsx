@@ -6177,7 +6177,7 @@ const PatternCard = ({
         : verdict === "FP_OR_UNCERTAIN"
           ? {
               bg: "linear-gradient(90deg, #ed6e6c 0%, #c4c0b3 100%)",
-              text: "False positive or Uncertain — depends on stringency",
+              text: "False positive / Uncertain",
             }
           : verdict === "FN"
             ? { bg: "#9dc544", text: "False negative — missed by CroCoDeEL" }
@@ -6250,11 +6250,18 @@ const PatternCard = ({
             {probability && <>p&nbsp;=&nbsp;{probability}</>}
           </div>
         )}
-        <div className="flex gap-4 mb-3 items-start">
-          <div style={{ flexShrink: 0 }}>{plot}</div>
-          <div style={{ flex: 1, fontSize: 12, color: "#5a5550", lineHeight: 1.55 }}>
-            {description}
-          </div>
+        <div className="mb-3" style={{ display: "flex", justifyContent: "center" }}>
+          {plot}
+        </div>
+        <div
+          style={{
+            fontSize: 12,
+            color: "#5a5550",
+            lineHeight: 1.55,
+            marginBottom: 12,
+          }}
+        >
+          {description}
         </div>
         <div
           className="mt-3 pt-3"
@@ -7512,7 +7519,7 @@ const LearnTab = () => {
         </p>
         <div
           className="grid gap-5"
-          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))" }}
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}
         >
           <PatternCard
             caseLabel="A"
@@ -7682,7 +7689,7 @@ const LearnTab = () => {
         </div>
         <div
           className="grid gap-5"
-          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))" }}
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}
         >
           <PatternCard
             caseLabel="E"
@@ -7823,7 +7830,7 @@ const LearnTab = () => {
         </p>
         <div
           className="grid gap-5"
-          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))" }}
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}
         >
           <PatternCard
             caseLabel="I"
