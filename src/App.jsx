@@ -6002,9 +6002,9 @@ const PatternMiniPlot = ({
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      style={{ background: "#fafbfb", borderRadius: 3 }}
+      style={{ background: "#fff", borderRadius: 3 }}
     >
-      {/* Faint gridlines */}
+      {/* Faint gridlines — match the main Scatterplot's #eee */}
       {ticks.map((t, i) => (
         <line
           key={`gx-${i}`}
@@ -6012,7 +6012,7 @@ const PatternMiniPlot = ({
           y1={pad}
           x2={toX(t)}
           y2={pad + h}
-          stroke="#e6e8e8"
+          stroke="#eee"
           strokeWidth={0.5}
         />
       ))}
@@ -6023,23 +6023,24 @@ const PatternMiniPlot = ({
           y1={toY(t)}
           x2={pad + w}
           y2={toY(t)}
-          stroke="#e6e8e8"
+          stroke="#eee"
           strokeWidth={0.5}
         />
       ))}
-      {/* Axes */}
-      <line x1={pad} y1={pad + h} x2={pad + w} y2={pad + h} stroke="#797870" strokeWidth={1} />
-      <line x1={pad} y1={pad} x2={pad} y2={pad + h} stroke="#797870" strokeWidth={1} />
-      {/* y = x diagonal */}
+      {/* Axes — deep teal #275662, matching the main Scatterplot */}
+      <line x1={pad} y1={pad + h} x2={pad + w} y2={pad + h} stroke="#275662" strokeWidth={1} />
+      <line x1={pad} y1={pad} x2={pad} y2={pad + h} stroke="#275662" strokeWidth={1} />
+      {/* y = x diagonal — black dashed, matching the main Scatterplot */}
       {diagonal && (
         <line
           x1={toX(0)}
           y1={toY(0)}
           x2={toX(1)}
           y2={toY(1)}
-          stroke="#275662"
-          strokeWidth={0.7}
-          opacity={0.4}
+          stroke="#000"
+          strokeWidth={1}
+          strokeDasharray="2 4"
+          opacity={0.75}
         />
       )}
       {/* Contamination line. Drawn parallel to y = x but shifted by
@@ -6049,7 +6050,8 @@ const PatternMiniPlot = ({
          - "above": source on Y axis, line falls above y = x
          Each scatterplot shows ONE direction of contamination only —
          a bidirectional pair appears in the events table as two
-         separate events, each with its own plot. */}
+         separate events, each with its own plot.
+         Style matches the main Scatterplot: salmon, dashed 5 3, w 1.5. */}
       {lineOffset !== null && lineSide === "below" && (
         <line
           x1={toX(-lineOffset)}
@@ -6057,9 +6059,8 @@ const PatternMiniPlot = ({
           x2={toX(1)}
           y2={toY(1 + lineOffset)}
           stroke="#ed6e6c"
-          strokeWidth={1}
-          strokeDasharray="3,2"
-          opacity={0.85}
+          strokeWidth={1.5}
+          strokeDasharray="5 3"
         />
       )}
       {lineOffset !== null && lineSide === "above" && (
@@ -6069,9 +6070,8 @@ const PatternMiniPlot = ({
           x2={toX(1 + lineOffset)}
           y2={toY(1)}
           stroke="#ed6e6c"
-          strokeWidth={1}
-          strokeDasharray="3,2"
-          opacity={0.85}
+          strokeWidth={1.5}
+          strokeDasharray="5 3"
         />
       )}
       {/* Regular points */}
@@ -6080,9 +6080,9 @@ const PatternMiniPlot = ({
           key={`p-${i}`}
           cx={toX(x)}
           cy={toY(y)}
-          r={1.4}
-          fill="#1c2426"
-          opacity={0.65}
+          r={2}
+          fill="#275662"
+          fillOpacity={0.4}
         />
       ))}
       {/* Highlighted points (e.g. cluster of interest) */}
