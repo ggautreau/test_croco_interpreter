@@ -6171,16 +6171,16 @@ const PatternCard = ({
   // grey to signal "could go either way".
   const tone =
     verdict === "TP"
-      ? { bg: "#00a3a6", text: "True positive — real contamination" }
+      ? { bg: "#00a3a6", text: "True positive" }
       : verdict === "FP"
-        ? { bg: "#ed6e6c", text: "False positive — flagged but biological" }
+        ? { bg: "#ed6e6c", text: "False positive" }
         : verdict === "FP_OR_UNCERTAIN"
           ? {
               bg: "linear-gradient(90deg, #ed6e6c 0%, #c4c0b3 100%)",
               text: "False positive / Uncertain",
             }
           : verdict === "FN"
-            ? { bg: "#9dc544", text: "False negative — missed by CroCoDeEL" }
+            ? { bg: "#9dc544", text: "False negative — missed" }
             : { bg: "#c4c0b3", text: "Uncertain" };
   return (
     <div
@@ -6217,6 +6217,8 @@ const PatternCard = ({
               padding: "1px 6px",
               borderRadius: 2,
               fontSize: 10,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
             }}
           >
             Case {caseLabel}
@@ -7683,9 +7685,9 @@ const LearnTab = () => {
           positives (i.e. real biological similarity, no actual
           contamination). But cases F, G and H are visually borderline —
           a stricter curator could legitimately tag them as{" "}
-          <strong>Uncertain</strong> rather than FP, especially when the
-          metadata context is itself ambiguous. Pick a stringency policy
-          for your study and apply it consistently.
+          <strong>Uncertain</strong> rather than FP, and even <strong>TP</strong>,
+          especially when the metadata context is itself ambiguous. Pick a
+          stringency policy for your study and apply it consistently.
         </div>
         <div
           className="grid gap-5"
@@ -7726,8 +7728,9 @@ const LearnTab = () => {
                 The rate is non-trivial but the scatter doesn't form a
                 line. Same-biome longitudinal samples often produce this
                 shape from shared microbiota persistence. Borderline
-                probability (~0.5) — a strict curator may flag this as
-                Uncertain rather than FP.
+                probability (~0.5) — depending on stringency, a curator
+                may flag this as Uncertain or even keep it as TP rather
+                than dismissing it.
               </>
             }
             signals={[
@@ -7750,8 +7753,8 @@ const LearnTab = () => {
                 Few points overall and no convincing diagonal. The model
                 is moderately confident but the scatter doesn't back it
                 up. Often happens with low-biomass samples on both sides.
-                Borderline — a strict curator may tag this as Uncertain
-                rather than FP.
+                Borderline — depending on stringency, a curator may tag
+                this as Uncertain or keep it as TP.
               </>
             }
             signals={[
@@ -7775,9 +7778,10 @@ const LearnTab = () => {
                 diagonal and the model is fully confident — yet the
                 metadata, plate position, or biome may suggest shared
                 microbiota rather than contamination. Even with
-                probability = 1, this is borderline: a stricter curator
-                will tag Uncertain whenever the contextual case isn't
-                airtight.
+                probability = 1, this is borderline: depending on
+                stringency, a curator may tag Uncertain when the
+                contextual case isn't airtight, or keep TP if the line
+                is visually convincing on its own.
               </>
             }
             signals={[
