@@ -6739,14 +6739,79 @@ const HelpTab = ({ onStartTour }) => {
           </div>
           <p>
             Parsing, scoring, network layout and verdict tracking all happen
-            in client-side JavaScript. All your data lives in the page's
-            memory — closing the tab discards it. Use the Export tab (or the
-            per-file Download buttons) to save your work.
+            in client-side JavaScript. The static HTML/JS bundle is served
+            from GitHub Pages. There is no analytics, no tracking pixel, no
+            cookie set by the application itself.
+          </p>
+
+          <h4
+            className="mt-5 text-[14px]"
+            style={{
+              color: "#275662",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+          >
+            Local persistence (browser storage)
+          </h4>
+          <p>
+            To survive accidental refreshes, the app auto-saves your full
+            session to your browser's <code style={{ fontFamily: "ui-monospace, monospace" }}>localStorage</code>{" "}
+            after every change (debounced 200 ms). A discrete{" "}
+            <em>Saved</em> pill appears in the bottom-right corner each time
+            the save succeeds. What is persisted:
+          </p>
+          <ul className="list-disc pl-5 text-[13px]" style={{ color: "#5a5550", lineHeight: 1.7 }}>
+            <li>Loaded events (with verdicts and notes)</li>
+            <li>CroCoDeEL run parameters from the file header</li>
+            <li>Sample metadata, plate map, and species abundance table</li>
+            <li>UI state: active tab, selected event, filters, sort order</li>
+          </ul>
+          <p>
+            The data is stored under a key named{" "}
+            <code style={{ fontFamily: "ui-monospace, monospace" }}>
+              crocodeel-interpreter-v1
+            </code>{" "}
+            in your browser, scoped to the application's origin (GitHub
+            Pages domain). It is never transmitted anywhere — not even to
+            our own infrastructure. Only the browser session running on
+            this device, in this browser profile, can read it. Closing the
+            tab keeps the data; clearing your browser's site data removes
+            it.
           </p>
           <p>
-            The static HTML/JS bundle is served from GitHub Pages. There is
-            no analytics, no tracking pixel, no cookie set by the
-            application itself.
+            <strong style={{ color: "#275662" }}>Storage limits.</strong>{" "}
+            Browser localStorage is typically capped at 5–10 MB per origin.
+            On large datasets the species abundance table can approach
+            this. If a save would exceed the quota, the app gracefully
+            falls back to saving without the abundance table (so your
+            curation work is preserved); on the next visit you re-load only
+            the abundance file. In the worst case the app keeps just the
+            events with verdicts and notes.
+          </p>
+          <p>
+            <strong style={{ color: "#275662" }}>Clearing storage.</strong>{" "}
+            Use the <em>Clear session</em> button in the upload bar to wipe
+            everything immediately. The Discard button on the welcome
+            popup does the same when offered. You can also remove just one
+            file via the trash icon on its upload card.
+          </p>
+          <p>
+            <strong style={{ color: "#275662" }}>Private / incognito
+            windows.</strong>{" "}
+            Browsers may restrict or fully disable localStorage in private
+            mode. In that case the app still works in-memory, but your
+            work is lost when the tab closes — export with the Export tab
+            before leaving.
+          </p>
+          <p>
+            The tutorial-seen flag (
+            <code style={{ fontFamily: "ui-monospace, monospace" }}>
+              crocodeel-tutorial-seen
+            </code>
+            ) is stored under a separate key so the welcome popup only
+            appears on first visit. Clearing it (or your browser's site
+            data) brings the popup back.
           </p>
         </HelpSection>
 
@@ -6809,9 +6874,14 @@ const HelpTab = ({ onStartTour }) => {
                 Does refreshing the page lose my work?
               </p>
               <p>
-                Yes — verdicts and notes only live in the page's memory.
-                Use the Export tab regularly, or download the JSON audit
-                trail when you take a break.
+                No — the app auto-saves your full session (events,
+                verdicts, notes, all uploaded files, plus your active tab
+                and filters) to your browser's localStorage every time
+                something changes. After a refresh you land exactly where
+                you left off. See the Privacy & how it works section for
+                details, including limits and how to clear it. For
+                belt-and-braces backups before a long break, also use the
+                Export tab.
               </p>
             </div>
           </div>
@@ -7629,6 +7699,30 @@ export default function App() {
         highlight: '[data-tutorial="tab-table"]',
       },
       {
+        title: "Scatterplots — visual evidence",
+        body:
+          "Each event becomes a scatterplot of source vs target abundances.\n\n" +
+          "Points on the y=x diagonal mean the species are equally abundant in both samples — a clean contamination signature. Points above the line mean the species is more abundant in the target than the source, which weakens the case.",
+        action: "tabScatter",
+        highlight: '[data-tutorial="tab-scatter"]',
+      },
+      {
+        title: "Network — see the contamination web",
+        body:
+          "The Network tab plots all events as a directed graph: nodes are samples, edges are contamination events.\n\n" +
+          "Edge thickness scales with rate. Cascade samples (both source and target in different events) appear in salmon. Useful to spot systemic patterns or single sample acting as a hub.",
+        action: "tabNetwork",
+        highlight: '[data-tutorial="tab-network"]',
+      },
+      {
+        title: "Plate map — well-to-well visualization",
+        body:
+          "If you provide a plate_map.tsv, the Plate map tab shows arrows between source and contaminated wells.\n\n" +
+          "Adjacent wells (Δ ≤ 1) are a strong signal of well-to-well leakage during library prep. Arrow thickness scales with the contamination rate.",
+        action: "tabPlate",
+        highlight: '[data-tutorial="tab-plate"]',
+      },
+      {
         title: "Guided validation — make verdicts",
         body:
           "This is where you decide for each event: True positive (real contamination), False positive (biological signal), or Uncertain.\n\n" +
@@ -7651,14 +7745,6 @@ export default function App() {
           "• Same-subject pairs (longitudinal) → almost always false positives. One click classifies them all with explanatory notes.\n\n" +
           "• Contamination flowing into a negative control → almost always real well-to-well leakage. One click classifies them as true positives.",
         highlight: '[data-tutorial="bulk-actions"]',
-      },
-      {
-        title: "Plate map — well-to-well visualization",
-        body:
-          "If you provide a plate_map.tsv, the Plate map tab shows arrows between source and contaminated wells.\n\n" +
-          "Adjacent wells (Δ ≤ 1) are a strong signal of well-to-well leakage during library prep.",
-        action: "tabPlate",
-        highlight: '[data-tutorial="tab-plate"]',
       },
       {
         title: "Export your curated report",
@@ -7698,6 +7784,12 @@ export default function App() {
         break;
       case "tabTable":
         setTab("table");
+        break;
+      case "tabScatter":
+        setTab("scatter");
+        break;
+      case "tabNetwork":
+        setTab("network");
         break;
       case "tabValidate":
         setTab("validate");
