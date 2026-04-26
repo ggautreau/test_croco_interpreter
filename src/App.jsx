@@ -9684,8 +9684,8 @@ export default function App() {
           "The Plate map tab opens with three sub-modes you can switch between:\n\n" +
           "• Overview — thumbnails of every plate at once\n" +
           "• Inspect — one plate full-size with contamination arrows\n" +
-          "• Edit — drag samples between wells to fix the map\n\n" +
-          "We'll go through each one.",
+          "• Edit — drag samples between wells to fix the map (we'll skip this for now — it's there when you need it)\n\n" +
+          "Let's look at Inspect mode.",
         action: "tabPlate",
         highlight: '[data-tutorial="tab-plate"]',
       },
@@ -9707,14 +9707,6 @@ export default function App() {
           "• Hide same-subject events to remove longitudinal noise\n\n" +
           "Hovering a well also highlights every event touching it.",
         highlight: '[data-tutorial="plate-controls"]',
-      },
-      {
-        title: "Plate Edit — fix the map manually",
-        body:
-          "Edit mode lets you drag samples between wells if the original plate_map.tsv has typos or missing entries.\n\n" +
-          "Drop unmapped samples into wells, swap two samples by dropping one onto the other, or remove a placement by dragging it off the plate. Once you're happy, the Download button on the upload card exports your corrected plate_map.tsv.",
-        action: "tabPlateEdit",
-        highlight: '[data-tutorial="plate-edit"]',
       },
       {
         title: "Guided validation — make verdicts",
