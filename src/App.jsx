@@ -3170,7 +3170,7 @@ const EventsTable = ({
           <input
             value={filter.q}
             onChange={(e) => setFilter({ ...filter, q: e.target.value })}
-            placeholder="sample or species…"
+            placeholder="sample…"
             className="pl-7 pr-3 py-1.5 text-[12px] rounded-sm w-64 outline-none"
             style={{ border: "1px solid #c4c0b3" }}
           />
@@ -9951,9 +9951,9 @@ export default function App() {
           return false;
       }
       if (q) {
-        const hay = `${e.source} ${e.target} ${e.introduced.join(
-          " ",
-        )}`.toLowerCase();
+        // Search across sample IDs only (source and target). Case-
+        // insensitive thanks to the toLowerCase on both sides.
+        const hay = `${e.source} ${e.target}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
