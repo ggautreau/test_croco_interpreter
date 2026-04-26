@@ -5169,6 +5169,7 @@ const ValidateTab = ({
             {idx + 1}/{events.length}
           </span>
         </div>
+        <div data-tutorial="bulk-actions">
         {pendingSameSubjectCount > 0 && bulkMarkSameSubjectAsFP && (
           <button
             onClick={bulkMarkSameSubjectAsFP}
@@ -5251,6 +5252,7 @@ const ValidateTab = ({
             <span>Reset all verdicts ({decidedCount})</span>
           </button>
         )}
+        </div>
         <EventQueue events={events} currentId={sel.id} onSelect={onSelect} />
       </aside>
 
@@ -5712,7 +5714,7 @@ const ValidateTab = ({
           >
             Your verdict
           </div>
-          <div className="flex flex-wrap gap-2 mb-4">
+          <div className="flex flex-wrap gap-2 mb-4" data-tutorial="verdict-buttons">
             <VerdictBtn
               active={sel.verdict === "true_positive"}
               onClick={() => setVerdict(sel.id, "true_positive")}
@@ -5952,7 +5954,7 @@ const HelpCol = ({ name, required, recognized, type, desc, aliases, example }) =
   </tr>
 );
 
-const HelpTab = () => {
+const HelpTab = ({ onStartTour }) => {
   const toc = [
     { id: "h-intro", label: "What is this tool?" },
     { id: "h-workflow", label: "Workflow" },
@@ -6010,6 +6012,52 @@ const HelpTab = () => {
           it does, what files it accepts, how it scores events, and how to
           interpret the results.
         </SectionTitle>
+
+        {/* Restart-tour CTA — re-launches the side-panel guided tour. */}
+        {onStartTour && (
+          <div
+            className="mb-8 p-4 rounded-sm flex items-center gap-4 flex-wrap"
+            style={{
+              background: "#eef8f8",
+              border: "1px solid #00a3a6",
+            }}
+          >
+            <div className="flex-1 min-w-[220px]">
+              <div
+                className="text-[13px]"
+                style={{
+                  color: "#275662",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                Prefer a guided tour?
+              </div>
+              <div
+                className="text-[12px] mt-0.5"
+                style={{ color: "#797870" }}
+              >
+                A 60-second walkthrough loads the demo dataset and shows
+                you each tab in context.
+              </div>
+            </div>
+            <button
+              onClick={onStartTour}
+              className="px-4 py-2 text-[12px] rounded-sm"
+              style={{
+                background: "#00a3a6",
+                color: "#fff",
+                fontWeight: 700,
+                letterSpacing: "0.02em",
+                fontFamily: '"Raleway", sans-serif',
+                cursor: "pointer",
+                border: "none",
+              }}
+            >
+              Restart guided tour
+            </button>
+          </div>
+        )}
 
         {/* ---------- Intro ---------- */}
         <HelpSection
@@ -7018,6 +7066,493 @@ const SavedPill = ({ timestamp }) => {
   );
 };
 
+/* ---------- TUTORIAL PANEL ----------
+   Side panel that walks the user through the demo dataset. Each step
+   has a title, body, optional `action` to apply when entered (set tab,
+   set selected event, etc.), and optional `highlight` CSS selector to
+   draw a teal outline around the relevant UI element on the left.
+
+   The panel is fixed on the right of the screen and the main content
+   gets a right padding to avoid overlap. Progress bar at the top makes
+   the multi-step nature obvious. */
+
+const TUTORIAL_KEY = "crocodeel-tutorial-seen";
+
+const tutorialMarkSeen = () => {
+  try {
+    localStorage.setItem(TUTORIAL_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+};
+
+const tutorialWasSeen = () => {
+  try {
+    return localStorage.getItem(TUTORIAL_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) => {
+  const [index, setIndex] = useState(0);
+  const [rect, setRect] = useState(null);
+  const step = steps[index];
+
+  // Whether the current step's prerequisite is met. Currently only one
+  // prerequisite is supported: `requires: "data"` means the Next button
+  // stays disabled until rawEvents.length > 0.
+  const blocked = step?.requires === "data" && !dataLoaded;
+
+  // Measure the highlighted target whenever the step changes or window
+  // resizes. The highlight is purely decorative — clicks still pass
+  // through to the underlying UI.
+  useEffect(() => {
+    if (!step) return undefined;
+    const measure = () => {
+      if (!step.highlight) {
+        setRect(null);
+        return;
+      }
+      const el = document.querySelector(step.highlight);
+      if (!el) {
+        setRect(null);
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+      if (r.top < 0 || r.bottom > window.innerHeight - 40) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    };
+    // Defer so the action's side-effect (tab switch, etc.) settles first.
+    const t = setTimeout(measure, 80);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [step, index]);
+
+  // Apply the side-effect attached to the step.
+  useEffect(() => {
+    if (step?.action && onAction) onAction(step.action);
+  }, [index]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!step) return null;
+  const isFirst = index === 0;
+  const isLast = index === steps.length - 1;
+  const progress = ((index + 1) / steps.length) * 100;
+
+  return (
+    <>
+      {/* Decorative highlight ring around the targeted element */}
+      {rect && (
+        <div
+          style={{
+            position: "fixed",
+            top: rect.top - 4,
+            left: rect.left - 4,
+            width: rect.width + 8,
+            height: rect.height + 8,
+            border: "3px solid #00a3a6",
+            borderRadius: 4,
+            boxShadow: "0 0 0 4px rgba(0,163,166,0.25)",
+            pointerEvents: "none",
+            zIndex: 1500,
+            transition: "all 0.2s ease-out",
+          }}
+        />
+      )}
+      <style>{`
+        @keyframes tut-pulse {
+          0%, 100% { box-shadow: 0 0 0 4px rgba(0,163,166,0.25); }
+          50% { box-shadow: 0 0 0 8px rgba(0,163,166,0.1); }
+        }
+      `}</style>
+
+      {/* Right side panel */}
+      <aside
+        style={{
+          position: "fixed",
+          top: 0,
+          right: 0,
+          width: 360,
+          height: "100vh",
+          background: "#fff",
+          borderLeft: "4px solid #00a3a6",
+          boxShadow: "-8px 0 24px rgba(39,86,98,0.12)",
+          zIndex: 1400,
+          display: "flex",
+          flexDirection: "column",
+          fontFamily: '"Raleway", sans-serif',
+        }}
+      >
+        {/* Header with progress bar */}
+        <div
+          style={{
+            padding: "18px 22px 14px",
+            borderBottom: "1px solid #e6e8e8",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 10,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 10,
+                letterSpacing: "0.15em",
+                textTransform: "uppercase",
+                color: "#ed6e6c",
+                fontWeight: 700,
+              }}
+            >
+              Guided tour · Step {index + 1} of {steps.length}
+            </div>
+            <button
+              onClick={() => {
+                tutorialMarkSeen();
+                onClose();
+              }}
+              aria-label="Close tutorial"
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                color: "#797870",
+                padding: 4,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          {/* Progress bar */}
+          <div
+            style={{
+              height: 4,
+              background: "#f0f2f2",
+              borderRadius: 2,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                width: `${progress}%`,
+                height: "100%",
+                background: "#00a3a6",
+                transition: "width 0.3s ease-out",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Body — scrollable if needed */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "20px 22px",
+          }}
+        >
+          <h3
+            style={{
+              fontSize: 18,
+              fontWeight: 700,
+              color: "#275662",
+              marginBottom: 12,
+              lineHeight: 1.3,
+            }}
+          >
+            {step.title}
+          </h3>
+          <div
+            style={{
+              fontSize: 13,
+              color: "#5a5550",
+              lineHeight: 1.6,
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {step.body}
+          </div>
+
+          {/* When the step requires demo data, show a clear status panel
+              with either a 'Load demo data' button or a loading state or
+              a 'Demo loaded' confirmation. The Next button is gated on
+              this same condition. */}
+          {step.requires === "data" && (
+            <div
+              className="mt-4 p-3 rounded-sm flex items-center gap-3"
+              style={{
+                background: dataLoaded ? "#eef8f8" : "#f6f7f7",
+                border: dataLoaded
+                  ? "1px solid #00a3a6"
+                  : "1px solid #c4c0b3",
+              }}
+            >
+              {dataLoaded ? (
+                <>
+                  <CheckCircle2
+                    className="w-4 h-4 shrink-0"
+                    style={{ color: "#00a3a6" }}
+                  />
+                  <span
+                    className="text-[12px]"
+                    style={{ color: "#275662", fontWeight: 600 }}
+                  >
+                    Demo data loaded — you can continue.
+                  </span>
+                </>
+              ) : demoLoading ? (
+                <>
+                  <div
+                    className="w-4 h-4 shrink-0 rounded-full"
+                    style={{
+                      border: "2px solid #c4c0b3",
+                      borderTopColor: "#00a3a6",
+                      animation: "tut-spin 0.8s linear infinite",
+                    }}
+                  />
+                  <span
+                    className="text-[12px]"
+                    style={{ color: "#797870", fontWeight: 600 }}
+                  >
+                    Loading demo data…
+                  </span>
+                  <style>{`@keyframes tut-spin { to { transform: rotate(360deg); } }`}</style>
+                </>
+              ) : (
+                <>
+                  <span
+                    className="text-[12px] flex-1"
+                    style={{ color: "#797870" }}
+                  >
+                    Demo data not loaded yet.
+                  </span>
+                  <button
+                    onClick={() => onAction && onAction("loadDemo")}
+                    className="px-3 py-1 text-[11px] rounded-sm"
+                    style={{
+                      background: "#00a3a6",
+                      color: "#fff",
+                      border: "none",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontFamily: '"Raleway", sans-serif',
+                    }}
+                  >
+                    Load demo data
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer with navigation */}
+        <div
+          style={{
+            padding: "14px 22px 18px",
+            borderTop: "1px solid #e6e8e8",
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+          }}
+        >
+          <button
+            onClick={() => {
+              tutorialMarkSeen();
+              onClose();
+            }}
+            style={{
+              padding: "6px 0",
+              fontSize: 11,
+              fontWeight: 600,
+              background: "transparent",
+              color: "#797870",
+              border: "none",
+              cursor: "pointer",
+              fontFamily: '"Raleway", sans-serif',
+              textDecoration: "underline",
+            }}
+          >
+            Skip tour
+          </button>
+          <div style={{ flex: 1 }} />
+          {!isFirst && (
+            <button
+              onClick={() => setIndex((i) => Math.max(0, i - 1))}
+              style={{
+                padding: "8px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                background: "#fff",
+                color: "#275662",
+                border: "1px solid #c4c0b3",
+                borderRadius: 3,
+                cursor: "pointer",
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              Back
+            </button>
+          )}
+          <button
+            onClick={() => {
+              if (blocked) return;
+              if (isLast) {
+                tutorialMarkSeen();
+                onClose();
+              } else {
+                setIndex((i) => i + 1);
+              }
+            }}
+            disabled={blocked}
+            title={
+              blocked
+                ? "Load the demo data first to continue the tour"
+                : undefined
+            }
+            style={{
+              padding: "8px 16px",
+              fontSize: 12,
+              fontWeight: 700,
+              background: blocked ? "#c4c0b3" : "#00a3a6",
+              color: "#fff",
+              border: "none",
+              borderRadius: 3,
+              cursor: blocked ? "not-allowed" : "pointer",
+              fontFamily: '"Raleway", sans-serif',
+              letterSpacing: "0.02em",
+              opacity: blocked ? 0.7 : 1,
+            }}
+          >
+            {isLast ? "Got it!" : "Next →"}
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+};
+
+/* ---------- TUTORIAL WELCOME GATE ----------
+   Shown on first visit only (no prior session, no tutorial-seen flag).
+   Asks the user to pick: take the guided tour or skip. */
+const TutorialWelcome = ({ onStart, onSkip }) => (
+  <div
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(39,86,98,0.55)",
+      zIndex: 1700,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20,
+      fontFamily: '"Raleway", sans-serif',
+    }}
+  >
+    <div
+      style={{
+        background: "#fff",
+        borderRadius: 4,
+        padding: "28px 32px",
+        maxWidth: 440,
+        width: "100%",
+        boxShadow: "0 16px 40px rgba(0,0,0,0.25)",
+        borderLeft: "4px solid #00a3a6",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          letterSpacing: "0.15em",
+          textTransform: "uppercase",
+          color: "#ed6e6c",
+          fontWeight: 700,
+          marginBottom: 6,
+        }}
+      >
+        First visit
+      </div>
+      <h2
+        style={{
+          fontSize: 22,
+          fontWeight: 700,
+          color: "#275662",
+          marginBottom: 12,
+          lineHeight: 1.25,
+        }}
+      >
+        Welcome to the CroCoDeEL Interpretation Console
+      </h2>
+      <p
+        style={{
+          fontSize: 13,
+          color: "#5a5550",
+          lineHeight: 1.6,
+          marginBottom: 20,
+        }}
+      >
+        Take a 60-second guided tour with a demo dataset to learn the
+        workflow — files, tabs, validation, export. You can also skip
+        and explore at your own pace; the tour is always available from
+        the Help tab.
+      </p>
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          justifyContent: "flex-end",
+        }}
+      >
+        <button
+          onClick={onSkip}
+          style={{
+            padding: "10px 18px",
+            fontSize: 13,
+            fontWeight: 600,
+            background: "#fff",
+            color: "#797870",
+            border: "1px solid #c4c0b3",
+            borderRadius: 3,
+            cursor: "pointer",
+            fontFamily: '"Raleway", sans-serif',
+          }}
+        >
+          Skip
+        </button>
+        <button
+          onClick={onStart}
+          style={{
+            padding: "10px 22px",
+            fontSize: 13,
+            fontWeight: 700,
+            background: "#00a3a6",
+            color: "#fff",
+            border: "none",
+            borderRadius: 3,
+            cursor: "pointer",
+            fontFamily: '"Raleway", sans-serif',
+            letterSpacing: "0.02em",
+          }}
+        >
+          Take the tour
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
 export default function App() {
   // Try to recover a previous session before initial render so the UI
   // shows the data immediately (no flicker). All persisted UI state
@@ -7052,6 +7587,131 @@ export default function App() {
      auto-save. Set to a timestamp on save; the indicator fades out via
      a separate timeout. */
   const [savedAt, setSavedAt] = useState(null);
+
+  /* Tutorial state — two pieces:
+     - welcomeOpen: the first-visit popup that asks "Take the tour or
+       skip?". Shown only when there's no prior session AND the user has
+       never seen the tutorial.
+     - tutorialOpen: the actual side-panel walkthrough. Set to true
+       either by clicking "Take the tour" in the welcome popup, or by
+       clicking "Restart tour" in the Help tab. */
+  const [welcomeOpen, setWelcomeOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return !initial && !tutorialWasSeen();
+  });
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+
+  const tutorialSteps = useMemo(
+    () => [
+      {
+        title: "Welcome — let's load the demo",
+        body:
+          "We'll walk through the workflow using the bundled Lou et al. 2023 P3 dataset.\n\n" +
+          "It includes contamination events, abundance table, sample metadata and plate map — everything needed to demonstrate the tool.\n\n" +
+          "Click below to load it. The Next button unlocks once the data is in.",
+        action: "tabOverviewAndLoadDemo",
+        requires: "data",
+      },
+      {
+        title: "Overview — the big picture",
+        body:
+          "First stop: the Overview tab.\n\n" +
+          "It shows the run parameters from CroCoDeEL, total event counts, and the highest-rate / highest-probability events. Always start here to understand what you're dealing with.",
+        action: "tabOverview",
+        highlight: '[data-tutorial="tab-overview"]',
+      },
+      {
+        title: "Events table — sort and filter",
+        body:
+          "The Events table lists every flagged contamination event.\n\n" +
+          "Filter by minimum probability, minimum rate, or hide longitudinal pairs (same subject). Sort any column. Click a row to inspect that event in Guided validation.",
+        action: "tabTable",
+        highlight: '[data-tutorial="tab-table"]',
+      },
+      {
+        title: "Guided validation — make verdicts",
+        body:
+          "This is where you decide for each event: True positive (real contamination), False positive (biological signal), or Uncertain.\n\n" +
+          "You see the scatterplot, six diagnostic criteria, plate position, and full sample context — everything in one screen.",
+        action: "tabValidate",
+        highlight: '[data-tutorial="tab-validate"]',
+      },
+      {
+        title: "Keyboard shortcuts speed up curation",
+        body:
+          "Press T (True positive), F (False positive) or U (Uncertain) to validate the current event.\n\n" +
+          "Then ← / → jump to the previous/next pending event automatically.\n\n" +
+          "Press ? in the app to see all shortcuts.",
+        highlight: '[data-tutorial="verdict-buttons"]',
+      },
+      {
+        title: "Bulk actions for obvious cases",
+        body:
+          "On longitudinal datasets, two heuristics handle most events automatically:\n\n" +
+          "• Same-subject pairs (longitudinal) → almost always false positives. One click classifies them all with explanatory notes.\n\n" +
+          "• Contamination flowing into a negative control → almost always real well-to-well leakage. One click classifies them as true positives.",
+        highlight: '[data-tutorial="bulk-actions"]',
+      },
+      {
+        title: "Plate map — well-to-well visualization",
+        body:
+          "If you provide a plate_map.tsv, the Plate map tab shows arrows between source and contaminated wells.\n\n" +
+          "Adjacent wells (Δ ≤ 1) are a strong signal of well-to-well leakage during library prep.",
+        action: "tabPlate",
+        highlight: '[data-tutorial="tab-plate"]',
+      },
+      {
+        title: "Export your curated report",
+        body:
+          "When done, the Export tab produces a curated TSV (true positives only, or everything except false positives) and a JSON audit trail with every verdict, note and metadata context.",
+        action: "tabExport",
+        highlight: '[data-tutorial="tab-export"]',
+      },
+      {
+        title: "You're ready!",
+        body:
+          "Your work is auto-saved to your browser as you go — close the tab and come back anytime.\n\n" +
+          "Need this tour again? Click the Help tab → 'Restart guided tour'.\n\n" +
+          "Click 'Got it!' to start exploring on your own.",
+        action: "tabOverview",
+      },
+    ],
+    [],
+  );
+
+  /** Apply the side-effect attached to a tutorial step. Called by the
+      panel whenever a new step becomes active. */
+  const handleTutorialAction = (action) => {
+    switch (action) {
+      case "tabOverviewAndLoadDemo":
+        // Always go to Overview (it's where the welcome step belongs),
+        // and trigger the demo load only if the user hasn't already
+        // loaded data — we don't want to overwrite their work.
+        setTab("overview");
+        if (rawEvents.length === 0 && !demoLoading) loadDemo();
+        break;
+      case "loadDemo":
+        if (rawEvents.length === 0) loadDemo();
+        break;
+      case "tabOverview":
+        setTab("overview");
+        break;
+      case "tabTable":
+        setTab("table");
+        break;
+      case "tabValidate":
+        setTab("validate");
+        break;
+      case "tabPlate":
+        setTab("plate");
+        break;
+      case "tabExport":
+        setTab("export");
+        break;
+      default:
+        break;
+    }
+  };
 
   /* Auto-save the full session to localStorage whenever any persisted
      state changes. Debounced to 200 ms so we don't hammer the disk
@@ -7542,6 +8202,10 @@ export default function App() {
         color: "#275662",
         fontFamily:
           '"Avenir Next", "Nunito Sans", system-ui, -apple-system, sans-serif',
+        // Reserve room on the right when the tutorial panel is open so
+        // content doesn't slide under it.
+        paddingRight: tutorialOpen ? 360 : 0,
+        transition: "padding-right 0.2s ease-out",
       }}
     >
       <style>{`
@@ -7726,6 +8390,7 @@ export default function App() {
 
       {/* ==================== UPLOAD BAR ==================== */}
       <section
+        data-tutorial="upload-bar"
         style={{
           background: "#f6f7f7",
           borderTop: "1px solid #e6e8e8",
@@ -7971,6 +8636,7 @@ export default function App() {
                   key={t.id}
                   onClick={() => !disabled && setTab(t.id)}
                   disabled={disabled}
+                  data-tutorial={`tab-${t.id}`}
                   title={
                     disabled
                       ? "Load contamination_events.tsv first"
@@ -8097,7 +8763,9 @@ export default function App() {
               onExportJSON={exportJSON}
             />
           )}
-          {tab === "help" && <HelpTab />}
+          {tab === "help" && (
+            <HelpTab onStartTour={() => setTutorialOpen(true)} />
+          )}
             </>
           )}
         </div>
@@ -8107,6 +8775,34 @@ export default function App() {
           Lets the user know the work is being persisted without
           interrupting the flow. */}
       <SavedPill timestamp={savedAt} />
+
+      {/* First-visit welcome popup. Asks the user whether to take the
+          guided tour or skip. Sets the tutorial-seen flag in either
+          case so it doesn't show again. */}
+      {welcomeOpen && (
+        <TutorialWelcome
+          onStart={() => {
+            setWelcomeOpen(false);
+            setTutorialOpen(true);
+          }}
+          onSkip={() => {
+            tutorialMarkSeen();
+            setWelcomeOpen(false);
+          }}
+        />
+      )}
+
+      {/* Side-panel guided tour. Triggered from the welcome popup or
+          from the "Restart guided tour" button in the Help tab. */}
+      {tutorialOpen && (
+        <TutorialPanel
+          steps={tutorialSteps}
+          onClose={() => setTutorialOpen(false)}
+          onAction={handleTutorialAction}
+          dataLoaded={rawEvents.length > 0}
+          demoLoading={demoLoading}
+        />
+      )}
 
       {/* Centralised confirm/info modal — used for ALL confirmation
           prompts in the app (bulk validation actions, file removal,
