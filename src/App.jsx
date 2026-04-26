@@ -3025,8 +3025,20 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
                 contamination_events.tsv
               </code>{" "}
               from the cards at the top of the page, or load the bundled
-              demo dataset (Lou et al. 2023, P3). All counts below are zero
-              until then.
+              demo dataset (
+              <a
+                href="https://doi.org/10.1186/s40168-023-01477-2"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: "#00a3a6",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 2,
+                }}
+              >
+                Lou et al. 2023
+              </a>
+              , P3). All counts below are zero until then.
             </div>
           </div>
           {onLoadDemo && (
