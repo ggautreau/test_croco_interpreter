@@ -10499,55 +10499,75 @@ export default function App() {
       {/* ==================== SUB-BANNER ==================== */}
       <section className="bg-white">
         <div className="max-w-7xl mx-auto px-6 py-8">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Chevron size={14} color="#ed6e6c" />
-              <span
-                className="text-[11px] tracking-[0.15em] uppercase"
+          <div
+            className="flex flex-wrap gap-6 items-end justify-between"
+          >
+            <div style={{ flex: "1 1 520px", minWidth: 0 }}>
+              <div className="flex items-center gap-2 mb-2">
+                <Chevron size={14} color="#ed6e6c" />
+                <span
+                  className="text-[11px] tracking-[0.15em] uppercase"
+                  style={{
+                    color: "#ed6e6c",
+                    fontWeight: 700,
+                    fontFamily: '"Raleway", sans-serif',
+                  }}
+                >
+                  Metagenomics · Cross-sample contamination detection
+                </span>
+              </div>
+              <h1
+                className="text-[42px] leading-[1.05] tracking-tight"
                 style={{
-                  color: "#ed6e6c",
-                  fontWeight: 700,
+                  color: "#275662",
+                  fontWeight: 800,
                   fontFamily: '"Raleway", sans-serif',
                 }}
               >
-                Metagenomics · Cross-sample contamination detection
-              </span>
+                Interpreting CroCoDeEL results
+              </h1>
+              <p className="mt-3 text-[15px] leading-relaxed text-stone-700 max-w-2xl">
+                Upload your events file and abundance table, then walk through each
+                flagged pair with interactive scatterplots, assisted diagnostics
+                and a guided validation workflow. Export a curated TSV when you are
+                done.
+              </p>
             </div>
-            <h1
-              className="text-[42px] leading-[1.05] tracking-tight"
-              style={{
-                color: "#275662",
-                fontWeight: 800,
-                fontFamily: '"Raleway", sans-serif',
-              }}
-            >
-              Interpreting CroCoDeEL results
-            </h1>
-            <p className="mt-3 text-[15px] leading-relaxed text-stone-700 max-w-2xl">
-              Upload your events file and abundance table, then walk through each
-              flagged pair with interactive scatterplots, assisted diagnostics
-              and a guided validation workflow. Export a curated TSV when you are
-              done.
-            </p>
             {/* Privacy badge — prominent, reassuring */}
             <div
-              className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-sm"
+              className="flex items-start gap-2 px-3 py-2 rounded-sm"
               style={{
                 background: "rgba(0, 163, 166, 0.08)",
                 border: "1px solid #00a3a6",
+                flex: "1 1 320px",
+                maxWidth: 420,
               }}
             >
-              <ShieldCheck className="w-4 h-4" style={{ color: "#00a3a6" }} />
-              <span
-                className="text-[12px]"
-                style={{
-                  color: "#275662",
-                  fontWeight: 600,
-                  fontFamily: '"Raleway", sans-serif',
-                }}
-              >
-                100% browser-based — your files never leave your computer
-              </span>
+              <ShieldCheck
+                className="w-4 h-4 shrink-0"
+                style={{ color: "#00a3a6", marginTop: 2 }}
+              />
+              <div>
+                <div
+                  className="text-[12px]"
+                  style={{
+                    color: "#275662",
+                    fontWeight: 600,
+                    fontFamily: '"Raleway", sans-serif',
+                  }}
+                >
+                  100% browser-based — your files never leave your computer
+                </div>
+                <div
+                  className="text-[11px] mt-1"
+                  style={{ color: "#5a5550", lineHeight: 1.5 }}
+                >
+                  Your work is auto-saved locally so you can close the tab and
+                  come back anytime (unless your browser cache is cleared). Use{" "}
+                  <strong style={{ color: "#275662" }}>Clear session</strong>{" "}
+                  on the upload bar to wipe everything and start fresh.
+                </div>
+              </div>
             </div>
           </div>
         </div>
