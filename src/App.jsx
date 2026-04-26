@@ -6165,14 +6165,24 @@ const PatternCard = ({
   signals,
   watchOut,
 }) => {
+  // The header strip's color and label depend on the verdict. The
+  // FP_OR_UNCERTAIN tone is reserved for borderline cases where the
+  // paper classifies them as FP but a stricter curator might reasonably
+  // tag them as Uncertain instead. Drawn as a gradient from salmon to
+  // grey to signal "could go either way".
   const tone =
     verdict === "TP"
       ? { bg: "#00a3a6", text: "True positive — real contamination" }
       : verdict === "FP"
         ? { bg: "#ed6e6c", text: "False positive — flagged but biological" }
-        : verdict === "FN"
-          ? { bg: "#9dc544", text: "False negative — missed by CroCoDeEL" }
-          : { bg: "#c4c0b3", text: "Uncertain" };
+        : verdict === "FP_OR_UNCERTAIN"
+          ? {
+              bg: "linear-gradient(90deg, #ed6e6c 0%, #c4c0b3 100%)",
+              text: "False positive or Uncertain — depends on stringency",
+            }
+          : verdict === "FN"
+            ? { bg: "#9dc544", text: "False negative — missed by CroCoDeEL" }
+            : { bg: "#c4c0b3", text: "Uncertain" };
   return (
     <div
       style={{
@@ -7639,6 +7649,27 @@ const LearnTab = () => {
           positive, they don't — that's the visual key to spotting one.
         </p>
         <div
+          className="rounded-sm p-3 mb-5"
+          style={{
+            background: "rgba(196,192,179,0.15)",
+            borderLeft: "3px solid #c4c0b3",
+            fontSize: 12,
+            color: "#5a5550",
+            lineHeight: 1.55,
+          }}
+        >
+          <strong style={{ color: "#275662" }}>
+            Verdict depends on your stringency.
+          </strong>{" "}
+          The original Goulet et al. paper classified these four as false
+          positives (i.e. real biological similarity, no actual
+          contamination). But cases F, G and H are visually borderline —
+          a stricter curator could legitimately tag them as{" "}
+          <strong>Uncertain</strong> rather than FP, especially when the
+          metadata context is itself ambiguous. Pick a stringency policy
+          for your study and apply it consistently.
+        </div>
+        <div
           className="grid gap-5"
           style={{ gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))" }}
         >
@@ -7668,7 +7699,7 @@ const LearnTab = () => {
           <PatternCard
             caseLabel="F"
             title="Spread cloud despite moderate rate"
-            verdict="FP"
+            verdict="FP_OR_UNCERTAIN"
             rate="2.58%"
             probability="0.51"
             plot={<PatternMiniPlot points={SHAPE_FP_DIFFUSE_BIO_2} rate={0.0258} lineSide="above" />}
@@ -7676,20 +7707,23 @@ const LearnTab = () => {
               <>
                 The rate is non-trivial but the scatter doesn't form a
                 line. Same-biome longitudinal samples often produce this
-                shape from shared microbiota persistence.
+                shape from shared microbiota persistence. Borderline
+                probability (~0.5) — a strict curator may flag this as
+                Uncertain rather than FP.
               </>
             }
             signals={[
               "Cloud-like distribution, no clean line",
               "Both samples come from related subjects (same family, same cage, same body site)",
+              "Probability sitting near 0.5 — model is hesitant",
             ]}
-            watchOut="Always check the metadata before classifying. If areRelated() returns true, lean toward FP."
+            watchOut="Always check the metadata before classifying. If areRelated() returns true, lean toward FP; if not, Uncertain is the safer call."
           />
 
           <PatternCard
             caseLabel="G"
             title="Sparse points, weak structure"
-            verdict="FP"
+            verdict="FP_OR_UNCERTAIN"
             rate="0.64%"
             probability="0.70"
             plot={<PatternMiniPlot points={SHAPE_FP_DIFFUSE_BIO_3} rate={0.0064} lineSide="above" />}
@@ -7698,28 +7732,34 @@ const LearnTab = () => {
                 Few points overall and no convincing diagonal. The model
                 is moderately confident but the scatter doesn't back it
                 up. Often happens with low-biomass samples on both sides.
+                Borderline — a strict curator may tag this as Uncertain
+                rather than FP.
               </>
             }
             signals={[
               "Sparse scatter (fewer than ~30 species at meaningful abundance)",
               "Probability moderate (0.65-0.75)",
+              "Sample biomass may be low on both sides",
             ]}
-            watchOut="Don't confuse this with case I (false negative): the difference is whether ANY narrow line is visible. Here, no."
+            watchOut="Don't confuse this with case I (false negative): the difference is whether ANY narrow line is visible. Here, no — but the limit-of-detection issue alone justifies Uncertain in some workflows."
           />
 
           <PatternCard
             caseLabel="H"
             title="High probability but biological"
-            verdict="FP"
+            verdict="FP_OR_UNCERTAIN"
             rate="0.19%"
             probability="1.00"
             plot={<PatternMiniPlot points={SHAPE_FP_FAKE_LINE} rate={0.0019} lineSide="above" />}
             description={
               <>
                 The trickiest case. Points form something that resembles a
-                diagonal and the model is fully confident — yet a human
-                curator can tell from context (metadata, plate, biome)
-                that this is shared microbiota, not contamination.
+                diagonal and the model is fully confident — yet the
+                metadata, plate position, or biome may suggest shared
+                microbiota rather than contamination. Even with
+                probability = 1, this is borderline: a stricter curator
+                will tag Uncertain whenever the contextual case isn't
+                airtight.
               </>
             }
             signals={[
@@ -7727,7 +7767,7 @@ const LearnTab = () => {
               "High probability (≥ 0.95) — model fooled by the visual structure",
               "Strong contextual reasons against contamination (same subject, distant plates, etc.)",
             ]}
-            watchOut="This is the case where probability alone will mislead you. Always cross-check with metadata: a single 'related' relationship in the cohort is enough to tip toward FP."
+            watchOut="This is the case where probability alone will mislead you. Always cross-check with metadata: a single 'related' relationship in the cohort is enough to tip toward FP — but if metadata is silent or ambiguous, Uncertain is the honest call."
           />
         </div>
       </div>
