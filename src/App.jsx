@@ -7,7 +7,6 @@ import {
   XCircle,
   HelpCircle,
   Download,
-  Table as TableIcon,
   GitBranch,
   ScatterChart as ScatterIcon,
   ClipboardCheck,
@@ -24,6 +23,7 @@ import {
   ShieldAlert,
   Beaker,
   Droplets,
+  Droplet,
   User,
   Users,
   Calendar,
@@ -8770,7 +8770,7 @@ export default function App() {
         >
             {[
               { id: "overview", label: "Overview", icon: BookOpen, requiresData: false },
-              { id: "table", label: "Events table", icon: TableIcon, requiresData: true },
+              { id: "table", label: "Events table", icon: Droplet, requiresData: true },
               { id: "scatter", label: "Scatterplots", icon: ScatterIcon, requiresData: true },
               { id: "network", label: "Network", icon: GitBranch, requiresData: true },
               { id: "plate", label: "Plate map", icon: Grid3x3, requiresData: true },
