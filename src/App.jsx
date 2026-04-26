@@ -7465,7 +7465,7 @@ const LearnTab = () => {
       {/* ============================== */}
       {/* TRUE POSITIVES (paper Fig. 3 A-D) */}
       {/* ============================== */}
-      <div className="mb-8">
+      <div className="mb-8" data-tutorial="learn-tp">
         <h2
           style={{
             fontSize: 18,
@@ -7600,7 +7600,7 @@ const LearnTab = () => {
       {/* ============================== */}
       {/* FALSE POSITIVES (paper Fig. 3 E-H) */}
       {/* ============================== */}
-      <div className="mb-8">
+      <div className="mb-8" data-tutorial="learn-fp">
         <h2
           style={{
             fontSize: 18,
@@ -7774,7 +7774,7 @@ const LearnTab = () => {
       {/* ============================== */}
       {/* FALSE NEGATIVES (paper Fig. 3 I-L) */}
       {/* ============================== */}
-      <div className="mb-8">
+      <div className="mb-8" data-tutorial="learn-fn">
         <h2
           style={{
             fontSize: 18,
@@ -9748,10 +9748,42 @@ export default function App() {
         highlight: '[data-tutorial="tab-export"]',
       },
       {
+        title: "Learn the patterns",
+        body:
+          "One last stop: the Learn tab is a reference for reading scatterplots, built around the 12 canonical cases from the Goulet et al. 2025 paper.\n\n" +
+          "Curation isn't just about clicking buttons — it's about training your eye. We'll walk through the three categories you'll encounter.",
+        action: "tabLearn",
+        highlight: '[data-tutorial="tab-learn"]',
+      },
+      {
+        title: "True positives — real contamination",
+        body:
+          "Four examples (A-D) of contamination CroCoDeEL flags AND humans confirm.\n\n" +
+          "The shared signature: a clear linear cluster parallel to y = x, with the dashed salmon line marking exactly where the contamination signal sits. Rate is independent of how obvious the line is — even 0.49% (case B) can be unambiguous when the pattern is clean.",
+        action: "tabLearn",
+        highlight: '[data-tutorial="learn-tp"]',
+      },
+      {
+        title: "False positives — flagged but biological",
+        body:
+          "CroCoDeEL flagged these but a curator decided they're biological similarity.\n\n" +
+          "Cases F, G and H are stringency-dependent — strict curators might tag them Uncertain instead. The visual key: do the points actually hug the dashed salmon line? On a true positive yes, on a false positive no.",
+        action: "tabLearn",
+        highlight: '[data-tutorial="learn-fp"]',
+      },
+      {
+        title: "False negatives — what CroCoDeEL misses",
+        body:
+          "Events humans identified but CroCoDeEL didn't flag. These won't appear in your events table by definition — knowing the patterns helps you decide whether to lower the probability cutoff at the CroCoDeEL stage to widen the search.\n\n" +
+          "Case K (cascade contamination) is especially worth knowing: when two samples share a third common contamination source, the line is blurred and CroCoDeEL learned to reject it.",
+        action: "tabLearn",
+        highlight: '[data-tutorial="learn-fn"]',
+      },
+      {
         title: "You're ready!",
         body:
           "Your work is auto-saved to your browser as you go — close the tab and come back anytime.\n\n" +
-          "Need this tour again? Click the Help tab → 'Restart guided tour'.\n\n" +
+          "The Learn tab is always there if you want to revisit the patterns. Need this whole tour again? Help tab → 'Restart guided tour'.\n\n" +
           "Click 'Got it!' to start exploring on your own.",
         action: "tabOverview",
       },
@@ -9812,6 +9844,9 @@ export default function App() {
         break;
       case "tabExport":
         setTab("export");
+        break;
+      case "tabLearn":
+        setTab("learn");
         break;
       default:
         break;
