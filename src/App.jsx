@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Search,
   BookOpen,
+  GraduationCap,
   Grid3x3,
   ShieldCheck,
   ShieldAlert,
@@ -5963,6 +5964,408 @@ const HelpCol = ({ name, required, recognized, type, desc, aliases, example }) =
   </tr>
 );
 
+/* ============================================================================
+   LEARN TAB — pattern recognition, case studies, quiz
+   ============================================================================ */
+
+/** A small mock scatterplot SVG that illustrates one canonical pattern.
+    Points are pre-computed in [0, 1]² so the SVG is self-contained. */
+const PatternMiniPlot = ({ points, showLine = true, badPoints = [], height = 130, width = 160 }) => {
+  const pad = 12;
+  const w = width - pad * 2;
+  const h = height - pad * 2;
+  const toX = (x) => pad + x * w;
+  const toY = (y) => pad + (1 - y) * h;
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      style={{ background: "#fafbfb", borderRadius: 3 }}
+    >
+      {/* Axes */}
+      <line
+        x1={pad}
+        y1={pad + h}
+        x2={pad + w}
+        y2={pad + h}
+        stroke="#c4c0b3"
+        strokeWidth={1}
+      />
+      <line
+        x1={pad}
+        y1={pad}
+        x2={pad}
+        y2={pad + h}
+        stroke="#c4c0b3"
+        strokeWidth={1}
+      />
+      {/* y = x diagonal */}
+      {showLine && (
+        <line
+          x1={toX(0)}
+          y1={toY(0)}
+          x2={toX(1)}
+          y2={toY(1)}
+          stroke="#275662"
+          strokeWidth={1}
+          strokeDasharray="2,2"
+          opacity={0.5}
+        />
+      )}
+      {/* Regular points */}
+      {points.map(([x, y], i) => (
+        <circle
+          key={`p-${i}`}
+          cx={toX(x)}
+          cy={toY(y)}
+          r={2.5}
+          fill="#275662"
+          opacity={0.75}
+        />
+      ))}
+      {/* Highlighted "bad" points (e.g. above-line outliers) */}
+      {badPoints.map(([x, y], i) => (
+        <circle
+          key={`b-${i}`}
+          cx={toX(x)}
+          cy={toY(y)}
+          r={3.5}
+          fill="#ed6e6c"
+          stroke="#fff"
+          strokeWidth={1}
+        />
+      ))}
+      {/* Axis labels */}
+      <text
+        x={pad + w / 2}
+        y={height - 1}
+        textAnchor="middle"
+        fontSize={8}
+        fill="#797870"
+        style={{ fontFamily: "ui-monospace, monospace" }}
+      >
+        source
+      </text>
+      <text
+        x={2}
+        y={pad + h / 2}
+        textAnchor="middle"
+        fontSize={8}
+        fill="#797870"
+        transform={`rotate(-90, 2, ${pad + h / 2})`}
+        style={{ fontFamily: "ui-monospace, monospace" }}
+      >
+        target
+      </text>
+    </svg>
+  );
+};
+
+/** Single pattern reference card. Shows a mini-plot, a verdict pill, and
+    an explanation of what to look for and how to interpret it. */
+const PatternCard = ({ title, verdict, plot, description, signals, watchOut }) => {
+  const tone =
+    verdict === "TP"
+      ? { bg: "#00a3a6", text: "True positive" }
+      : verdict === "FP"
+        ? { bg: "#ed6e6c", text: "False positive" }
+        : { bg: "#c4c0b3", text: "Uncertain" };
+  return (
+    <div
+      style={{
+        border: "1px solid #e6e8e8",
+        borderRadius: 4,
+        background: "#fff",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          background: tone.bg,
+          color: "#fff",
+          padding: "8px 14px",
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: "0.05em",
+          textTransform: "uppercase",
+          fontFamily: '"Raleway", sans-serif',
+        }}
+      >
+        Typical verdict: {tone.text}
+      </div>
+      <div className="p-4">
+        <h3
+          style={{
+            fontSize: 15,
+            fontWeight: 700,
+            color: "#275662",
+            marginBottom: 10,
+            fontFamily: '"Raleway", sans-serif',
+          }}
+        >
+          {title}
+        </h3>
+        <div className="flex gap-4 mb-3 items-start">
+          {plot}
+          <div style={{ flex: 1, fontSize: 12, color: "#5a5550", lineHeight: 1.55 }}>
+            {description}
+          </div>
+        </div>
+        <div
+          className="mt-3 pt-3"
+          style={{ borderTop: "1px solid #f0f2f2" }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "#00a3a6",
+              fontWeight: 700,
+              marginBottom: 4,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+          >
+            Signals to spot
+          </div>
+          <ul
+            className="list-disc pl-5 text-[12px]"
+            style={{ color: "#5a5550", lineHeight: 1.55 }}
+          >
+            {signals.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </div>
+        {watchOut && (
+          <div
+            className="mt-3 pt-3"
+            style={{ borderTop: "1px solid #f0f2f2" }}
+          >
+            <div
+              style={{
+                fontSize: 10,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "#ed6e6c",
+                fontWeight: 700,
+                marginBottom: 4,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              Watch out
+            </div>
+            <p style={{ fontSize: 12, color: "#5a5550", lineHeight: 1.55 }}>
+              {watchOut}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const LearnTab = () => {
+  // Pre-computed canonical scatter shapes used by each pattern card.
+  // All values are in [0, 1]; rendered by PatternMiniPlot.
+  const linearCluster = [
+    [0.75, 0.74], [0.62, 0.61], [0.5, 0.49], [0.4, 0.39], [0.3, 0.29],
+    [0.22, 0.21], [0.15, 0.14], [0.1, 0.09], [0.85, 0.84], [0.55, 0.55],
+    [0.45, 0.43], [0.35, 0.34], [0.25, 0.24], [0.18, 0.17], [0.08, 0.07],
+  ];
+  const linearWithOutliers = [
+    [0.75, 0.74], [0.62, 0.61], [0.5, 0.49], [0.4, 0.39], [0.3, 0.29],
+    [0.22, 0.21], [0.15, 0.14], [0.1, 0.09], [0.55, 0.55], [0.35, 0.34],
+    [0.25, 0.24],
+  ];
+  const linearOutliersBad = [
+    [0.2, 0.6], [0.1, 0.55], [0.3, 0.7],
+  ];
+  const diffuse = [
+    [0.8, 0.4], [0.3, 0.7], [0.6, 0.2], [0.5, 0.5], [0.2, 0.3],
+    [0.7, 0.65], [0.4, 0.15], [0.85, 0.55], [0.15, 0.45], [0.55, 0.85],
+    [0.25, 0.25], [0.65, 0.35], [0.45, 0.6], [0.35, 0.4], [0.7, 0.5],
+  ];
+  const sparseLine = [
+    [0.6, 0.59], [0.5, 0.49], [0.4, 0.39],
+  ];
+
+  return (
+    <div>
+      <SectionTitle eyebrow="Learn" title="Reading a CroCoDeEL scatterplot">
+        Each event is a story told by a scatterplot. This page collects the
+        most common patterns you'll see and what they typically mean. The
+        scatterplots here are illustrative, not real data — they're meant to
+        train your eye.
+      </SectionTitle>
+
+      <div
+        className="rounded-sm p-4 mb-8"
+        style={{
+          background: "rgba(0,163,166,0.06)",
+          border: "1px solid rgba(0,163,166,0.3)",
+          fontSize: 13,
+          color: "#275662",
+          lineHeight: 1.6,
+        }}
+      >
+        <strong>How to read these plots.</strong> Each point is a microbial
+        species. The X axis is its abundance in the alleged source sample,
+        the Y axis is its abundance in the contaminated (target) sample.
+        The dotted diagonal is y = x — points sitting on the line have
+        equal abundance in both samples.
+      </div>
+
+      <div
+        className="grid gap-5"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))" }}
+      >
+        <PatternCard
+          title="Linear cluster on the diagonal"
+          verdict="TP"
+          plot={<PatternMiniPlot points={linearCluster} />}
+          description={
+            <>
+              Points line up tightly on the y = x diagonal. The target sample's
+              composition is essentially a fraction of the source — the
+              hallmark of a clean cross-contamination event.
+            </>
+          }
+          signals={[
+            "Tight scatter along the diagonal across many species",
+            "No species above the line",
+            "High RF probability (≥ 0.9)",
+            "Rate often > 5%",
+          ]}
+          watchOut="If source and target are longitudinal samples of the same subject, the same line shape can appear from genuine biological persistence — always check the metadata."
+        />
+
+        <PatternCard
+          title="Cluster on diagonal + outliers above the line"
+          verdict="TP"
+          plot={
+            <PatternMiniPlot
+              points={linearWithOutliers}
+              badPoints={linearOutliersBad}
+            />
+          }
+          description={
+            <>
+              Most points follow the diagonal as expected, but a few species
+              sit clearly above the line — they are more abundant in the
+              target than in the source, which a pure contamination cannot
+              explain.
+            </>
+          }
+          signals={[
+            "Main cluster still hugs the diagonal",
+            "A small number (5–15) of species above the line",
+            "Often a sign of cascade: the target was contaminated by another, more proximal source",
+          ]}
+          watchOut="Don't confuse with FP: real biological similarity also produces above-line outliers. Cross-check with the plate map and the cascade flag."
+        />
+
+        <PatternCard
+          title="Diffuse cloud, no diagonal"
+          verdict="FP"
+          plot={<PatternMiniPlot points={diffuse} />}
+          description={
+            <>
+              Points spread across the plot area without forming a line. The
+              two samples share species but the abundances don't track each
+              other — typical of biological similarity rather than mechanical
+              transfer.
+            </>
+          }
+          signals={[
+            "No clear diagonal line",
+            "Many species above the y = x line",
+            "Low to moderate RF probability",
+            "Source and target often share a subject_id or a group_id",
+          ]}
+          watchOut="A very low overall rate (e.g. 0.01%) can also produce a near-diffuse pattern just by noise — cross-check the rate before dismissing."
+        />
+
+        <PatternCard
+          title="Few points, sparse line"
+          verdict="?"
+          plot={<PatternMiniPlot points={sparseLine} />}
+          description={
+            <>
+              Only a handful of species have meaningful abundance in both
+              samples. They may align nicely on the diagonal but the
+              evidence is thin.
+            </>
+          }
+          signals={[
+            "Less than 10 species visible",
+            "Often happens with low-biomass samples (controls, early infants)",
+            "Rate hard to estimate accurately",
+          ]}
+          watchOut="Low-biomass samples are vulnerable to background contamination. If the target is a control or DOL < 7 sample, lean toward TP unless the metadata clearly explains the overlap."
+        />
+
+        <PatternCard
+          title="Adjacent wells on the plate"
+          verdict="TP"
+          plot={<PatternMiniPlot points={linearCluster} />}
+          description={
+            <>
+              The scatterplot may look modest, but the source and target sit
+              next to each other on the same 96-well plate (Δ ≤ 1). The
+              spatial proximity is itself a strong signal of well-to-well
+              leakage during library prep or extraction.
+            </>
+          }
+          signals={[
+            "Source and target adjacent on the plate (red arrow in the Plate map tab)",
+            "Often involves the negative control",
+            "Even moderate rates (1–5%) are credible",
+          ]}
+          watchOut="Adjacent wells on different plates are coincidence — check that they are on the same physical plate."
+        />
+
+        <PatternCard
+          title="Flow into a negative control"
+          verdict="TP"
+          plot={<PatternMiniPlot points={linearCluster} />}
+          description={
+            <>
+              The target is tagged as a negative control (NC, blank, or
+              negative biome). A clean NC should have no biological signal
+              — any contamination reaching it is essentially proof of
+              well-to-well leakage, reagent contamination, or cross-tube
+              carry-over.
+            </>
+          }
+          signals={[
+            "Target sample is flagged as control",
+            "Multiple sources may flow into the same NC",
+            "Rate doesn't have to be high to be meaningful",
+          ]}
+          watchOut="If only one sample contaminates the NC and they're far apart on the plate, suspect a reagent issue rather than well-to-well."
+        />
+      </div>
+
+      <div
+        className="rounded-sm p-4 mt-8"
+        style={{
+          background: "#f6f7f7",
+          border: "1px solid #e6e8e8",
+          fontSize: 12,
+          color: "#797870",
+          lineHeight: 1.6,
+        }}
+      >
+        More learning modes are coming: case studies on real Lou et al. 2023
+        events, and a quick visual quiz to test your eye. Stay tuned.
+      </div>
+    </div>
+  );
+};
+
+
 const HelpTab = ({ onStartTour }) => {
   const toc = [
     { id: "h-intro", label: "What is this tool?" },
@@ -8776,6 +9179,7 @@ export default function App() {
               { id: "plate", label: "Plate map", icon: Grid3x3, requiresData: true },
               { id: "validate", label: "Guided validation", icon: ClipboardCheck, requiresData: true },
               { id: "export", label: "Export", icon: Download, requiresData: true },
+              { id: "learn", label: "Learn", icon: GraduationCap, requiresData: false },
               { id: "help", label: "Help", icon: HelpCircle, requiresData: false },
             ].map((t) => {
               const Icon = t.icon;
@@ -8816,7 +9220,7 @@ export default function App() {
             })}
           </nav>
 
-          {(events.length > 0 || tab === "help" || tab === "overview") && (
+          {(events.length > 0 || tab === "help" || tab === "overview" || tab === "learn") && (
             <>
           {tab === "overview" && (
             <Overview
@@ -8913,6 +9317,7 @@ export default function App() {
               onExportJSON={exportJSON}
             />
           )}
+          {tab === "learn" && <LearnTab />}
           {tab === "help" && (
             <HelpTab onStartTour={() => setTutorialOpen(true)} />
           )}
