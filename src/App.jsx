@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import * as d3 from "d3";
 import {
-  Upload,
+  FolderOpen,
   AlertCircle,
   CheckCircle2,
   XCircle,
@@ -2224,7 +2224,7 @@ const UploadCard = ({
         className="w-11 h-11 flex items-center justify-center rounded-sm"
         style={{ background: loaded ? "#00a3a6" : "#275662", color: "white" }}
       >
-        {loaded ? <CheckCircle2 className="w-5 h-5" /> : <Upload className="w-5 h-5" />}
+        {loaded ? <CheckCircle2 className="w-5 h-5" /> : <FolderOpen className="w-5 h-5" />}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
@@ -2796,7 +2796,7 @@ const EmptyState = ({ onLoadDemo, demoLoading }) => (
   <div className="max-w-7xl mx-auto px-6 py-16">
     <div className="grid md:grid-cols-[1fr_320px] gap-10">
       <div>
-        <SectionTitle eyebrow="Getting started" title="Upload your events to begin">
+        <SectionTitle eyebrow="Getting started" title="Open your files to begin">
           CroCoDeEL flags cross-sample contamination events but clearly warns that some
           are false positives requiring human inspection.
         </SectionTitle>
@@ -3163,7 +3163,7 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
               className="text-[12px] mt-1"
               style={{ color: "#797870", lineHeight: 1.5 }}
             >
-              Upload your{" "}
+              Open your{" "}
               <code style={{ fontFamily: "ui-monospace, monospace" }}>
                 contamination_events.tsv
               </code>{" "}
@@ -5214,7 +5214,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata }) 
             color: "#275662",
           }}
         >
-          No plate map loaded. Upload <code>plate_map.tsv</code> above, or
+          No plate map loaded. Open <code>plate_map.tsv</code> above, or
           switch to Edit mode to build one manually.
         </div>
       )}
@@ -5629,7 +5629,7 @@ const ValidateTab = ({
                 className="p-4 text-[13px] rounded-sm"
                 style={{ background: "#fdeceb", border: "1px solid #ed6e6c", color: "#8a2422" }}
               >
-                Upload <code>species_abundance.tsv</code> to see the plot and
+                Open <code>species_abundance.tsv</code> to see the plot and
                 enable diagnostic checks.
               </div>
             )}
@@ -5823,7 +5823,7 @@ const ValidateTab = ({
               <div className="space-y-1.5">
                 {autoScore.reasons.length === 0 && (
                   <div className="text-[12px]" style={{ color: "#797870" }}>
-                    Upload the abundance table to compute.
+                    Open the abundance table to compute.
                   </div>
                 )}
                 {autoScore.reasons.map((r, i) => (
@@ -8367,7 +8367,7 @@ const HelpTab = ({ onStartTour }) => {
         <HelpSection id="h-workflow" eyebrow="Steps" title="Workflow">
           <ol className="list-decimal pl-5 space-y-2">
             <li>
-              Upload your CroCoDeEL output (
+              Open your CroCoDeEL output (
               <code style={{ fontFamily: "ui-monospace, monospace" }}>
                 contamination_events.tsv
               </code>
@@ -8413,7 +8413,7 @@ const HelpTab = ({ onStartTour }) => {
               file's section below for details.
             </p>
             <p style={{ color: "#797870" }}>
-              Files are parsed entirely in your browser. Nothing is uploaded
+              Files are parsed entirely in your browser. Nothing is sent
               to any server.
             </p>
           </div>
@@ -9007,7 +9007,7 @@ const HelpTab = ({ onStartTour }) => {
           >
             <p style={{ color: "#275662", fontWeight: 600 }}>
               The application runs entirely in your browser. No file you
-              load is ever uploaded to any server.
+              load is ever sent to any server.
             </p>
           </div>
           <p>
@@ -9064,10 +9064,10 @@ const HelpTab = ({ onStartTour }) => {
           </p>
           <p>
             <strong style={{ color: "#275662" }}>Clearing storage.</strong>{" "}
-            Use the <em>Clear session</em> button in the upload bar to wipe
+            Use the <em>Clear session</em> button in the files bar to wipe
             everything immediately. The Discard button on the welcome
             popup does the same when offered. You can also remove just one
-            file via the trash icon on its upload card.
+            file via the trash icon on its file card.
           </p>
           <p>
             <strong style={{ color: "#275662" }}>Private / incognito
@@ -9139,7 +9139,7 @@ const HelpTab = ({ onStartTour }) => {
                 Yes — the Plate map tab has an "Edit" sub-view where you can
                 drag samples between wells with arrow keys + Enter or
                 cut-and-paste. Edited plate maps can be re-downloaded with
-                the Download button on the upload card.
+                the Download button on the file card.
               </p>
             </div>
             <div>
@@ -9148,7 +9148,7 @@ const HelpTab = ({ onStartTour }) => {
               </p>
               <p>
                 No — the app auto-saves your full session (events,
-                verdicts, notes, all uploaded files, plus your active tab
+                verdicts, notes, all loaded files, plus your active tab
                 and filters) to your browser's localStorage every time
                 something changes. After a refresh you land exactly where
                 you left off. See the Privacy & how it works section for
@@ -9278,7 +9278,7 @@ const ExportTab = ({ counts, onExportTSV, onExportJSON, onExportHTML }) => (
       <Stat label="Pending" value={counts.pending + counts.uncertain} />
     </div>
     <p className="text-[12px] mt-6" style={{ color: "#797870" }}>
-      Need to retrieve the files you uploaded? Each upload card at the top of
+      Need to retrieve the files you opened? Each file card at the top of
       the page has a small Download button when the file is loaded.
     </p>
   </div>
@@ -10444,7 +10444,7 @@ export default function App() {
       body:
         `This will clear ${decided} verdict${decided !== 1 ? "s" : ""} and ` +
         `${noted} note${noted !== 1 ? "s" : ""}, returning every event to the "pending" state.\n\n` +
-        "Your uploaded files (events, abundance, metadata, plate map) are NOT affected.",
+        "The files you opened (events, abundance, metadata, plate map) are NOT affected.",
       confirmLabel: "Reset everything",
       destructive: true,
       onConfirm: () => {
@@ -10557,7 +10557,7 @@ export default function App() {
       title: "Replace your session with the demo dataset?",
       body:
         "The guided tour walks through the bundled Lou et al. 2023 P3 demo dataset. To run it, your currently-loaded events, abundance, metadata, plate map and verdicts will be replaced.\n\n" +
-        "The original files on disk are not affected — you can re-upload them after the tour.",
+        "The original files on disk are not affected — you can re-open them after the tour.",
       confirmLabel: "Replace and start tour",
       destructive: true,
       onConfirm: () => {
@@ -11308,7 +11308,7 @@ export default function App() {
                 Interpreting CroCoDeEL results
               </h1>
               <p className="mt-3 text-[15px] leading-relaxed text-stone-700 max-w-xl">
-                Upload your events file and abundance table, then walk through each
+                Open your events file and abundance table, then walk through each
                 flagged pair with interactive scatterplots, diagnostic checks
                 and a guided validation workflow. Export a curated TSV when you are
                 done.
@@ -11346,7 +11346,7 @@ export default function App() {
                   Your work is auto-saved locally so you can close the tab and
                   come back anytime (unless your browser cache is cleared). Use{" "}
                   <strong style={{ color: "#275662" }}>Clear session</strong>{" "}
-                  on the upload bar to wipe everything and start fresh.
+                  on the files bar to wipe everything and start fresh.
                 </div>
               </div>
             </div>
