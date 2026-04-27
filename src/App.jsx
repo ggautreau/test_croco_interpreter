@@ -9194,13 +9194,13 @@ const HelpTab = ({ onStartTour }) => {
   );
 };
 
-const ExportTab = ({ counts, onExportTSV, onExportJSON }) => (
+const ExportTab = ({ counts, onExportTSV, onExportJSON, onExportHTML }) => (
   <div>
     <SectionTitle eyebrow="Export" title="Save your curated report">
       All your verdicts and notes live in browser memory — export before closing
       the tab.
     </SectionTitle>
-    <div className="grid md:grid-cols-3 gap-4 mt-8">
+    <div className="grid md:grid-cols-2 gap-4 mt-8">
       <ExportCard
         title="TSV — true positives only"
         desc="Drop-in replacement for the CroCoDeEL output, keeping only events marked as true positives."
@@ -9212,6 +9212,12 @@ const ExportTab = ({ counts, onExportTSV, onExportJSON }) => (
         desc="Includes uncertain and pending events. Useful for partial filtering before full curation."
         action="Download TSV"
         onClick={() => onExportTSV(false)}
+      />
+      <ExportCard
+        title="HTML report — printable / Save as PDF"
+        desc="Self-contained HTML with summary, run parameters and curation table. Open it and use Ctrl+P (Cmd+P) to save as PDF — no extra software needed."
+        action="Download HTML"
+        onClick={onExportHTML}
       />
       <ExportCard
         title="JSON — full audit trail"
@@ -10605,6 +10611,471 @@ export default function App() {
     );
   };
 
+  /** Generate a self-contained, comprehensive HTML report styled for
+      printing. Includes summary stats, run parameters, an overview
+      curation table, AND a detailed page per event with the scatterplot
+      (inline SVG), the 5 diagnostic checks, the introduced species
+      list, and the cascade chain when relevant. The user opens the
+      file and uses their browser's "Save as PDF" (Ctrl+P or Cmd+P) to
+      get a PDF without any external dependency. */
+  const exportHTMLReport = () => {
+    const escapeHTML = (s) =>
+      String(s == null ? "" : s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+
+    const verdictPill = (v) => {
+      const tone =
+        v === "TP"
+          ? { bg: "#00a3a6", label: "True positive" }
+          : v === "FP"
+            ? { bg: "#ed6e6c", label: "False positive" }
+            : v === "UNCERTAIN"
+              ? { bg: "#c4c0b3", label: "Uncertain" }
+              : { bg: "#e6e8e8", label: "Pending", textColor: "#5a5550" };
+      return `<span style="background:${tone.bg};color:${tone.textColor || "#fff"};padding:2px 8px;border-radius:2px;font-size:10px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;">${tone.label}</span>`;
+    };
+
+    /** Build a small SVG scatterplot for an event. Mirrors the visual
+        language of the main Scatterplot component (deep teal points
+        for off-line, salmon for on-line, black dashed y=x, salmon
+        dashed contamination line). Uses log axes from 1e-5 to 1e0. */
+    const renderScatterSVG = (event) => {
+      if (!ab) return "<em style='color:#797870'>abundance table required</em>";
+      const sc = buildScatter(ab, event);
+      if (!sc || sc.error || sc.points.length === 0) {
+        return `<em style='color:#797870'>${escapeHTML(sc?.error || "no plot available")}</em>`;
+      }
+      const W = 360,
+        H = 300;
+      const pad = { l: 50, r: 12, t: 12, b: 36 };
+      const plotW = W - pad.l - pad.r;
+      const plotH = H - pad.t - pad.b;
+      // Log10 mapping with a fixed range -5 .. 0
+      const LMIN = -5;
+      const LMAX = 0;
+      const sx = (logV) =>
+        pad.l + ((logV - LMIN) / (LMAX - LMIN)) * plotW;
+      const sy = (logV) =>
+        pad.t + plotH - ((logV - LMIN) / (LMAX - LMIN)) * plotH;
+      const safeLog = (v) => (v > 0 ? Math.max(LMIN, Math.log10(v)) : LMIN);
+
+      // Gridlines + tick labels at log -5, -3, -1
+      const ticks = [-5, -3, -1];
+      const tickLabels = { "-5": "1e-5", "-3": "1e-3", "-1": "1e-1" };
+      let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="background:#fff;border:1px solid #e6e8e8;border-radius:3px;">`;
+      ticks.forEach((t) => {
+        svg += `<line x1="${sx(t)}" y1="${pad.t}" x2="${sx(t)}" y2="${pad.t + plotH}" stroke="#eee" stroke-width="0.5"/>`;
+        svg += `<line x1="${pad.l}" y1="${sy(t)}" x2="${pad.l + plotW}" y2="${sy(t)}" stroke="#eee" stroke-width="0.5"/>`;
+        svg += `<text x="${sx(t)}" y="${pad.t + plotH + 14}" text-anchor="middle" font-size="9" fill="#797870">${tickLabels[t]}</text>`;
+        svg += `<text x="${pad.l - 6}" y="${sy(t) + 3}" text-anchor="end" font-size="9" fill="#797870">${tickLabels[t]}</text>`;
+      });
+      // Axes
+      svg += `<line x1="${pad.l}" y1="${pad.t + plotH}" x2="${pad.l + plotW}" y2="${pad.t + plotH}" stroke="#275662" stroke-width="1"/>`;
+      svg += `<line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + plotH}" stroke="#275662" stroke-width="1"/>`;
+      // y = x diagonal
+      svg += `<line x1="${sx(LMIN)}" y1="${sy(LMIN)}" x2="${sx(LMAX)}" y2="${sy(LMAX)}" stroke="#000" stroke-width="0.7" stroke-dasharray="2 4" opacity="0.6"/>`;
+      // Contamination line: source = target / rate, i.e. log_y = log_x - logC
+      if (sc.logC != null) {
+        const x1 = LMIN;
+        const y1 = LMIN - sc.logC;
+        const x2 = LMAX;
+        const y2 = LMAX - sc.logC;
+        // Clip if outside plot range
+        const clip = (a, b) => Math.max(LMIN, Math.min(LMAX, b - sc.logC));
+        svg += `<line x1="${sx(x1)}" y1="${sy(Math.max(LMIN, Math.min(LMAX, y1)))}" x2="${sx(x2)}" y2="${sy(Math.max(LMIN, Math.min(LMAX, y2)))}" stroke="#ed6e6c" stroke-width="1.2" stroke-dasharray="5 3"/>`;
+      }
+      // Off-line points (deep teal, small)
+      sc.points
+        .filter((p) => !p.onLine)
+        .forEach((p) => {
+          const x = sx(safeLog(p.x));
+          const y = sy(safeLog(p.y));
+          svg += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2" fill="#275662" fill-opacity="0.4"/>`;
+        });
+      // On-line points (salmon, larger, with stroke)
+      sc.points
+        .filter((p) => p.onLine)
+        .forEach((p) => {
+          const x = sx(safeLog(p.x));
+          const y = sy(safeLog(p.y));
+          svg += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="#ed6e6c" stroke="#b84442" stroke-width="0.5"/>`;
+        });
+      // Axis labels
+      svg += `<text x="${pad.l + plotW / 2}" y="${H - 4}" text-anchor="middle" font-size="9" fill="#275662">Target — ${escapeHTML(event.target)}</text>`;
+      svg += `<text x="14" y="${pad.t + plotH / 2}" text-anchor="middle" font-size="9" fill="#275662" transform="rotate(-90 14 ${pad.t + plotH / 2})">Source — ${escapeHTML(event.source)}</text>`;
+      svg += `</svg>`;
+      return svg;
+    };
+
+    /** Render the 5 diagnostic checks for an event as a small list. */
+    const renderDiagChecks = (event) => {
+      const sc = buildScatter(ab, event);
+      if (!sc || sc.error) return "<em style='color:#797870'>abundance table required</em>";
+      const di = lineDiagnostics(sc);
+      const ab2 = pointsAboveLine(sc);
+      const mi = missingAbundantFromSource(ab, event.source, event.target, event.rate);
+      const score = automaticScore(di, ab2, mi, event.cascade);
+      return `
+        <ul class="checklist">
+          ${score.reasons
+            .map(
+              (r) =>
+                `<li><span class="${r.ok ? "ok" : "bad"}">${r.ok ? "✓" : "✗"}</span> ${escapeHTML(r.label)}</li>`,
+            )
+            .join("")}
+        </ul>
+        <div class="aggregate ${score.good === score.total ? "all-pass" : score.good >= Math.ceil(score.total * 0.6) ? "warn" : "fail"}">
+          ${score.good} / ${score.total} —
+          ${score.good === score.total
+            ? "CONTAMINATED — CroCoDeEL is probably right"
+            : score.good >= Math.ceil(score.total * 0.6)
+              ? "POSSIBLY NOT CONTAMINATED — use CroCoDeEL's call with prudence"
+              : "PROBABLY NOT CONTAMINATED — review carefully"}
+        </div>
+      `;
+    };
+
+    const overviewRows = events
+      .map((e, i) => {
+        const rel = areRelated(metadata, e.source, e.target);
+        const pd = plateDistance(plateMap, e.source, e.target);
+        return `
+        <tr>
+          <td class="num">${i + 1}</td>
+          <td>${escapeHTML(e.source)}</td>
+          <td>${escapeHTML(e.target)}</td>
+          <td class="num">${(e.rate * 100).toFixed(2)}%</td>
+          <td class="num">${e.score.toFixed(3)}</td>
+          <td>${verdictPill(e.verdict)}</td>
+          <td>${rel?.related ? `<em>${escapeHTML(rel.reason)}</em>` : ""}</td>
+          <td>${pd != null ? `Δ ${pd}` : ""}</td>
+          <td>${e.cascade ? "yes" : ""}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const detailPages = events
+      .map((e, i) => {
+        const rel = areRelated(metadata, e.source, e.target);
+        const pd = plateDistance(plateMap, e.source, e.target);
+        const introducedList = (e.introduced || [])
+          .slice(0, 30)
+          .map((sp) => `<code>${escapeHTML(sp)}</code>`)
+          .join(", ");
+        const introducedExtra =
+          e.introduced && e.introduced.length > 30
+            ? ` <em>(+${e.introduced.length - 30} more)</em>`
+            : "";
+
+        const cascadeBlock = e.cascade
+          ? `
+          <h4>Cascade detected</h4>
+          <p>This event has ${e.cascade.points_above} points above its line, partially explained by upstream contamination of the source:</p>
+          <ul>
+            ${e.cascade.explained
+              .map(
+                (c) =>
+                  `<li><strong>${escapeHTML(c.upstream_source)} → ${escapeHTML(e.source)}</strong> (${(c.rate * 100).toFixed(2)}%) explains ${c.species_explained} species</li>`,
+              )
+              .join("")}
+          </ul>`
+          : "";
+
+        const contextBlock = `
+          <table class="kv">
+            <tbody>
+              <tr><th>Source</th><td><code>${escapeHTML(e.source)}</code></td></tr>
+              <tr><th>Target</th><td><code>${escapeHTML(e.target)}</code></td></tr>
+              <tr><th>Contamination rate</th><td>${(e.rate * 100).toFixed(2)}%</td></tr>
+              <tr><th>RF probability</th><td>${e.score.toFixed(3)}</td></tr>
+              <tr><th>Verdict</th><td>${verdictPill(e.verdict)}</td></tr>
+              ${rel?.related ? `<tr><th>Sample relatedness</th><td><em>${escapeHTML(rel.reason)}</em></td></tr>` : ""}
+              ${pd != null ? `<tr><th>Plate distance</th><td>Δ ${pd} well${pd > 1 ? "s" : ""}</td></tr>` : ""}
+              <tr><th>Introduced species</th><td>${e.introduced?.length || 0} total. ${introducedList}${introducedExtra}</td></tr>
+              ${e.notes ? `<tr><th>Curator notes</th><td>${escapeHTML(e.notes)}</td></tr>` : ""}
+            </tbody>
+          </table>`;
+
+        return `
+        <div class="event-page">
+          <h3>Event ${i + 1} of ${events.length} · ${escapeHTML(e.source)} → ${escapeHTML(e.target)}</h3>
+          <div class="event-grid">
+            <div class="event-plot">
+              ${renderScatterSVG(e)}
+            </div>
+            <div class="event-info">
+              ${contextBlock}
+            </div>
+          </div>
+          <h4>Diagnostic checks</h4>
+          ${renderDiagChecks(e)}
+          ${cascadeBlock}
+        </div>`;
+      })
+      .join("");
+
+    const runMetaSection = runMetadata
+      ? `
+      <h2>CroCoDeEL run parameters</h2>
+      <table class="kv">
+        <tbody>
+          ${Object.entries(runMetadata)
+            .map(
+              ([k, v]) =>
+                `<tr><th>${escapeHTML(k)}</th><td>${escapeHTML(typeof v === "object" ? JSON.stringify(v) : v)}</td></tr>`,
+            )
+            .join("")}
+        </tbody>
+      </table>`
+      : "";
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>CroCoDeEL curation report</title>
+<style>
+  @page { size: A4; margin: 1.5cm; }
+  body {
+    font-family: "Avenir Next", "Nunito Sans", system-ui, -apple-system, sans-serif;
+    color: #275662;
+    font-size: 12px;
+    line-height: 1.5;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+  h1 {
+    font-family: "Raleway", sans-serif;
+    font-size: 24px;
+    font-weight: 800;
+    color: #275662;
+    margin: 0 0 4px;
+  }
+  h2 {
+    font-family: "Raleway", sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: #275662;
+    margin-top: 32px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid #e6e8e8;
+    padding-bottom: 4px;
+  }
+  h3 {
+    font-family: "Raleway", sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: #275662;
+    margin: 0 0 12px;
+  }
+  h4 {
+    font-family: "Raleway", sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #ed6e6c;
+    margin: 16px 0 8px;
+  }
+  .meta {
+    color: #797870;
+    font-size: 11px;
+    margin-bottom: 24px;
+  }
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .stat {
+    border: 1px solid #e6e8e8;
+    border-radius: 3px;
+    padding: 12px;
+  }
+  .stat .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #797870;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .stat .value {
+    font-size: 20px;
+    font-weight: 800;
+  }
+  .stat.tp .value { color: #00a3a6; }
+  .stat.fp .value { color: #ed6e6c; }
+  .stat.unc .value { color: #797870; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+  table th, table td {
+    border: 1px solid #e6e8e8;
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  table th {
+    background: #f6f7f7;
+    font-weight: 700;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #797870;
+  }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.kv th { width: 25%; }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 10px;
+    background: #f6f7f7;
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+  .legend {
+    background: #f6f7f7;
+    border: 1px solid #e6e8e8;
+    border-radius: 3px;
+    padding: 12px 16px;
+    font-size: 11px;
+    line-height: 1.6;
+    margin: 16px 0;
+  }
+  .legend strong { color: #275662; }
+  .legend-swatch {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    vertical-align: middle;
+    border-radius: 2px;
+    margin-right: 4px;
+  }
+  .event-page {
+    page-break-before: always;
+    padding-top: 12px;
+  }
+  .event-page:first-of-type { page-break-before: auto; }
+  .event-grid {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 16px;
+    align-items: start;
+    margin-bottom: 12px;
+  }
+  .event-info table { font-size: 10px; }
+  .checklist {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0;
+  }
+  .checklist li {
+    padding: 3px 0;
+    font-size: 11px;
+  }
+  .checklist .ok { color: #00a3a6; font-weight: 700; }
+  .checklist .bad { color: #ed6e6c; font-weight: 700; }
+  .aggregate {
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-radius: 2px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .aggregate.all-pass { background: #d8f0f1; color: #00a3a6; }
+  .aggregate.warn { background: #fde6d8; color: #b46028; }
+  .aggregate.fail { background: #fce0df; color: #b84442; }
+  .footnote {
+    margin-top: 32px;
+    padding-top: 12px;
+    border-top: 1px solid #e6e8e8;
+    color: #797870;
+    font-size: 10px;
+  }
+  @media print {
+    body { padding: 0; }
+    h2 { page-break-after: avoid; }
+    h3 { page-break-after: avoid; }
+    table { page-break-inside: auto; }
+    tr { page-break-inside: avoid; }
+    .event-page { page-break-before: always; }
+  }
+</style>
+</head>
+<body>
+  <h1>CroCoDeEL curation report</h1>
+  <div class="meta">
+    Generated ${new Date().toLocaleString()} ·
+    ${counts.total} event${counts.total > 1 ? "s" : ""} curated
+  </div>
+
+  <h2>Summary</h2>
+  <div class="summary">
+    <div class="stat"><div class="label">Total</div><div class="value">${counts.total}</div></div>
+    <div class="stat tp"><div class="label">True positive</div><div class="value">${counts.tp}</div></div>
+    <div class="stat fp"><div class="label">False positive</div><div class="value">${counts.fp}</div></div>
+    <div class="stat unc"><div class="label">Uncertain</div><div class="value">${counts.uncertain}</div></div>
+    <div class="stat"><div class="label">Pending</div><div class="value">${counts.pending}</div></div>
+  </div>
+
+  ${runMetaSection}
+
+  <h2>Reading guide</h2>
+  <div class="legend">
+    Each event below has its own scatterplot of <strong>source</strong> abundance (Y axis) versus
+    <strong>target</strong> abundance (X axis), in log scale.
+    <ul style="margin:8px 0;padding-left:20px;">
+      <li><span class="legend-swatch" style="background:#275662;opacity:0.4;"></span> Off-line species (target's biology, not transferred from source)</li>
+      <li><span class="legend-swatch" style="background:#ed6e6c;border:0.5px solid #b84442;"></span> On-line species (introduced into target by contamination)</li>
+      <li><span class="legend-swatch" style="background:transparent;border-top:1px dashed #000;height:2px;width:16px;border-radius:0;"></span> y = x diagonal (equal abundance reference)</li>
+      <li><span class="legend-swatch" style="background:transparent;border-top:1.5px dashed #ed6e6c;height:2px;width:16px;border-radius:0;"></span> Contamination line (where transferred species sit, at offset log10(rate))</li>
+    </ul>
+    The 5 <strong>diagnostic checks</strong> below each plot test the line's shape, density,
+    spread, abundant-species coverage, and absence of points above the line. Failing
+    criterion 04 (missing core source species in target) is the strongest red flag.
+  </div>
+
+  <h2>Curation overview</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Source</th>
+        <th>Target</th>
+        <th>Rate</th>
+        <th>Probability</th>
+        <th>Verdict</th>
+        <th>Related</th>
+        <th>Plate</th>
+        <th>Cascade</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${overviewRows}
+    </tbody>
+  </table>
+
+  <h2>Per-event detail</h2>
+  ${detailPages}
+
+  <div class="footnote">
+    Generated by the CroCoDeEL Interpretation Console (Anthropic Claude · INRAE Metagenopolis).
+    Reference: Goulet et al. 2025, bioRxiv 10.1101/2025.01.15.633153.
+    To save as PDF: use your browser's print dialog (Ctrl+P / Cmd+P) and choose "Save as PDF".
+  </div>
+</body>
+</html>`;
+    downloadFile(html, "crocodeel_curation_report.html", "text/html");
+  };
+
   /* ---- diagnostics for selected event ---- */
   const scatter = useMemo(
     () => (selected ? buildScatter(ab, selected) : null),
@@ -11224,6 +11695,7 @@ export default function App() {
               counts={counts}
               onExportTSV={exportReport}
               onExportJSON={exportJSON}
+              onExportHTML={exportHTMLReport}
             />
           )}
           {tab === "learn" && <LearnTab />}
