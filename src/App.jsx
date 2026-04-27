@@ -3311,6 +3311,20 @@ const EventsTable = ({
 }) => {
   const cutoff = parseFloat(runMetadata?.probability_cutoff);
   const hasCutoff = Number.isFinite(cutoff) && cutoff > 0;
+
+  const PAGE_SIZE = 500;
+  const [page, setPage] = useState(1);
+  // Reset to page 1 when filter or sort changes. Don't include `events` —
+  // the parent re-derives that array on every verdict toggle, which would
+  // jump the user back to page 1 each time they curate.
+  useEffect(() => {
+    setPage(1);
+  }, [filter.q, filter.minScore, filter.minRate, filter.verdict, filter.hideRelated, filter.adjacentOnly, sort.by, sort.dir, total]);
+  const totalPages = Math.max(1, Math.ceil(events.length / PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const startIdx = (safePage - 1) * PAGE_SIZE;
+  const visible = events.slice(startIdx, startIdx + PAGE_SIZE);
+
   const toggleSort = (by) =>
     setSort({
       by,
@@ -3459,7 +3473,11 @@ const EventsTable = ({
           </label>
         )}
         <span className="text-[12px] ml-auto" style={{ color: "#797870" }}>
-          {events.length} / {total}
+          {events.length === 0
+            ? `0 / ${total}`
+            : totalPages > 1
+              ? `${startIdx + 1}–${startIdx + visible.length} of ${events.length} (filtered) / ${total} total`
+              : `${events.length} / ${total}`}
         </span>
       </div>
 
@@ -3490,7 +3508,7 @@ const EventsTable = ({
             </tr>
           </thead>
           <tbody>
-            {events.map((e) => {
+            {visible.map((e) => {
               const related = areRelated(metadata, e.source, e.target);
               const pd = plateDistance(plateMap, e.source, e.target);
               return (
@@ -3630,6 +3648,14 @@ const EventsTable = ({
           </tbody>
         </table>
       </div>
+
+      {totalPages > 1 && (
+        <Pagination
+          page={safePage}
+          totalPages={totalPages}
+          onChange={setPage}
+        />
+      )}
     </div>
   );
 };
