@@ -10013,10 +10013,9 @@ const DatasetsTab = ({ onLoadDataset, hasCurrentData }) => {
   return (
     <div>
       <SectionTitle eyebrow="Paper datasets" title="Try a published dataset">
-        Datasets bundled with the app from the CroCoDeEL paper and the
-        Lou et al. tutorial. Click "Load" to replace your current session
-        with the chosen dataset and start exploring. All files are served
-        locally from the app — nothing is fetched from external servers.
+        Datasets bundled with the app from the CroCoDeEL paper. Pick one
+        below to load it into the session and start exploring — any current
+        data will be replaced.
       </SectionTitle>
 
       {loading && (
