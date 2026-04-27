@@ -4015,6 +4015,23 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
     advanceFocusToNextEmpty({ bySample: newMap }, r, c);
   };
 
+  /** Swap two samples on the plate. Used when the user has a sample
+      picked up (selectedSample) and clicks/presses Enter on another
+      filled well — the two samples exchange wells. The picked-up
+      sample's previous well is taken by the other sample, so neither
+      is lost. */
+  const swapSamples = (sidA, sidB) => {
+    if (!sidA || !sidB || sidA === sidB) return;
+    const newMap = { ...(plateMap?.bySample || {}) };
+    const posA = newMap[sidA];
+    const posB = newMap[sidB];
+    if (!posA || !posB) return;
+    newMap[sidA] = posB;
+    newMap[sidB] = posA;
+    setPlateMap({ bySample: newMap, format });
+    setSelectedSample(null);
+  };
+
   const clearWell = (sid) => {
     const newMap = { ...(plateMap?.bySample || {}) };
     delete newMap[sid];
@@ -4070,13 +4087,16 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
       } else if (e.key === "ArrowUp") {
         setFocus((f) => ({ ...f, row: Math.max(0, f.row - 1) }));
       } else if (e.key === "Enter") {
-        // Enter behaviour depends on what the focused well contains:
-        //  - empty well + a sample is selected → place it there
-        //  - filled well → select the sample at this well (so Enter on
-        //    a sample = pick it up; the user can then move with arrows
-        //    and press Enter again on an empty well to drop it)
+        // Enter behaviour depends on the focused well's content and
+        // whether a sample is currently picked up:
+        //  - filled well + nothing picked up → pick up that sample
+        //  - filled well + a sample picked up → swap them (both
+        //    samples exchange wells, neither is lost)
+        //  - empty well + sample picked up → drop it there
         const sidHere = sampleAt(focus.row, focus.col);
-        if (sidHere) {
+        if (sidHere && selectedSample && sidHere !== selectedSample) {
+          swapSamples(selectedSample, sidHere);
+        } else if (sidHere) {
           setSelectedSample(sidHere);
         } else if (selectedSample) {
           placeSample(focus.row, focus.col);
@@ -4158,11 +4178,14 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
           highlightSamples={selectedSample ? { [selectedSample]: "#00a3a6" } : {}}
           onClickWell={(r, c) => {
             setFocus({ row: r, col: c });
-            // Same logic as the Enter shortcut: clicking a filled well
-            // picks up its sample; clicking an empty well drops the
-            // currently-selected sample there.
+            // Same logic as the Enter shortcut:
+            //  - filled well + nothing picked up → pick up that sample
+            //  - filled well + a sample picked up → swap them
+            //  - empty well + sample picked up → drop it there
             const sidHere = sampleAt(r, c);
-            if (sidHere) {
+            if (sidHere && selectedSample && sidHere !== selectedSample) {
+              swapSamples(selectedSample, sidHere);
+            } else if (sidHere) {
               setSelectedSample(sidHere);
             } else if (selectedSample) {
               placeSample(r, c);
@@ -4195,8 +4218,8 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
             Shortcuts
           </span>
           <kbd style={kbdStyle}>←↑→↓</kbd> move focus ·{" "}
-          <kbd style={kbdStyle}>Enter</kbd> on filled well = pick sample,
-          on empty well = drop selected sample ·{" "}
+          <kbd style={kbdStyle}>Enter</kbd> pick up / drop / swap (depending
+          on well content) ·{" "}
           <kbd style={kbdStyle}>Del</kbd> clear well
         </div>
 
@@ -4243,7 +4266,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
             fontFamily: '"Raleway", sans-serif',
           }}
         >
-          Samples {selectedSample ? "— click a well (or press Enter) to place" : ""}
+          Samples {selectedSample ? "— click an empty well to drop, or a filled well to swap" : ""}
         </div>
 
         {/* Filter controls */}
