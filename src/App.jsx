@@ -4070,7 +4070,17 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
       } else if (e.key === "ArrowUp") {
         setFocus((f) => ({ ...f, row: Math.max(0, f.row - 1) }));
       } else if (e.key === "Enter") {
-        if (selectedSample) placeSample(focus.row, focus.col);
+        // Enter behaviour depends on what the focused well contains:
+        //  - empty well + a sample is selected → place it there
+        //  - filled well → select the sample at this well (so Enter on
+        //    a sample = pick it up; the user can then move with arrows
+        //    and press Enter again on an empty well to drop it)
+        const sidHere = sampleAt(focus.row, focus.col);
+        if (sidHere) {
+          setSelectedSample(sidHere);
+        } else if (selectedSample) {
+          placeSample(focus.row, focus.col);
+        }
       } else if (e.key === "Delete" || e.key === "Backspace") {
         const sid = sampleAt(focus.row, focus.col);
         if (sid) clearWell(sid);
@@ -4148,7 +4158,15 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
           highlightSamples={selectedSample ? { [selectedSample]: "#00a3a6" } : {}}
           onClickWell={(r, c) => {
             setFocus({ row: r, col: c });
-            if (selectedSample) placeSample(r, c);
+            // Same logic as the Enter shortcut: clicking a filled well
+            // picks up its sample; clicking an empty well drops the
+            // currently-selected sample there.
+            const sidHere = sampleAt(r, c);
+            if (sidHere) {
+              setSelectedSample(sidHere);
+            } else if (selectedSample) {
+              placeSample(r, c);
+            }
           }}
           focus={focus}
           editable
@@ -4177,7 +4195,8 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
             Shortcuts
           </span>
           <kbd style={kbdStyle}>←↑→↓</kbd> move focus ·{" "}
-          <kbd style={kbdStyle}>Enter</kbd> place selected sample ·{" "}
+          <kbd style={kbdStyle}>Enter</kbd> on filled well = pick sample,
+          on empty well = drop selected sample ·{" "}
           <kbd style={kbdStyle}>Del</kbd> clear well
         </div>
 
