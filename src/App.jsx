@@ -11310,8 +11310,8 @@ export default function App() {
               <p className="mt-3 text-[15px] leading-relaxed text-stone-700 max-w-xl">
                 Open your events file and abundance table, then walk through each
                 flagged pair with interactive scatterplots, diagnostic checks
-                and a guided validation workflow. Export a curated TSV when you are
-                done.
+                and a guided validation workflow. Export a curated TSV and
+                HTML report when you are done.
               </p>
             </div>
             {/* Privacy badge — prominent, reassuring */}
