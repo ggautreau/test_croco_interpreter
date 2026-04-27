@@ -1,0 +1,197 @@
+{
+  "datasets": [
+    {
+      "id": "PRJEB10878",
+      "short_title": "PRJEB10878",
+      "title": "TODO — fill in study title",
+      "description": "TODO — fill in study description.",
+      "biome": "TODO",
+      "samples_count": 128,
+      "events_count": 88,
+      "citation": "TODO",
+      "paper_url": "",
+      "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
+      "files": {
+        "events": "PRJEB10878/contamination_events.tsv",
+        "abundance": "PRJEB10878/species_abundance.tsv"
+      }
+    },
+    {
+      "id": "PRJEB12449",
+      "short_title": "PRJEB12449",
+      "title": "TODO — fill in study title",
+      "description": "TODO — fill in study description.",
+      "biome": "TODO",
+      "samples_count": 110,
+      "events_count": 77,
+      "citation": "TODO",
+      "paper_url": "",
+      "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
+      "files": {
+        "events": "PRJEB12449/contamination_events.tsv",
+        "abundance": "PRJEB12449/species_abundance.tsv"
+      }
+    },
+    {
+      "id": "PRJEB32731",
+      "short_title": "PRJEB32731",
+      "title": "TODO — fill in study title",
+      "description": "TODO — fill in study description.",
+      "biome": "TODO",
+      "samples_count": 1004,
+      "events_count": 2047,
+      "citation": "TODO",
+      "paper_url": "",
+      "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
+      "files": {
+        "events": "PRJEB32731/contamination_events.tsv",
+        "abundance": "PRJEB32731/species_abundance.tsv"
+      }
+    },
+    {
+      "id": "PRJEB6337",
+      "short_title": "PRJEB6337",
+      "title": "TODO — fill in study title",
+      "description": "TODO — fill in study description.",
+      "biome": "TODO",
+      "samples_count": 237,
+      "events_count": 197,
+      "citation": "TODO",
+      "paper_url": "",
+      "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
+      "files": {
+        "events": "PRJEB6337/contamination_events.tsv",
+        "abundance": "PRJEB6337/species_abundance.tsv"
+      }
+    },
+    {
+      "id": "PRJEB83730",
+      "short_title": "PRJEB83730",
+      "title": "TODO — fill in study title",
+      "description": "TODO — fill in study description.",
+      "biome": "TODO",
+      "samples_count": 17,
+      "events_count": 26,
+      "citation": "TODO",
+      "paper_url": "",
+      "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
+      "files": {
+        "events": "PRJEB83730/contamination_events.tsv",
+        "abundance": "PRJEB83730/species_abundance.tsv"
+      }
+    },
+    {
+      "id": "PRJNA352475",
+      "short_title": "PRJNA352475",
+      "title": "TODO — fill in study title",
+      "description": "TODO — fill in study description.",
+      "biome": "TODO",
+      "samples_count": 182,
+      "events_count": 96,
+      "citation": "TODO",
+      "paper_url": "",
+      "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
+      "files": {
+        "events": "PRJNA352475/contamination_events.tsv",
+        "abundance": "PRJNA352475/species_abundance.tsv"
+      }
+    },
+    {
+      "id": "PRJNA698986_P2",
+      "short_title": "PRJNA698986 — Plate 2",
+      "title": "TODO — fill in study title",
+      "description": "TODO — fill in study description (Lou et al. 2023, plate 2).",
+      "biome": "TODO",
+      "samples_count": 78,
+      "events_count": 26,
+      "citation": "Lou et al. 2023",
+      "paper_url": "",
+      "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
+      "files": {
+        "events": "PRJNA698986_P2/contamination_events.tsv",
+        "abundance": "PRJNA698986_P2/species_abundance.tsv"
+      }
+    },
+    {
+      "id": "PRJNA698986_P3",
+      "short_title": "PRJNA698986 — Plate 3",
+      "title": "TODO — fill in study title",
+      "description": "TODO — fill in study description (Lou et al. 2023, plate 3 — same data as the bundled tutorial demo).",
+      "biome": "TODO",
+      "samples_count": 91,
+      "events_count": 24,
+      "is_default_demo": false,
+      "citation": "Lou et al. 2023",
+      "paper_url": "",
+      "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
+      "files": {
+        "events": "PRJNA698986_P3/contamination_events.tsv",
+        "abundance": "PRJNA698986_P3/species_abundance.tsv"
+      }
+    },
+    {
+      "id": "PRJNA763023_PRJDB4176_meteor",
+      "short_title": "PRJNA763023+PRJDB4176 — Meteor",
+      "title": "TODO — fill in study title (Meteor profiling)",
+      "description": "Simulated cross-sample contamination benchmark (PRJNA763023 + PRJDB4176), profiled with Meteor.",
+      "biome": "TODO",
+      "samples_count": 900,
+      "events_count": 16555,
+      "citation": "TODO",
+      "paper_url": "",
+      "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
+      "files": {
+        "events": "PRJNA763023_PRJDB4176_meteor/contamination_events.tsv",
+        "abundance": "PRJNA763023_PRJDB4176_meteor/species_abundance.tsv"
+      }
+    },
+    {
+      "id": "PRJNA763023_PRJDB4176_metaphlan4_nofilter",
+      "short_title": "PRJNA763023+PRJDB4176 — MetaPhlAn4 (raw)",
+      "title": "TODO — fill in study title (MetaPhlAn4, raw profiles)",
+      "description": "Simulated cross-sample contamination benchmark, profiled with MetaPhlAn4. Raw profiles, CroCoDeEL run without --filter-low-ab.",
+      "biome": "TODO",
+      "samples_count": 900,
+      "events_count": 10336,
+      "citation": "TODO",
+      "paper_url": "",
+      "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
+      "files": {
+        "events": "PRJNA763023_PRJDB4176_metaphlan4_nofilter/contamination_events.tsv",
+        "abundance": "PRJNA763023_PRJDB4176_metaphlan4_nofilter/species_abundance.tsv"
+      }
+    },
+    {
+      "id": "PRJNA763023_PRJDB4176_metaphlan4",
+      "short_title": "PRJNA763023+PRJDB4176 — MetaPhlAn4 (raw + filter 20×)",
+      "title": "TODO — fill in study title (MetaPhlAn4, raw profiles + --filter-low-ab 20)",
+      "description": "Simulated cross-sample contamination benchmark, profiled with MetaPhlAn4. Raw profiles, CroCoDeEL run with --filter-low-ab 20 (recommended for MetaPhlAn4).",
+      "biome": "TODO",
+      "samples_count": 900,
+      "events_count": 14329,
+      "citation": "TODO",
+      "paper_url": "",
+      "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
+      "files": {
+        "events": "PRJNA763023_PRJDB4176_metaphlan4/contamination_events.tsv",
+        "abundance": "PRJNA763023_PRJDB4176_metaphlan4/species_abundance.tsv"
+      }
+    },
+    {
+      "id": "PRJNA763023_PRJDB4176_sylph",
+      "short_title": "PRJNA763023+PRJDB4176 — Sylph",
+      "title": "TODO — fill in study title (Sylph profiling)",
+      "description": "Simulated cross-sample contamination benchmark, profiled with Sylph (GTDB r214).",
+      "biome": "TODO",
+      "samples_count": 900,
+      "events_count": 15382,
+      "citation": "TODO",
+      "paper_url": "",
+      "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
+      "files": {
+        "events": "PRJNA763023_PRJDB4176_sylph/contamination_events.tsv",
+        "abundance": "PRJNA763023_PRJDB4176_sylph/species_abundance.tsv"
+      }
+    }
+  ]
+}
