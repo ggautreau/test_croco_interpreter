@@ -24,6 +24,7 @@ import {
   ShieldAlert,
   Beaker,
   Droplets,
+  Library,
   User,
   Users,
   Calendar,
@@ -9959,6 +9960,303 @@ const HelpTab = ({ onStartTour }) => {
   );
 };
 
+/* ============================================================================
+   Datasets tab — bundled paper datasets the user can load in 1 click.
+   Reads /datasets/manifest.json at runtime to know which datasets are
+   available, then offers a card per dataset with a "Load this dataset"
+   button. Loading replaces the current session (after confirmation if
+   the user already has data loaded).
+   ============================================================================ */
+const DatasetsTab = ({ onLoadDataset, hasCurrentData }) => {
+  const [manifest, setManifest] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [loadingId, setLoadingId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const base =
+          typeof window !== "undefined" && window.location
+            ? window.location.pathname.replace(/\/$/, "")
+            : "";
+        const url = `${base}/datasets/manifest.json`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!cancelled) {
+          setManifest(data);
+          setLoading(false);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e.message || "Failed to load manifest");
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleLoad = async (dataset) => {
+    setLoadingId(dataset.id);
+    try {
+      await onLoadDataset(dataset);
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  return (
+    <div>
+      <SectionTitle eyebrow="Paper datasets" title="Try a published dataset">
+        Datasets bundled with the app from the CroCoDeEL paper and the
+        Lou et al. tutorial. Click "Load" to replace your current session
+        with the chosen dataset and start exploring. All files are served
+        locally from the app — nothing is fetched from external servers.
+      </SectionTitle>
+
+      {loading && (
+        <div className="text-[12px]" style={{ color: "#797870" }}>
+          Loading dataset list…
+        </div>
+      )}
+
+      {error && (
+        <div
+          className="p-4 rounded-sm text-[12px]"
+          style={{
+            background: "#fdeceb",
+            border: "1px solid #ed6e6c",
+            color: "#8a2422",
+          }}
+        >
+          <strong>Could not load datasets manifest.</strong> {error}
+          <div className="mt-2" style={{ color: "#5a5550" }}>
+            Make sure <code>public/datasets/manifest.json</code> is deployed
+            alongside the app.
+          </div>
+        </div>
+      )}
+
+      {manifest && manifest.datasets && (
+        <div className="grid md:grid-cols-2 gap-4 mt-6">
+          {manifest.datasets.map((d) => (
+            <DatasetCard
+              key={d.id}
+              dataset={d}
+              onLoad={() => handleLoad(d)}
+              loading={loadingId === d.id}
+              hasCurrentData={hasCurrentData}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** Card displaying one dataset entry from the manifest, with a Load button
+    and links out to the original paper / Dataverse. */
+const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
+  const hasMetadata = !!dataset.files.metadata;
+  const hasPlate = !!dataset.files.plate_map;
+  return (
+    <div
+      className="p-5 rounded-sm flex flex-col"
+      style={{
+        background: "#fff",
+        border: "1px solid #e6e8e8",
+      }}
+    >
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div>
+          <div
+            className="text-[10px] tracking-[0.15em] uppercase mb-1"
+            style={{
+              color: "#ed6e6c",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+          >
+            {dataset.short_title || dataset.id}
+          </div>
+          <div
+            className="text-[14px]"
+            style={{
+              color: "#275662",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+              lineHeight: 1.3,
+            }}
+          >
+            {dataset.title}
+          </div>
+        </div>
+        {dataset.is_default_demo && (
+          <span
+            className="text-[9px] tracking-[0.1em] uppercase px-2 py-0.5 rounded-sm shrink-0"
+            style={{
+              background: "#eef8f8",
+              color: "#00787a",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+              border: "1px solid #00a3a6",
+            }}
+          >
+            Tutorial demo
+          </span>
+        )}
+      </div>
+
+      <p
+        className="text-[12px] mb-3"
+        style={{ color: "#5a5550", lineHeight: 1.55 }}
+      >
+        {dataset.description}
+      </p>
+
+      <div
+        className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] mb-3"
+        style={{ color: "#797870" }}
+      >
+        {dataset.biome && (
+          <span>
+            <strong style={{ color: "#275662" }}>Biome:</strong> {dataset.biome}
+          </span>
+        )}
+        {dataset.samples_count != null && (
+          <span>
+            <strong style={{ color: "#275662" }}>Samples:</strong>{" "}
+            {dataset.samples_count}
+          </span>
+        )}
+        {dataset.events_count != null && (
+          <span>
+            <strong style={{ color: "#275662" }}>Events:</strong>{" "}
+            {dataset.events_count}
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        <span
+          className="text-[9px] tracking-[0.05em] uppercase px-2 py-0.5 rounded-sm"
+          style={{
+            background: "#eef8f8",
+            color: "#00787a",
+            fontWeight: 700,
+            fontFamily: '"Raleway", sans-serif',
+          }}
+        >
+          ✓ events
+        </span>
+        <span
+          className="text-[9px] tracking-[0.05em] uppercase px-2 py-0.5 rounded-sm"
+          style={{
+            background: "#eef8f8",
+            color: "#00787a",
+            fontWeight: 700,
+            fontFamily: '"Raleway", sans-serif',
+          }}
+        >
+          ✓ abundance
+        </span>
+        {hasMetadata && (
+          <span
+            className="text-[9px] tracking-[0.05em] uppercase px-2 py-0.5 rounded-sm"
+            style={{
+              background: "#eef8f8",
+              color: "#00787a",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+          >
+            ✓ metadata
+          </span>
+        )}
+        {hasPlate && (
+          <span
+            className="text-[9px] tracking-[0.05em] uppercase px-2 py-0.5 rounded-sm"
+            style={{
+              background: "#eef8f8",
+              color: "#00787a",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+          >
+            ✓ plate map
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] mb-4" style={{ color: "#797870" }}>
+        {dataset.citation && <span>{dataset.citation}</span>}
+        {dataset.paper_url && (
+          <a
+            href={dataset.paper_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: "#00a3a6",
+              textDecoration: "underline",
+              textUnderlineOffset: 2,
+            }}
+          >
+            Paper ↗
+          </a>
+        )}
+        {dataset.dataverse_url && (
+          <a
+            href={dataset.dataverse_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: "#00a3a6",
+              textDecoration: "underline",
+              textUnderlineOffset: 2,
+            }}
+          >
+            Source data ↗
+          </a>
+        )}
+      </div>
+
+      <div className="mt-auto">
+        <button
+          onClick={onLoad}
+          disabled={loading}
+          className="w-full px-4 py-2 text-[12px] rounded-sm flex items-center justify-center gap-2"
+          style={{
+            background: loading ? "#e6e8e8" : "#275662",
+            color: loading ? "#797870" : "#fff",
+            border: "none",
+            fontWeight: 700,
+            letterSpacing: "0.02em",
+            fontFamily: '"Raleway", sans-serif',
+            cursor: loading ? "wait" : "pointer",
+          }}
+          onMouseOver={(e) => {
+            if (!loading) e.currentTarget.style.background = "#00a3a6";
+          }}
+          onMouseOut={(e) => {
+            if (!loading) e.currentTarget.style.background = "#275662";
+          }}
+        >
+          {loading
+            ? "Loading…"
+            : hasCurrentData
+              ? "Replace session with this dataset"
+              : "Load this dataset"}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const ExportTab = ({ counts, onExportTSV, onExportJSON, onExportHTML }) => (
   <div>
     <SectionTitle eyebrow="Export" title="Save your curated report">
@@ -11290,6 +11588,98 @@ export default function App() {
     }
   };
 
+  /** Load a paper dataset from the manifest. The dataset object comes
+      from datasets/manifest.json and includes paths to events,
+      abundance, optional metadata and plate_map files. If the user
+      already has data loaded, ask for confirmation first via the
+      centralised modal — replacing without warning would silently
+      destroy curation work. */
+  const loadDataset = async (dataset) => {
+    const performLoad = async () => {
+      setErr(null);
+      try {
+        const path = window.location.pathname;
+        const base = path.endsWith("/")
+          ? path
+          : path.replace(/\/[^/]*$/, "/") || "/";
+        const join = (p) => `${base.replace(/\/$/, "")}/datasets/${p}`;
+
+        // Required files
+        const evPath = dataset.files.events;
+        const abPath = dataset.files.abundance;
+        if (!evPath || !abPath) {
+          throw new Error("Dataset manifest is missing events or abundance file");
+        }
+        const [evRes, abRes] = await Promise.all([
+          fetch(join(evPath)),
+          fetch(join(abPath)),
+        ]);
+        if (!evRes.ok) throw new Error(`events (${evRes.status})`);
+        if (!abRes.ok) throw new Error(`abundance (${abRes.status})`);
+        const [evText, abText] = await Promise.all([evRes.text(), abRes.text()]);
+        const parsedAb = parseAbundance(abText);
+        if (!parsedAb) throw new Error("Could not parse abundance table");
+        const parsedEvents = parseEvents(evText);
+
+        // Reset session state to avoid mixing files from different datasets
+        setRawEvents(parsedEvents.events);
+        setRunMetadata(parsedEvents.runMetadata);
+        setAb(parsedAb);
+        setMetadata(null);
+        setPlateMap(null);
+        setSelId(null);
+
+        // Optional files — load if present, skip silently otherwise
+        if (dataset.files.metadata) {
+          try {
+            const mdRes = await fetch(join(dataset.files.metadata));
+            if (mdRes.ok) {
+              const mdText = await mdRes.text();
+              setMetadata(parseMetadata(mdText));
+            }
+          } catch {
+            // ignore
+          }
+        }
+        if (dataset.files.plate_map) {
+          try {
+            const pmRes = await fetch(join(dataset.files.plate_map));
+            if (pmRes.ok) {
+              const pmText = await pmRes.text();
+              setPlateMap(parsePlateMap(pmText));
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        setTab("overview");
+      } catch (e) {
+        setErr(
+          `Dataset "${dataset.title}": ${e.message}. Make sure the files referenced in datasets/manifest.json exist in the deployed site.`,
+        );
+      }
+    };
+
+    const hasData = rawEvents.length > 0 || ab || metadata || plateMap;
+    if (!hasData) {
+      await performLoad();
+      return;
+    }
+    setBulkConfirm({
+      kind: "confirm",
+      title: `Replace your session with "${dataset.short_title || dataset.title}"?`,
+      body:
+        "Loading this dataset will replace your currently-loaded events, abundance, metadata, plate map and verdicts.\n\n" +
+        "The original files on disk are not affected — you can re-open them after exploring this dataset.",
+      confirmLabel: "Replace and load",
+      destructive: true,
+      onConfirm: () => {
+        performLoad();
+      },
+    });
+  };
+
   /** Open the guided tour. The tour assumes the bundled demo dataset is
       loaded (it walks through tabs whose content references known demo
       events, plate layout, etc.). If the user already has their own
@@ -12341,6 +12731,7 @@ export default function App() {
               { id: "plate", label: "Plate map", icon: Grid3x3, requiresData: true },
               { id: "validate", label: "Guided validation", icon: ClipboardCheck, requiresData: true },
               { id: "export", label: "Export", icon: Download, requiresData: true },
+              { id: "datasets", label: "Datasets", icon: Library, requiresData: false, secondary: true },
               { id: "learn", label: "Learn", icon: GraduationCap, requiresData: false, secondary: true, accent: "#423089" },
               { id: "help", label: "Help", icon: HelpCircle, requiresData: false, secondary: true },
             ].map((t, idx, arr) => {
@@ -12391,7 +12782,7 @@ export default function App() {
             })}
           </nav>
 
-          {(events.length > 0 || tab === "help" || tab === "overview" || tab === "learn") && (
+          {(events.length > 0 || tab === "help" || tab === "overview" || tab === "learn" || tab === "datasets") && (
             <>
           {tab === "overview" && (
             <Overview
@@ -12488,6 +12879,14 @@ export default function App() {
               onExportTSV={exportReport}
               onExportJSON={exportJSON}
               onExportHTML={exportHTMLReport}
+            />
+          )}
+          {tab === "datasets" && (
+            <DatasetsTab
+              onLoadDataset={loadDataset}
+              hasCurrentData={
+                rawEvents.length > 0 || !!ab || !!metadata || !!plateMap
+              }
             />
           )}
           {tab === "learn" && <LearnTab />}
