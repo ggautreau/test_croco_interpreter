@@ -4502,9 +4502,95 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
 };
 
 
+/** Compact pagination control: First / Prev / page input / Next / Last.
+    Renders nothing useful when totalPages <= 1 — caller decides whether to mount. */
+const Pagination = ({ page, totalPages, onChange }) => {
+  const [draft, setDraft] = useState(String(page));
+  useEffect(() => {
+    setDraft(String(page));
+  }, [page]);
+
+  const go = (p) => {
+    const clamped = Math.min(Math.max(1, p), totalPages);
+    onChange(clamped);
+  };
+
+  const btn = (label, target, disabled) => (
+    <button
+      onClick={() => go(target)}
+      disabled={disabled}
+      className="px-2.5 py-1 text-[11px] rounded-sm"
+      style={{
+        background: disabled ? "#e6e8e8" : "#fff",
+        color: disabled ? "#797870" : "#275662",
+        border: "1px solid #275662",
+        fontWeight: 600,
+        fontFamily: '"Raleway", sans-serif',
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div
+      className="flex items-center gap-2 mt-6 flex-wrap"
+      style={{ color: "#275662" }}
+    >
+      {btn("« First", 1, page <= 1)}
+      {btn("‹ Prev", page - 1, page <= 1)}
+      <span
+        className="text-[11px]"
+        style={{ color: "#797870", fontFamily: '"Raleway", sans-serif' }}
+      >
+        Page
+      </span>
+      <input
+        type="number"
+        min={1}
+        max={totalPages}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          const n = parseInt(draft, 10);
+          if (Number.isFinite(n)) go(n);
+          else setDraft(String(page));
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.currentTarget.blur();
+          }
+        }}
+        className="px-2 py-1 text-[11px] rounded-sm w-16"
+        style={{
+          border: "1px solid #275662",
+          color: "#275662",
+          background: "#fff",
+          fontFamily: '"Raleway", sans-serif',
+        }}
+      />
+      <span
+        className="text-[11px]"
+        style={{ color: "#797870", fontFamily: '"Raleway", sans-serif' }}
+      >
+        of {totalPages}
+      </span>
+      {btn("Next ›", page + 1, page >= totalPages)}
+      {btn("Last »", totalPages, page >= totalPages)}
+    </div>
+  );
+};
+
 const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }) => {
   const [mode, setMode] = useState("flagged"); // "flagged" or "explore"
   const [sortBy, setSortBy] = useState("score");
+  const PAGE_SIZE = 100;
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    setPage(1);
+  }, [sortBy, events]);
 
   // Set of existing pairs (source\u0000target) to prevent duplicates when
   // adding manual events. Built once per events change.
@@ -4545,6 +4631,11 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
     }
     return copy;
   }, [events, sortBy]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const startIdx = (safePage - 1) * PAGE_SIZE;
+  const visible = sorted.slice(startIdx, startIdx + PAGE_SIZE);
 
   return (
     <div>
@@ -4630,7 +4721,9 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
           );
         })}
         <span className="ml-auto text-[12px]" style={{ color: "#797870" }}>
-          {sorted.length} event{sorted.length !== 1 ? "s" : ""}
+          {sorted.length === 0
+            ? "0 events"
+            : `${startIdx + 1}–${startIdx + visible.length} of ${sorted.length} event${sorted.length !== 1 ? "s" : ""}`}
         </span>
       </div>
 
@@ -4640,7 +4733,7 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
           gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
         }}
       >
-        {sorted.map((e) => (
+        {visible.map((e) => (
           <GalleryCard
             key={e.id}
             event={e}
@@ -4651,6 +4744,14 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
           />
         ))}
       </div>
+
+      {totalPages > 1 && (
+        <Pagination
+          page={safePage}
+          totalPages={totalPages}
+          onChange={setPage}
+        />
+      )}
 
       <p className="text-[11px] mt-6" style={{ color: "#797870" }}>
         Click any thumbnail to open the full view with diagnostics and verdict
