@@ -1519,19 +1519,68 @@ function layoutComponent(comp, cellWidth, cellHeight) {
 const NetworkGraph = ({ events, onPick }) => {
   const [hover, setHover] = useState(null);
   const [zoom, setZoom] = useState({ k: 1, x: 0, y: 0 });
+  // null = browse all components in a grid; otherwise the index (in
+  // sortedComponents) of the single component currently being focused.
+  const [focusIdx, setFocusIdx] = useState(null);
   const svgRef = useRef(null);
   const zoomBehaviorRef = useRef(null);
 
   const components = useMemo(() => buildComponents(events), [events]);
 
-  // Pick cell dimensions based on the size of the LARGEST component.
-  // Small graphs (pairs only) keep compact cells; complex graphs get
-  // proportionally more space so the force layout has room to spread.
+  // Show big, messy components first — they're the ones that need
+  // attention. Trivial pairs go to the bottom of the sidebar.
+  const sortedComponents = useMemo(() => {
+    const indexed = components.map((c, i) => ({ ...c, _origIdx: i }));
+    indexed.sort((a, b) => b.nodes.length - a.nodes.length || b.edges.length - a.edges.length);
+    return indexed;
+  }, [components]);
+
+  // Reset focus if the events list changes enough that the index would
+  // be stale (e.g. user loaded a different dataset).
+  useEffect(() => {
+    if (focusIdx != null && focusIdx >= sortedComponents.length) {
+      setFocusIdx(null);
+    }
+  }, [sortedComponents, focusIdx]);
+
+  // Components actually rendered: either the single focused one, or all of
+  // them. In focus mode we give that one component the whole canvas.
+  const visibleComponents = useMemo(() => {
+    if (focusIdx != null && sortedComponents[focusIdx]) {
+      return [sortedComponents[focusIdx]];
+    }
+    return sortedComponents;
+  }, [sortedComponents, focusIdx]);
+
+  // Pick cell dimensions. In focus mode, scale the single cell with the
+  // node count so very dense components get more room. In grid mode, use
+  // the size of the LARGEST component to set the cell — keeps rendering
+  // uniform.
   const { cellWidth, cellHeight, grid } = useMemo(() => {
-    const n = components.length;
+    const n = visibleComponents.length;
     if (n === 0) return { cellWidth: 280, cellHeight: 180, grid: { cols: 1, rows: 1 } };
 
-    const maxNodes = Math.max(...components.map((c) => c.nodes.length));
+    const maxNodes = Math.max(...visibleComponents.map((c) => c.nodes.length));
+
+    if (focusIdx != null) {
+      // Single component, full canvas. Bigger nodes → bigger canvas.
+      let cw, ch;
+      if (maxNodes <= 4) {
+        cw = 720;
+        ch = 480;
+      } else if (maxNodes <= 12) {
+        cw = 900;
+        ch = 600;
+      } else if (maxNodes <= 30) {
+        cw = 1100;
+        ch = 720;
+      } else {
+        cw = 1400;
+        ch = 900;
+      }
+      return { cellWidth: cw, cellHeight: ch, grid: { cols: 1, rows: 1 } };
+    }
+
     let cw, ch;
     if (maxNodes <= 2) {
       cw = 260;
@@ -1558,26 +1607,30 @@ const NetworkGraph = ({ events, onPick }) => {
       cellHeight: ch,
       grid: { cols, rows: Math.ceil(n / cols) },
     };
-  }, [components]);
+  }, [visibleComponents, focusIdx]);
 
   const totalWidth = grid.cols * cellWidth;
   const totalHeight = grid.rows * cellHeight + 40; // +40 for legend
 
-  // Lay out each component, then translate to its grid cell
+  // Lay out each component, then translate to its grid cell. Carry the
+  // node-count back into each positioned node so the renderer can decide
+  // whether to draw labels (compact components always; dense ones only
+  // when zoomed in).
   const laidOut = useMemo(() => {
-    return components.map((comp, i) => {
+    return visibleComponents.map((comp, i) => {
       const col = i % grid.cols;
       const row = Math.floor(i / grid.cols);
       const layout = layoutComponent(comp, cellWidth, cellHeight);
       const ox = col * cellWidth;
       const oy = 40 + row * cellHeight;
       const positioned = {};
+      const componentSize = layout.nodes.length;
       layout.nodes.forEach((n) => {
-        positioned[n.id] = { id: n.id, x: ox + n.x, y: oy + n.y };
+        positioned[n.id] = { id: n.id, x: ox + n.x, y: oy + n.y, componentSize };
       });
-      return { nodes: positioned, edges: layout.edges };
+      return { nodes: positioned, edges: layout.edges, componentSize };
     });
-  }, [components, grid]);
+  }, [visibleComponents, grid, cellWidth, cellHeight]);
 
   const allNodes = useMemo(() => {
     const out = [];
@@ -1646,8 +1699,59 @@ const NetworkGraph = ({ events, onPick }) => {
   return (
     <div
       className="border border-stone-300 rounded-sm bg-white overflow-hidden"
-      style={{ position: "relative" }}
     >
+      {/* TOOLBAR — focus banner + back-to-all when a component is focused;
+          dataset summary otherwise. */}
+      <div
+        className="px-3 py-2 flex items-center gap-3 flex-wrap text-[12px]"
+        style={{ borderBottom: "1px solid #e6e8e8", background: "#f9faf9" }}
+      >
+        {focusIdx != null && sortedComponents[focusIdx] ? (
+          <>
+            <button
+              onClick={() => setFocusIdx(null)}
+              className="px-2 py-0.5 text-[11px] rounded-sm"
+              style={{
+                background: "#fff",
+                color: "#275662",
+                border: "1px solid #275662",
+                fontWeight: 600,
+                fontFamily: '"Raleway", sans-serif',
+                cursor: "pointer",
+              }}
+            >
+              ← All components
+            </button>
+            <span style={{ color: "#275662", fontWeight: 700 }}>
+              Component #{focusIdx + 1}
+            </span>
+            <span style={{ color: "#797870" }}>
+              {sortedComponents[focusIdx].nodes.length} sample
+              {sortedComponents[focusIdx].nodes.length !== 1 ? "s" : ""} ·{" "}
+              {sortedComponents[focusIdx].edges.length} event
+              {sortedComponents[focusIdx].edges.length !== 1 ? "s" : ""}
+            </span>
+          </>
+        ) : (
+          <span style={{ color: "#275662", fontWeight: 600 }}>
+            {sortedComponents.length} connected component
+            {sortedComponents.length !== 1 ? "s" : ""}
+            {sortedComponents.length > 0 && (
+              <>
+                {" · "}
+                <span style={{ color: "#797870", fontWeight: 400 }}>
+                  largest has{" "}
+                  {Math.max(...sortedComponents.map((c) => c.nodes.length))}{" "}
+                  samples — click an entry on the right to focus on it
+                </span>
+              </>
+            )}
+          </span>
+        )}
+      </div>
+
+      <div className="flex">
+        <div className="flex-1" style={{ position: "relative", minWidth: 0 }}>
       {/* HTML overlay: legend (top-left, never zooms) */}
       <div
         className="absolute z-10 flex items-center gap-4 px-3 py-1.5 rounded-sm pointer-events-none"
@@ -1875,6 +1979,17 @@ const NetworkGraph = ({ events, onPick }) => {
                 ? "#ed6e6c"
                 : "#fff";
           const isNodeHover = hover?.kind === "node" && hover.n.id === n.id;
+          // Show label when:
+          //   - this is a small/compact component (≤ 8 nodes), OR
+          //   - we're focused on a single component (always label), OR
+          //   - the user has zoomed in past 1.4×, OR
+          //   - this specific node is hovered.
+          // Otherwise skip the <text> entirely so dense blobs don't overlap.
+          const showLabel =
+            isNodeHover ||
+            focusIdx != null ||
+            (n.componentSize ?? 99) <= 8 ||
+            zoom.k >= 1.4;
           return (
             <g
               key={n.id}
@@ -1890,23 +2005,26 @@ const NetworkGraph = ({ events, onPick }) => {
                 stroke="#275662"
                 strokeWidth={isNodeHover ? 2.5 : 1.5}
               />
-              {/* External label below node — white halo for readability over edges */}
-              <text
-                x={n.x}
-                y={n.y + 28}
-                textAnchor="middle"
-                fontSize="12"
-                fontFamily="system-ui, sans-serif"
-                fontWeight="700"
-                fill="#275662"
-                stroke="#ffffff"
-                strokeWidth="2"
-                strokeLinejoin="round"
-                paintOrder="stroke fill"
-                style={{ pointerEvents: "none" }}
-              >
-                {n.id}
-              </text>
+              {/* External label below node — white halo for readability over
+                  edges. Hidden in dense components when not zoomed/hovered. */}
+              {showLabel && (
+                <text
+                  x={n.x}
+                  y={n.y + 28}
+                  textAnchor="middle"
+                  fontSize="12"
+                  fontFamily="system-ui, sans-serif"
+                  fontWeight="700"
+                  fill="#275662"
+                  stroke="#ffffff"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                  paintOrder="stroke fill"
+                  style={{ pointerEvents: "none" }}
+                >
+                  {n.id}
+                </text>
+              )}
             </g>
           );
         })}
@@ -1946,6 +2064,97 @@ const NetworkGraph = ({ events, onPick }) => {
           </span>
         </div>
       )}
+        </div>
+        {/* SIDEBAR — components ranked by size, click to focus */}
+        <div
+          className="overflow-y-auto"
+          style={{
+            width: 224,
+            maxHeight: 720,
+            borderLeft: "1px solid #e6e8e8",
+            background: "#fafbfb",
+          }}
+        >
+          <div
+            className="px-3 py-2 text-[10px] tracking-[0.1em] uppercase sticky top-0"
+            style={{
+              color: "#797870",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+              borderBottom: "1px solid #e6e8e8",
+              background: "#fafbfb",
+            }}
+          >
+            Components
+          </div>
+          {sortedComponents.length === 0 && (
+            <div className="px-3 py-3 text-[11px]" style={{ color: "#797870" }}>
+              No components.
+            </div>
+          )}
+          {sortedComponents.map((c, i) => {
+            const cascade = c.nodes.filter((nid) => {
+              const inD = events.some((e) => e.target === nid);
+              const outD = events.some((e) => e.source === nid);
+              return inD && outD;
+            }).length;
+            const active = focusIdx === i;
+            return (
+              <button
+                key={i}
+                onClick={() => setFocusIdx(active ? null : i)}
+                className="w-full text-left px-3 py-2"
+                style={{
+                  background: active ? "#eef8f8" : "transparent",
+                  borderBottom: "1px solid #f0f2f2",
+                  borderLeft: active ? "3px solid #00a3a6" : "3px solid transparent",
+                  cursor: "pointer",
+                }}
+                onMouseOver={(ev) => {
+                  if (!active) ev.currentTarget.style.background = "#f0f4f4";
+                }}
+                onMouseOut={(ev) => {
+                  if (!active) ev.currentTarget.style.background = "transparent";
+                }}
+              >
+                <div
+                  className="text-[12px]"
+                  style={{
+                    color: "#275662",
+                    fontWeight: 700,
+                    fontFamily: '"Raleway", sans-serif',
+                  }}
+                >
+                  #{i + 1}{" "}
+                  <span style={{ color: "#797870", fontWeight: 400 }}>
+                    — {c.nodes.length} sample{c.nodes.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div
+                  className="text-[10px] mt-0.5 flex items-center gap-2"
+                  style={{ color: "#797870" }}
+                >
+                  <span>
+                    {c.edges.length} event{c.edges.length !== 1 ? "s" : ""}
+                  </span>
+                  {cascade > 0 && (
+                    <span
+                      className="inline-flex items-center gap-1"
+                      style={{ color: "#b84442" }}
+                    >
+                      <span
+                        className="inline-block w-1.5 h-1.5 rounded-full"
+                        style={{ background: "#ed6e6c" }}
+                      />
+                      {cascade} cascade{cascade !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 };
