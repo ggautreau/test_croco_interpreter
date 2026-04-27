@@ -3830,8 +3830,688 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick }) => {
 };
 
 /* ----- Scatterplot gallery tab ----- */
-const ScatterTab = ({ events, ab, metadata, plateMap, onPick }) => {
+/* ============================================================================
+   SampleCombobox — searchable dropdown for picking a sample, with optional
+   contextual groups (e.g. "Plate neighbors of source", "Same subject"). The
+   dropdown opens on focus, filters by case-insensitive substring as the user
+   types, and groups samples into named sections. Clicking an item, or
+   pressing Enter/Tab, selects it.
+   ============================================================================ */
+const SampleCombobox = ({
+  value,
+  onChange,
+  samples,
+  groups = null,
+  placeholder = "Type to search…",
+  invalid = false,
+}) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState(value || "");
+  const [highlightIdx, setHighlightIdx] = useState(0);
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Keep the displayed text in sync with the value prop
+  useEffect(() => {
+    setQuery(value || "");
+  }, [value]);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (ev) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(ev.target)
+      ) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  // Build the filtered+grouped list. If `groups` is provided, we honour
+  // them; otherwise we fall back to a single anonymous group with all
+  // samples. Filtering is case-insensitive substring match.
+  const filteredGroups = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filterList = (lst) =>
+      q === "" ? lst : lst.filter((s) => s.toLowerCase().includes(q));
+    if (groups && groups.length > 0) {
+      // Track samples already shown in earlier groups so they don't
+      // appear twice.
+      const seen = new Set();
+      const out = [];
+      groups.forEach((g) => {
+        const filtered = filterList(g.samples).filter((s) => {
+          if (seen.has(s)) return false;
+          seen.add(s);
+          return true;
+        });
+        if (filtered.length > 0) {
+          out.push({ label: g.label, accent: g.accent, samples: filtered });
+        }
+      });
+      // Catch-all "Other samples" group with anything not yet seen
+      const others = filterList(samples).filter((s) => !seen.has(s));
+      if (others.length > 0) {
+        out.push({ label: "Other samples", accent: "#797870", samples: others });
+      }
+      return out;
+    }
+    return [
+      { label: null, accent: "#797870", samples: filterList(samples) },
+    ];
+  }, [query, samples, groups]);
+
+  // Flat list of suggestions for keyboard navigation
+  const flatList = useMemo(() => {
+    const out = [];
+    filteredGroups.forEach((g) =>
+      g.samples.forEach((s) => out.push({ sample: s, group: g.label })),
+    );
+    return out;
+  }, [filteredGroups]);
+
+  const totalMatches = flatList.length;
+
+  const selectSample = (s) => {
+    onChange(s);
+    setQuery(s);
+    setOpen(false);
+    setHighlightIdx(0);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setOpen(true);
+      setHighlightIdx((i) => Math.min(totalMatches - 1, i + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightIdx((i) => Math.max(0, i - 1));
+    } else if (e.key === "Enter") {
+      if (open && flatList[highlightIdx]) {
+        e.preventDefault();
+        selectSample(flatList[highlightIdx].sample);
+      }
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    } else if (e.key === "Tab") {
+      // Don't intercept tab — the user might want to leave the field.
+      // But if the dropdown is open, take the highlighted item.
+      if (open && flatList[highlightIdx]) {
+        selectSample(flatList[highlightIdx].sample);
+      }
+    }
+  };
+
+  return (
+    <div ref={containerRef} style={{ position: "relative" }}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          onChange(e.target.value); // mirror to parent so validation runs live
+          setOpen(true);
+          setHighlightIdx(0);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 text-[12px] rounded-sm"
+        style={{
+          border: `1px solid ${invalid ? "#ed6e6c" : "#e6e8e8"}`,
+          background: "#fff",
+          color: "#275662",
+          fontFamily: "ui-monospace, monospace",
+        }}
+      />
+      {open && totalMatches > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 2px)",
+            left: 0,
+            right: 0,
+            background: "#fff",
+            border: "1px solid #e6e8e8",
+            borderRadius: 3,
+            maxHeight: 280,
+            overflowY: "auto",
+            zIndex: 30,
+            boxShadow: "0 4px 12px rgba(39,86,98,0.12)",
+          }}
+        >
+          {filteredGroups.map((g, gi) => {
+            // Compute the global index offset for keyboard highlight
+            const offset = filteredGroups
+              .slice(0, gi)
+              .reduce((s, gg) => s + gg.samples.length, 0);
+            return (
+              <div key={gi}>
+                {g.label && (
+                  <div
+                    className="text-[9px] tracking-[0.1em] uppercase px-3 py-1"
+                    style={{
+                      color: g.accent,
+                      fontWeight: 700,
+                      fontFamily: '"Raleway", sans-serif',
+                      background: "#f6f7f7",
+                      borderTop: gi > 0 ? "1px solid #e6e8e8" : "none",
+                    }}
+                  >
+                    {g.label} ({g.samples.length})
+                  </div>
+                )}
+                {g.samples.map((s, si) => {
+                  const flatIdx = offset + si;
+                  const isHi = flatIdx === highlightIdx;
+                  return (
+                    <div
+                      key={s}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        selectSample(s);
+                      }}
+                      onMouseEnter={() => setHighlightIdx(flatIdx)}
+                      style={{
+                        padding: "6px 12px",
+                        fontSize: 12,
+                        fontFamily: "ui-monospace, monospace",
+                        color: "#275662",
+                        background: isHi ? "#eef8f8" : "transparent",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {s}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {open && totalMatches === 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 2px)",
+            left: 0,
+            right: 0,
+            background: "#fff",
+            border: "1px solid #e6e8e8",
+            borderRadius: 3,
+            padding: "8px 12px",
+            fontSize: 11,
+            color: "#797870",
+            zIndex: 30,
+            boxShadow: "0 4px 12px rgba(39,86,98,0.12)",
+          }}
+        >
+          No matching samples
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+/* ============================================================================
+   Pair exploration — let the user pick any two samples and look at
+   their scatterplot, then optionally add the pair as a manually-curated TP
+   event. Useful for catching false negatives that CroCoDeEL didn't flag.
+   ============================================================================ */
+const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, metadata }) => {
+  const [src, setSrc] = useState("");
+  const [tgt, setTgt] = useState("");
+  // Sliders work in log-space for rate (so the user gets fine control at
+  // low rates without a 50× larger range up high). Range: log10(rate)
+  // from -3 (0.1%) to log10(0.5) ≈ -0.301 (50%). Default at -2 (1%).
+  const [rateLog, setRateLog] = useState(-2);
+  const [probability, setProbability] = useState(0.9);
+  const [verdict, setVerdict] = useState("true_positive");
+  const [notes, setNotes] = useState("Manually added by user");
+  const [feedback, setFeedback] = useState(null);
+
+  const rate = Math.pow(10, rateLog);
+
+  // Build a fake "event" object so we can reuse buildScatter / Scatterplot.
+  const fakeEvent = useMemo(() => {
+    if (!src || !tgt || src === tgt) return null;
+    return {
+      id: "preview",
+      source: src,
+      target: tgt,
+      rate,
+      score: probability,
+      introduced: [], // populated below from the user's rate
+      verdict: "pending",
+      notes: "",
+    };
+  }, [src, tgt, rate, probability]);
+
+  // Compute the "introduced" list — species within 0.3 decade of the
+  // user-placed contamination line. This matches CroCoDeEL's tolerance and
+  // means the manually-added event will go through the same diagnostic
+  // checks as auto-flagged ones.
+  const introducedFromLine = useMemo(() => {
+    if (!ab || !fakeEvent) return [];
+    const sc = buildScatter(ab, { ...fakeEvent, introduced: [] });
+    if (!sc || sc.error || sc.logC == null) return [];
+    return sc.points
+      .filter((p) => {
+        if (p.x <= 0 || p.y <= 0) return false;
+        const expectedY = Math.log10(p.x) - sc.logC;
+        return Math.abs(Math.log10(p.y) - expectedY) < 0.3;
+      })
+      .map((p) => p.species);
+  }, [ab, fakeEvent]);
+
+  const eventForPlot = useMemo(() => {
+    if (!fakeEvent) return null;
+    return { ...fakeEvent, introduced: introducedFromLine };
+  }, [fakeEvent, introducedFromLine]);
+
+  const scatter = useMemo(
+    () => (eventForPlot && eventForPlot.source !== eventForPlot.target ? buildScatter(ab, eventForPlot) : null),
+    [ab, eventForPlot],
+  );
+
+  const pairAlreadyExists = useMemo(() => {
+    if (!src || !tgt) return false;
+    return existingPairs.has(`${src}\u0000${tgt}`);
+  }, [src, tgt, existingPairs]);
+
+  // Contextual groups for the SOURCE combobox. Source has no parent
+  // context (the user picks it first), so we just expose the full
+  // sample list with no priority groups. We could surface "samples
+  // appearing in flagged events" but that would bias the user away
+  // from FN audit, which is the whole point.
+  const srcGroups = null;
+
+  // Contextual groups for the TARGET combobox, computed from the
+  // currently-selected source. When a source is picked, we promote
+  // (a) plate neighbors (Δ ≤ 1 well) and (b) same-subject samples to
+  // the top of the dropdown — these are the most likely places where
+  // CroCoDeEL might have missed a contamination. The categories also
+  // help the user learn the dataset's structure as they browse.
+  const tgtGroups = useMemo(() => {
+    if (!src) return null;
+    const groups = [];
+    if (plateMap) {
+      const neighbors = samples.filter((s) => {
+        if (s === src) return false;
+        const d = plateDistance(plateMap, src, s);
+        return d != null && d <= 1;
+      });
+      if (neighbors.length > 0) {
+        groups.push({
+          label: "Plate neighbors of source",
+          accent: "#ed6e6c",
+          samples: neighbors,
+        });
+      }
+    }
+    if (metadata) {
+      const related = samples.filter((s) => {
+        if (s === src) return false;
+        const r = areRelated(metadata, src, s);
+        return r && r.related;
+      });
+      if (related.length > 0) {
+        groups.push({
+          label: "Same subject as source",
+          accent: "#00a3a6",
+          samples: related,
+        });
+      }
+    }
+    return groups.length > 0 ? groups : null;
+  }, [src, samples, plateMap, metadata]);
+
+  const canSave =
+    src && tgt && src !== tgt && !pairAlreadyExists;
+
+  const handleSave = () => {
+    if (!canSave) return;
+    onAddManualEvent({
+      source: src,
+      target: tgt,
+      rate,
+      score: probability,
+      introduced: introducedFromLine,
+      verdict,
+      notes,
+    });
+    const verdictLabel =
+      verdict === "true_positive"
+        ? "true positive"
+        : verdict === "false_positive"
+          ? "false positive"
+          : "uncertain";
+    setFeedback({
+      kind: "success",
+      message: `Added ${src} → ${tgt} as a ${verdictLabel} event.`,
+    });
+    setTimeout(() => setFeedback(null), 4000);
+    // Reset the form so the user can immediately add another
+    setSrc("");
+    setTgt("");
+    setRateLog(-2);
+    setProbability(0.9);
+    setVerdict("true_positive");
+    setNotes("Manually added by user");
+  };
+
+  return (
+    <div>
+      <div
+        className="rounded-sm p-4 mb-5"
+        style={{
+          background: "#f6f7f7",
+          border: "1px solid #e6e8e8",
+        }}
+      >
+        <div
+          className="text-[10px] tracking-[0.15em] uppercase mb-2"
+          style={{
+            color: "#ed6e6c",
+            fontWeight: 700,
+            fontFamily: '"Raleway", sans-serif',
+          }}
+        >
+          Explore new pairs
+        </div>
+        <p className="text-[12px] mb-3" style={{ color: "#5a5550", lineHeight: 1.55 }}>
+          Pick two samples to inspect their scatterplot, even if CroCoDeEL didn't
+          flag them. Useful for catching missed contamination events (false
+          negatives), e.g. when two samples sit next to each other on the plate
+          or share a metadata feature. If you spot a real contamination, set the
+          rate and probability you estimate, then save it as a true positive
+          event. The pair will be tagged with the note "Manually added by user"
+          and included in your exports.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          <div>
+            <label
+              className="text-[10px] tracking-[0.1em] uppercase block mb-1"
+              style={{
+                color: "#797870",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              Source sample
+            </label>
+            <SampleCombobox
+              value={src}
+              onChange={setSrc}
+              samples={samples}
+              groups={srcGroups}
+              placeholder="Type to search… e.g. ERS848718"
+              invalid={src !== "" && !samples.includes(src)}
+            />
+          </div>
+          <div>
+            <label
+              className="text-[10px] tracking-[0.1em] uppercase block mb-1"
+              style={{
+                color: "#797870",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              Target sample (contaminated)
+            </label>
+            <SampleCombobox
+              value={tgt}
+              onChange={setTgt}
+              samples={samples}
+              groups={tgtGroups}
+              placeholder={
+                src
+                  ? "Pick from neighbors / same subject / others…"
+                  : "Pick a source first"
+              }
+              invalid={tgt !== "" && !samples.includes(tgt)}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+          <div>
+            <label
+              className="text-[10px] tracking-[0.1em] uppercase block mb-1"
+              style={{
+                color: "#797870",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              Estimated contamination rate ·{" "}
+              <span style={{ color: "#275662" }}>
+                {(rate * 100).toFixed(2)}%
+              </span>
+            </label>
+            <input
+              type="range"
+              min="-3"
+              max="-0.0044"
+              step="0.05"
+              value={rateLog}
+              onChange={(e) => setRateLog(parseFloat(e.target.value))}
+              style={{ width: "100%", accentColor: "#ed6e6c" }}
+            />
+            <div
+              className="flex justify-between text-[10px] mt-0.5"
+              style={{ color: "#797870" }}
+            >
+              <span>0.1%</span>
+              <span>1%</span>
+              <span>10%</span>
+              <span>99%</span>
+            </div>
+            <div className="text-[10px] mt-1" style={{ color: "#797870" }}>
+              Drags the contamination line to log10(rate). Slider is
+              log-scaled.
+            </div>
+          </div>
+          <div>
+            <label
+              className="text-[10px] tracking-[0.1em] uppercase block mb-1"
+              style={{
+                color: "#797870",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              Your estimated probability (confidence) ·{" "}
+              <span style={{ color: "#275662" }}>
+                {probability.toFixed(2)}
+              </span>
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={probability}
+              onChange={(e) => setProbability(parseFloat(e.target.value))}
+              style={{ width: "100%", accentColor: "#00a3a6" }}
+            />
+            <div
+              className="flex justify-between text-[10px] mt-0.5"
+              style={{ color: "#797870" }}
+            >
+              <span>0.0</span>
+              <span>0.5</span>
+              <span>1.0</span>
+            </div>
+            <div className="text-[10px] mt-1" style={{ color: "#797870" }}>
+              Like CroCoDeEL's RF probability — your subjective confidence
+              that this is a real contamination.
+            </div>
+          </div>
+        </div>
+
+        {/* Verdict picker (TP / FP / Uncertain) */}
+        <div className="mb-3">
+          <label
+            className="text-[10px] tracking-[0.1em] uppercase block mb-2"
+            style={{
+              color: "#797870",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+          >
+            Verdict
+          </label>
+          <div className="flex gap-2 flex-wrap">
+            {[
+              { id: "true_positive", label: "True positive", color: "#00a3a6" },
+              { id: "false_positive", label: "False positive", color: "#ed6e6c" },
+              { id: "uncertain", label: "Uncertain", color: "#c4c0b3" },
+            ].map((v) => {
+              const active = verdict === v.id;
+              return (
+                <button
+                  key={v.id}
+                  onClick={() => setVerdict(v.id)}
+                  className="px-3 py-1.5 text-[11px] rounded-sm flex items-center gap-1.5"
+                  style={{
+                    background: active ? v.color : "#fff",
+                    color: active ? "#fff" : "#275662",
+                    border: `1px solid ${active ? v.color : "#e6e8e8"}`,
+                    fontWeight: 700,
+                    fontFamily: '"Raleway", sans-serif',
+                    cursor: "pointer",
+                  }}
+                >
+                  {active && <CheckCircle2 className="w-3 h-3" />}
+                  {v.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Notes field — pre-filled but editable */}
+        <div className="mb-3">
+          <label
+            className="text-[10px] tracking-[0.1em] uppercase block mb-1"
+            style={{
+              color: "#797870",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+          >
+            Comment
+          </label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            className="w-full px-3 py-2 text-[12px] rounded-sm"
+            style={{
+              border: "1px solid #e6e8e8",
+              background: "#fff",
+              color: "#275662",
+              fontFamily:
+                '"Avenir Next", "Nunito Sans", system-ui, sans-serif',
+              resize: "vertical",
+            }}
+          />
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={handleSave}
+            disabled={!canSave}
+            className="px-4 py-2 text-[12px] rounded-sm flex items-center gap-2"
+            style={{
+              background: canSave ? "#00a3a6" : "#e6e8e8",
+              color: canSave ? "#fff" : "#797870",
+              border: "none",
+              fontWeight: 700,
+              letterSpacing: "0.02em",
+              fontFamily: '"Raleway", sans-serif',
+              cursor: canSave ? "pointer" : "not-allowed",
+            }}
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            Save as new contamination event
+          </button>
+          {!src || !tgt ? (
+            <span className="text-[11px]" style={{ color: "#797870" }}>
+              Pick both source and target to see the plot.
+            </span>
+          ) : src === tgt ? (
+            <span className="text-[11px]" style={{ color: "#ed6e6c" }}>
+              Source and target must differ.
+            </span>
+          ) : pairAlreadyExists ? (
+            <span className="text-[11px]" style={{ color: "#ed6e6c" }}>
+              This pair is already in your events list.
+            </span>
+          ) : (
+            <span className="text-[11px]" style={{ color: "#797870" }}>
+              {introducedFromLine.length} species fall on the line you placed.
+            </span>
+          )}
+          {feedback && (
+            <span
+              className="text-[11px] px-2 py-1 rounded-sm"
+              style={{
+                background: "#d8f0f1",
+                color: "#00787a",
+                fontWeight: 600,
+              }}
+            >
+              ✓ {feedback.message}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {scatter && !scatter.error && (
+        <div className="flex justify-center">
+          <Scatterplot scatter={scatter} />
+        </div>
+      )}
+      {scatter && scatter.error && (
+        <div
+          className="p-4 rounded-sm text-[12px]"
+          style={{
+            background: "#fdeceb",
+            border: "1px solid #ed6e6c",
+            color: "#8a2422",
+          }}
+        >
+          {scatter.error}
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }) => {
+  const [mode, setMode] = useState("flagged"); // "flagged" or "explore"
   const [sortBy, setSortBy] = useState("score");
+
+  // Set of existing pairs (source\u0000target) to prevent duplicates when
+  // adding manual events. Built once per events change.
+  const existingPairs = useMemo(() => {
+    const s = new Set();
+    events.forEach((e) => s.add(`${e.source}\u0000${e.target}`));
+    return s;
+  }, [events]);
 
   if (!ab) {
     return (
@@ -3868,10 +4548,51 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick }) => {
   return (
     <div>
       <SectionTitle eyebrow="Scatterplots" title="Event gallery">
-        Browse every flagged event as a scatterplot thumbnail. Click any card
-        to open it in the Guided validation workflow for full diagnostics.
+        Browse every flagged event as a scatterplot thumbnail, or explore any
+        two samples to look for missed contamination events (false negatives).
       </SectionTitle>
 
+      {/* Mode toggle: flagged events vs free pair exploration */}
+      <div
+        className="inline-flex items-center rounded-sm mb-5"
+        style={{ border: "1px solid #275662", padding: 2 }}
+      >
+        {[
+          { id: "flagged", label: "Flagged events" },
+          { id: "explore", label: "Explore new pairs" },
+        ].map((m) => {
+          const active = mode === m.id;
+          return (
+            <button
+              key={m.id}
+              onClick={() => setMode(m.id)}
+              className="px-3 py-1.5 text-[11px] rounded-sm"
+              style={{
+                background: active ? "#275662" : "transparent",
+                color: active ? "#fff" : "#275662",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              {m.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {mode === "explore" ? (
+        <ExplorePairs
+          ab={ab}
+          samples={ab.samples}
+          onAddManualEvent={onAddManualEvent}
+          existingPairs={existingPairs}
+          plateMap={plateMap}
+          metadata={metadata}
+        />
+      ) : (
+        <>
       <div className="flex items-center gap-3 mb-6 flex-wrap">
         <span
           className="text-[11px] uppercase tracking-[0.1em]"
@@ -3934,6 +4655,8 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick }) => {
         Click any thumbnail to open the full view with diagnostics and verdict
         controls.
       </p>
+        </>
+      )}
     </div>
   );
 };
@@ -10328,6 +11051,32 @@ export default function App() {
       prev.map((e) => (e.id === id ? { ...e, notes } : e)),
     );
 
+  /** Add a user-curated event to the events list. Used by the
+      "Explore new pairs" feature in the Scatterplots tab when the user
+      identifies a missed contamination (false negative) and wants to
+      include it in the curation report. The event is stamped with a
+      string id starting with "manual-" so it's distinguishable from
+      auto-loaded events. The caller chooses the verdict (TP / FP /
+      Uncertain) and the note text. */
+  const addManualEvent = (data) => {
+    setRawEvents((prev) => {
+      const nextManualNum = prev.filter((e) =>
+        typeof e.id === "string" && e.id.startsWith("manual-"),
+      ).length + 1;
+      const newEvent = {
+        id: `manual-${nextManualNum}`,
+        source: data.source,
+        target: data.target,
+        rate: data.rate,
+        score: data.score,
+        introduced: data.introduced || [],
+        verdict: data.verdict || "true_positive",
+        notes: data.notes || "Manually added by user",
+      };
+      return [...prev, newEvent];
+    });
+  };
+
   /** Bulk-classify all same-subject events as false positives, with an
       auto-generated note explaining the rationale. Events that already
       have a manual verdict are skipped (to avoid overwriting user
@@ -11688,6 +12437,7 @@ export default function App() {
                 setSelId(id);
                 setTab("validate");
               }}
+              onAddManualEvent={addManualEvent}
             />
           )}
           {tab === "network" && (
