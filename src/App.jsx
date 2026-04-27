@@ -77,6 +77,19 @@ const RepubliqueFrancaise = ({ height = 46 }) => (
    2. TSV PARSING
    ============================================================================ */
 
+/** Strip a single layer of CSV/TSV-style surrounding double quotes from a
+    cell. Some upstream tools (notably R's write.table and Meteor's MSP
+    profiles) wrap every string cell in `"..."`; without unquoting, the
+    species name `"msp_0001"` parsed from the abundance file would never
+    match the bare `msp_0001` listed in contamination_events.tsv. */
+function unquoteCell(s) {
+  if (typeof s !== "string") return s;
+  if (s.length >= 2 && s.charCodeAt(0) === 34 && s.charCodeAt(s.length - 1) === 34) {
+    return s.slice(1, -1).replace(/""/g, '"');
+  }
+  return s;
+}
+
 function parseTSV(text) {
   const allLines = text.replace(/\r/g, "").split("\n").filter((l) => l.length > 0);
   // Separate hash-prefixed header lines (e.g. CroCoDeEL run params) from data
@@ -92,11 +105,11 @@ function parseTSV(text) {
   }
   const lines = allLines.slice(firstDataIdx);
   if (lines.length === 0) return { header: [], rows: [], headerComments };
-  const header = lines[0].split("\t");
+  const header = lines[0].split("\t").map(unquoteCell);
   const rows = lines.slice(1).map((line) => {
     const cells = line.split("\t");
     const obj = {};
-    header.forEach((h, i) => (obj[h] = cells[i] ?? ""));
+    header.forEach((h, i) => (obj[h] = unquoteCell(cells[i] ?? "")));
     return obj;
   });
   return { header, rows, headerComments };
