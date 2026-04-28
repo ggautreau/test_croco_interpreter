@@ -1558,6 +1558,17 @@ const NetworkGraph = ({ events, onPick }) => {
   // null = browse all components in a grid; otherwise the index (in
   // sortedComponents) of the single component currently being focused.
   const [focusIdx, setFocusIdx] = useState(null);
+  // Edge visibility per verdict — checkboxes in the toolbar. Components
+  // are still computed from ALL events so the layout doesn't shift when
+  // a verdict is toggled; we only skip drawing the matching edges.
+  const [verdictFilter, setVerdictFilter] = useState({
+    pending: true,
+    true_positive: true,
+    false_positive: true,
+    uncertain: true,
+  });
+  const toggleVerdict = (v) =>
+    setVerdictFilter((f) => ({ ...f, [v]: !f[v] }));
   const svgRef = useRef(null);
   const zoomBehaviorRef = useRef(null);
 
@@ -1784,6 +1795,47 @@ const NetworkGraph = ({ events, onPick }) => {
             )}
           </span>
         )}
+        {/* Verdict filter — checkboxes that toggle edge visibility per
+            verdict. The graph layout doesn't change when these are
+            toggled; only edge rendering is skipped. */}
+        <div
+          className="ml-auto flex items-center gap-3 flex-wrap"
+          style={{ color: "#275662" }}
+        >
+          <span
+            className="text-[10px] tracking-[0.1em] uppercase"
+            style={{ color: "#797870", fontWeight: 700, fontFamily: '"Raleway", sans-serif' }}
+          >
+            Show
+          </span>
+          {[
+            { id: "pending", label: "pending", dot: "#9aaab0" },
+            { id: "true_positive", label: "TP", dot: "#00a3a6" },
+            { id: "false_positive", label: "FP", dot: "#c4c0b3" },
+            { id: "uncertain", label: "uncertain", dot: "#f4b942" },
+          ].map((v) => (
+            <label
+              key={v.id}
+              className="flex items-center gap-1.5 text-[11px] cursor-pointer"
+              style={{ userSelect: "none" }}
+            >
+              <input
+                type="checkbox"
+                checked={verdictFilter[v.id]}
+                onChange={() => toggleVerdict(v.id)}
+                style={{ accentColor: "#00a3a6" }}
+              />
+              <span
+                className="inline-block w-2 h-2 rounded-full"
+                style={{
+                  background: v.dot,
+                  border: v.id === "false_positive" ? "1px solid #797870" : "none",
+                }}
+              />
+              {v.label}
+            </label>
+          ))}
+        </div>
       </div>
 
       <div className="flex">
@@ -1895,6 +1947,9 @@ const NetworkGraph = ({ events, onPick }) => {
             const a = c.nodes[e.source];
             const b = c.nodes[e.target];
             if (!a || !b) return null;
+            // Skip edges whose verdict has been hidden via the toolbar
+            // checkboxes. Layout is unaffected.
+            if (!verdictFilter[e.verdict || "pending"]) return null;
             const rejected = e.verdict === "false_positive";
             const accepted = e.verdict === "true_positive";
             const isHovered = hover?.kind === "edge" && hover.e.id === e.id;
@@ -2016,7 +2071,7 @@ const NetworkGraph = ({ events, onPick }) => {
                 : "#fff";
           const isNodeHover = hover?.kind === "node" && hover.n.id === n.id;
           // Show label when:
-          //   - this is a small/compact component (≤ 8 nodes), OR
+          //   - this is a small/compact component (≤ 25 nodes), OR
           //   - we're focused on a single component (always label), OR
           //   - the user has zoomed in past 1.4×, OR
           //   - this specific node is hovered.
@@ -2024,7 +2079,7 @@ const NetworkGraph = ({ events, onPick }) => {
           const showLabel =
             isNodeHover ||
             focusIdx != null ||
-            (n.componentSize ?? 99) <= 8 ||
+            (n.componentSize ?? 99) <= 25 ||
             zoom.k >= 1.4;
           return (
             <g
@@ -5186,6 +5241,14 @@ const NetworkTab = ({ events, onPick }) => (
       />
       Hover an edge to inspect it, click to jump into validation. Scroll to
       zoom in on dense clusters, drag the background to pan.
+    </p>
+    <p
+      className="text-[10px] mt-1"
+      style={{ color: "#797870", fontStyle: "italic" }}
+    >
+      Sample labels are hidden on components with more than 25 nodes to keep
+      the overview readable — click the component in the right sidebar to
+      focus on it (or zoom past 1.4× / hover a node) to see them.
     </p>
   </div>
 );
