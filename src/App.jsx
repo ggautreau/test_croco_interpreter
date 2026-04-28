@@ -3959,47 +3959,69 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
         stroke="#c4c0b3"
         strokeWidth="0.75"
       />
-      {/* axis tick labels — log10 corners (-8 and 0) */}
-      <text
-        x={pad.l - 3}
-        y={pad.t + 5}
-        textAnchor="end"
-        fontSize="8"
-        fill="#797870"
-        fontFamily="system-ui, sans-serif"
-      >
-        {MINI_HI}
-      </text>
-      <text
-        x={pad.l - 3}
-        y={pad.t + h}
-        textAnchor="end"
-        fontSize="8"
-        fill="#797870"
-        fontFamily="system-ui, sans-serif"
-      >
-        {MINI_LO}
-      </text>
-      <text
-        x={pad.l}
-        y={pad.t + h + 10}
-        textAnchor="start"
-        fontSize="8"
-        fill="#797870"
-        fontFamily="system-ui, sans-serif"
-      >
-        {MINI_LO}
-      </text>
-      <text
-        x={pad.l + w}
-        y={pad.t + h + 10}
-        textAnchor="end"
-        fontSize="8"
-        fill="#797870"
-        fontFamily="system-ui, sans-serif"
-      >
-        {MINI_HI}
-      </text>
+      {/* axis ticks — every integer log10 step. Labels on even steps
+          only (-8, -6, -4, -2, 0) to avoid crowding the thumbnail. */}
+      {(() => {
+        const ticks = [];
+        for (let v = MINI_LO; v <= MINI_HI; v++) {
+          const labeled = v % 2 === 0;
+          // Y-axis (left edge): horizontal tick mark + optional label
+          ticks.push(
+            <line
+              key={`yt-${v}`}
+              x1={pad.l - (labeled ? 3 : 2)}
+              y1={sy(v)}
+              x2={pad.l}
+              y2={sy(v)}
+              stroke="#c4c0b3"
+              strokeWidth="0.75"
+            />,
+          );
+          if (labeled) {
+            ticks.push(
+              <text
+                key={`yl-${v}`}
+                x={pad.l - 4}
+                y={sy(v) + 3}
+                textAnchor="end"
+                fontSize="8"
+                fill="#797870"
+                fontFamily="system-ui, sans-serif"
+              >
+                {v}
+              </text>,
+            );
+          }
+          // X-axis (bottom edge): vertical tick mark + optional label
+          ticks.push(
+            <line
+              key={`xt-${v}`}
+              x1={sx(v)}
+              y1={pad.t + h}
+              x2={sx(v)}
+              y2={pad.t + h + (labeled ? 3 : 2)}
+              stroke="#c4c0b3"
+              strokeWidth="0.75"
+            />,
+          );
+          if (labeled) {
+            ticks.push(
+              <text
+                key={`xl-${v}`}
+                x={sx(v)}
+                y={pad.t + h + 11}
+                textAnchor="middle"
+                fontSize="8"
+                fill="#797870"
+                fontFamily="system-ui, sans-serif"
+              >
+                {v}
+              </text>,
+            );
+          }
+        }
+        return ticks;
+      })()}
       {/* contamination line */}
       {scatter.logC != null && (
         <line
