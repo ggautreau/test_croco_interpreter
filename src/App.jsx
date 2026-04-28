@@ -6466,6 +6466,13 @@ const ValidateTab = ({
       }
     }
   };
+  /* ---- Navigation helpers (any verdict) ---- */
+  const goPrev = () => {
+    if (idx > 0) onSelect(events[idx - 1].id);
+  };
+  const goNext = () => {
+    if (idx >= 0 && idx < events.length - 1) onSelect(events[idx + 1].id);
+  };
   const hasPrevPending = useMemo(() => {
     for (let i = idx - 1; i >= 0; i--) {
       if (events[i].verdict === "pending") return true;
@@ -6516,6 +6523,16 @@ const ValidateTab = ({
         case "arrowright":
           // Skip already-validated events: jump to the next PENDING
           goNextPending();
+          e.preventDefault();
+          break;
+        case "arrowup":
+          // Step through the queue regardless of verdict
+          goPrev();
+          e.preventDefault();
+          break;
+        case "arrowdown":
+          // Step through the queue regardless of verdict
+          goNext();
           e.preventDefault();
           break;
         case "?":
@@ -6744,6 +6761,8 @@ const ValidateTab = ({
                 ["P", "Reset current event to Pending"],
                 ["←", "Previous pending event (skip validated)"],
                 ["→", "Next pending event (skip validated)"],
+                ["↑", "Previous event (any verdict)"],
+                ["↓", "Next event (any verdict)"],
                 ["?", "Toggle this help"],
                 ["Esc", "Close this help"],
               ].map(([key, desc]) => (
