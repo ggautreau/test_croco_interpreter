@@ -1809,10 +1809,10 @@ const NetworkGraph = ({ events, onPick }) => {
             Show
           </span>
           {[
-            { id: "pending", label: "pending", dot: "#9aaab0" },
-            { id: "true_positive", label: "TP", dot: "#00a3a6" },
-            { id: "false_positive", label: "FP", dot: "#c4c0b3" },
-            { id: "uncertain", label: "uncertain", dot: "#f4b942" },
+            { id: "pending", label: "pending" },
+            { id: "true_positive", label: "TP" },
+            { id: "false_positive", label: "FP" },
+            { id: "uncertain", label: "uncertain" },
           ].map((v) => (
             <label
               key={v.id}
@@ -1824,13 +1824,6 @@ const NetworkGraph = ({ events, onPick }) => {
                 checked={verdictFilter[v.id]}
                 onChange={() => toggleVerdict(v.id)}
                 style={{ accentColor: "#00a3a6" }}
-              />
-              <span
-                className="inline-block w-2 h-2 rounded-full"
-                style={{
-                  background: v.dot,
-                  border: v.id === "false_positive" ? "1px solid #797870" : "none",
-                }}
               />
               {v.label}
             </label>
