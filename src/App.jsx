@@ -1569,6 +1569,9 @@ const NetworkGraph = ({ events, onPick }) => {
   });
   const toggleVerdict = (v) =>
     setVerdictFilter((f) => ({ ...f, [v]: !f[v] }));
+  // Numeric thresholds — both default to 0 (show everything).
+  const [minScore, setMinScore] = useState(0);
+  const [minRate, setMinRate] = useState(0);
   const svgRef = useRef(null);
   const zoomBehaviorRef = useRef(null);
 
@@ -1750,9 +1753,10 @@ const NetworkGraph = ({ events, onPick }) => {
       {/* TOOLBAR — focus banner + back-to-all when a component is focused;
           dataset summary otherwise. */}
       <div
-        className="px-3 py-2 flex items-center gap-3 flex-wrap text-[12px]"
+        className="px-3 py-2 flex flex-col gap-2 text-[12px]"
         style={{ borderBottom: "1px solid #e6e8e8", background: "#f9faf9" }}
       >
+        <div className="flex items-center gap-3 flex-wrap">
         {focusIdx != null && sortedComponents[focusIdx] ? (
           <>
             <button
@@ -1828,6 +1832,75 @@ const NetworkGraph = ({ events, onPick }) => {
               {v.label}
             </label>
           ))}
+        </div>
+        </div>
+        {/* Numeric thresholds — hide edges below the chosen probability
+            or contamination rate. Combined with the verdict checkboxes
+            above; layout is unaffected. */}
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span style={{ color: "#797870" }}>min probability</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={minScore}
+              onChange={(e) => setMinScore(parseFloat(e.target.value))}
+              style={{ accentColor: "#00a3a6" }}
+            />
+            <span
+              className="tabular w-10 text-[11px]"
+              style={{
+                color: "#275662",
+                fontWeight: 600,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              {minScore.toFixed(2)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span style={{ color: "#797870" }}>min rate</span>
+            <input
+              type="range"
+              min={0}
+              max={0.5}
+              step={0.01}
+              value={minRate}
+              onChange={(e) => setMinRate(parseFloat(e.target.value))}
+              style={{ accentColor: "#00a3a6" }}
+            />
+            <span
+              className="tabular w-12 text-[11px]"
+              style={{
+                color: "#275662",
+                fontWeight: 600,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              {(minRate * 100).toFixed(0)}%
+            </span>
+          </div>
+          {(minScore > 0 || minRate > 0) && (
+            <button
+              onClick={() => {
+                setMinScore(0);
+                setMinRate(0);
+              }}
+              className="text-[10px] px-2 py-0.5 rounded-sm"
+              style={{
+                background: "#fff",
+                color: "#797870",
+                border: "1px solid #c4c0b3",
+                fontWeight: 600,
+                fontFamily: '"Raleway", sans-serif',
+                cursor: "pointer",
+              }}
+            >
+              reset thresholds
+            </button>
+          )}
         </div>
       </div>
 
@@ -1941,8 +2014,11 @@ const NetworkGraph = ({ events, onPick }) => {
             const b = c.nodes[e.target];
             if (!a || !b) return null;
             // Skip edges whose verdict has been hidden via the toolbar
-            // checkboxes. Layout is unaffected.
+            // checkboxes, or whose probability/rate falls below the
+            // threshold sliders. Layout is unaffected.
             if (!verdictFilter[e.verdict || "pending"]) return null;
+            if ((e.score ?? 0) < minScore) return null;
+            if ((e.rate ?? 0) < minRate) return null;
             const rejected = e.verdict === "false_positive";
             const accepted = e.verdict === "true_positive";
             const isHovered = hover?.kind === "edge" && hover.e.id === e.id;
