@@ -6791,6 +6791,7 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
         style={{
           background: "#fff",
           borderRadius: 4,
@@ -7248,6 +7249,8 @@ const ValidateTab = ({
   const [bulkOpen, setBulkOpen] = useState(false);
   useEffect(() => {
     const handler = (e) => {
+      // Don't compete with the bulk-apply dialog's own input handling.
+      if (bulkOpen) return;
       const tag = (e.target?.tagName || "").toLowerCase();
       const editable = e.target?.isContentEditable;
       if (tag === "input" || tag === "textarea" || editable) return;
@@ -7302,7 +7305,7 @@ const ValidateTab = ({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [sel.id, idx, events]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sel.id, idx, events, bulkOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="grid lg:grid-cols-[260px_1fr] gap-8">
