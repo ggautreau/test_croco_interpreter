@@ -1972,9 +1972,17 @@ const NetworkGraph = ({ events, onPick }) => {
       <svg
         ref={svgRef}
         width="100%"
-        height={totalHeight}
         viewBox={`0 0 ${totalWidth} ${totalHeight}`}
-        style={{ display: "block", cursor: zoom.k > 1 ? "grab" : "default" }}
+        preserveAspectRatio="xMidYMid meet"
+        style={{
+          display: "block",
+          cursor: zoom.k > 1 ? "grab" : "default",
+          // Match the SVG's drawn aspect ratio so the rendered height
+          // tracks the container width — avoids the over-tall canvas
+          // where the actual graph occupies only the top half.
+          aspectRatio: `${totalWidth} / ${totalHeight}`,
+          height: "auto",
+        }}
       >
         <defs>
           <marker
@@ -5321,7 +5329,7 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
 /* ---------- NETWORK TAB ---------- */
 const NetworkTab = ({ events, onPick }) => (
   <div>
-    <SectionTitle eyebrow="Network" title="Contamination map">
+    <SectionTitle eyebrow="Network" title="Contamination network">
       Directed graph from source to target. Edge thickness and color intensity
       reflect the contamination rate (log-scaled — heavier, darker arrows mean
       higher rates). Salmon nodes appear on both sides — a possible
