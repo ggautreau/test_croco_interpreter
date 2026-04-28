@@ -3871,9 +3871,17 @@ const EventsTable = ({
 
 /* ---------- SCATTER TAB ---------- */
 /* ----- Mini scatter thumbnail (for the gallery) ----- */
+// Fixed log10(relative-abundance) range used across every gallery thumbnail
+// so the eye can compare contamination patterns across cards. Anything
+// below 1e-8 is clamped to the floor, anything above 1 is impossible
+// (relative abundances sum to 1).
+const MINI_LO = -8;
+const MINI_HI = 0;
+
 const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
   if (!scatter) return null;
-  const pad = { l: 8, r: 8, t: 8, b: 8 };
+  // Wider left + bottom padding to fit corner tick labels.
+  const pad = { l: 18, r: 6, t: 6, b: 14 };
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
   if (scatter.error) {
@@ -3898,7 +3906,7 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
       </div>
     );
   }
-  const floor = 1e-8;
+  const floor = Math.pow(10, MINI_LO);
   const pts = scatter.points.map((p) => ({
     ...p,
     lx: Math.log10(Math.max(p.x, floor)),
@@ -3923,10 +3931,8 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
       </div>
     );
   }
-  const allX = pts.map((p) => p.lx);
-  const allY = pts.map((p) => p.ly);
-  const lo = Math.floor(Math.min(Math.log10(floor), ...allX, ...allY));
-  const hi = Math.ceil(Math.max(...allX, ...allY, -2));
+  const lo = MINI_LO;
+  const hi = MINI_HI;
   const sx = (v) => pad.l + ((v - lo) / (hi - lo)) * w;
   const sy = (v) => pad.t + h - ((v - lo) / (hi - lo)) * h;
   return (
@@ -3948,6 +3954,47 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
         stroke="#c4c0b3"
         strokeWidth="0.75"
       />
+      {/* axis tick labels — log10 corners (-8 and 0) */}
+      <text
+        x={pad.l - 3}
+        y={pad.t + 5}
+        textAnchor="end"
+        fontSize="8"
+        fill="#797870"
+        fontFamily="system-ui, sans-serif"
+      >
+        {MINI_HI}
+      </text>
+      <text
+        x={pad.l - 3}
+        y={pad.t + h}
+        textAnchor="end"
+        fontSize="8"
+        fill="#797870"
+        fontFamily="system-ui, sans-serif"
+      >
+        {MINI_LO}
+      </text>
+      <text
+        x={pad.l}
+        y={pad.t + h + 10}
+        textAnchor="start"
+        fontSize="8"
+        fill="#797870"
+        fontFamily="system-ui, sans-serif"
+      >
+        {MINI_LO}
+      </text>
+      <text
+        x={pad.l + w}
+        y={pad.t + h + 10}
+        textAnchor="end"
+        fontSize="8"
+        fill="#797870"
+        fontFamily="system-ui, sans-serif"
+      >
+        {MINI_HI}
+      </text>
       {/* contamination line */}
       {scatter.logC != null && (
         <line
@@ -4834,11 +4881,23 @@ const Pagination = ({ page, totalPages, onChange }) => {
 const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }) => {
   const [mode, setMode] = useState("flagged"); // "flagged" or "explore"
   const [sortBy, setSortBy] = useState("score");
+  // Direction per sort key — defaults match what most users expect
+  // (descending for numeric severity, ascending for alphabetical).
+  const SORT_DEFAULT_DIR = { score: "desc", rate: "desc", source: "asc", pending: "asc" };
+  const [sortDir, setSortDir] = useState(SORT_DEFAULT_DIR.score);
+  const handleSortClick = (id) => {
+    if (sortBy === id) {
+      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSortBy(id);
+      setSortDir(SORT_DEFAULT_DIR[id] || "desc");
+    }
+  };
   const PAGE_SIZE = 100;
   const [page, setPage] = useState(1);
   useEffect(() => {
     setPage(1);
-  }, [sortBy, events]);
+  }, [sortBy, sortDir, events]);
 
   // Set of existing pairs (source\u0000target) to prevent duplicates when
   // adding manual events. Built once per events change.
@@ -4868,17 +4927,22 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
 
   const sorted = useMemo(() => {
     const copy = [...events];
-    if (sortBy === "score") copy.sort((a, b) => b.score - a.score);
-    else if (sortBy === "rate") copy.sort((a, b) => b.rate - a.rate);
+    const flip = sortDir === "asc" ? -1 : 1;
+    if (sortBy === "score") copy.sort((a, b) => (b.score - a.score) * flip);
+    else if (sortBy === "rate") copy.sort((a, b) => (b.rate - a.rate) * flip);
     else if (sortBy === "pending") {
       const rank = (v) =>
         v === "pending" ? 0 : v === "uncertain" ? 1 : v === "true_positive" ? 2 : 3;
-      copy.sort((a, b) => rank(a.verdict) - rank(b.verdict) || b.score - a.score);
+      copy.sort(
+        (a, b) =>
+          (rank(a.verdict) - rank(b.verdict)) * flip ||
+          (b.score - a.score) * flip,
+      );
     } else if (sortBy === "source") {
-      copy.sort((a, b) => a.source.localeCompare(b.source));
+      copy.sort((a, b) => a.source.localeCompare(b.source) * flip);
     }
     return copy;
-  }, [events, sortBy]);
+  }, [events, sortBy, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
@@ -4954,7 +5018,12 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
           return (
             <button
               key={opt.id}
-              onClick={() => setSortBy(opt.id)}
+              onClick={() => handleSortClick(opt.id)}
+              title={
+                active
+                  ? `Click to switch to ${sortDir === "desc" ? "ascending" : "descending"} order`
+                  : `Sort by ${opt.label}`
+              }
               className="px-3 py-1 text-[11px] rounded-sm"
               style={{
                 background: active ? "#275662" : "#fff",
@@ -4965,6 +5034,11 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
               }}
             >
               {opt.label}
+              {active && (
+                <span style={{ marginLeft: 4, fontWeight: 700 }}>
+                  {sortDir === "desc" ? "↓" : "↑"}
+                </span>
+              )}
             </button>
           );
         })}
