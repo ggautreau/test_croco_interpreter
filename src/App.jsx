@@ -6713,6 +6713,51 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
   const [maxScore, setMaxScore] = useState(1);
   const [minRate, setMinRate] = useState(0);
   const [maxRate, setMaxRate] = useState(1);
+  // "Draft" strings for the four number inputs — what the user is
+  // currently typing. We only commit to the real numeric state on blur
+  // (or Enter); otherwise re-formatting on every keystroke would mangle
+  // mid-typing values like "1" → "1.00", making it impossible to type
+  // "10".
+  const [minScoreDraft, setMinScoreDraft] = useState(minScore.toFixed(2));
+  const [maxScoreDraft, setMaxScoreDraft] = useState(maxScore.toFixed(2));
+  const [minRateDraft, setMinRateDraft] = useState(
+    (minRate * 100).toFixed(2),
+  );
+  const [maxRateDraft, setMaxRateDraft] = useState(
+    (maxRate * 100).toFixed(2),
+  );
+  // Sync drafts when the underlying state changes externally (slider
+  // movement, reset, etc.).
+  useEffect(() => setMinScoreDraft(minScore.toFixed(2)), [minScore]);
+  useEffect(() => setMaxScoreDraft(maxScore.toFixed(2)), [maxScore]);
+  useEffect(() => setMinRateDraft((minRate * 100).toFixed(2)), [minRate]);
+  useEffect(() => setMaxRateDraft((maxRate * 100).toFixed(2)), [maxRate]);
+
+  const commitMinScore = () => {
+    const v = parseFloat(minScoreDraft);
+    if (Number.isFinite(v))
+      setMinScore(Math.min(maxScore, Math.max(0, v)));
+    else setMinScoreDraft(minScore.toFixed(2));
+  };
+  const commitMaxScore = () => {
+    const v = parseFloat(maxScoreDraft);
+    if (Number.isFinite(v))
+      setMaxScore(Math.max(minScore, Math.min(1, v)));
+    else setMaxScoreDraft(maxScore.toFixed(2));
+  };
+  const commitMinRate = () => {
+    const v = parseFloat(minRateDraft);
+    if (Number.isFinite(v))
+      setMinRate(Math.min(maxRate, Math.max(0, v / 100)));
+    else setMinRateDraft((minRate * 100).toFixed(2));
+  };
+  const commitMaxRate = () => {
+    const v = parseFloat(maxRateDraft);
+    if (Number.isFinite(v))
+      setMaxRate(Math.max(minRate, Math.min(1, v / 100)));
+    else setMaxRateDraft((maxRate * 100).toFixed(2));
+  };
+
   const [crit, setCrit] = useState({
     shape: "any",
     nOnLine: "any",
@@ -6850,12 +6895,14 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
                 min={0}
                 max={1}
                 step={0.01}
-                value={minScore}
-                onChange={(e) =>
-                  setMinScore(Math.min(maxScore, parseFloat(e.target.value) || 0))
-                }
+                value={minScoreDraft}
+                onChange={(e) => setMinScoreDraft(e.target.value)}
+                onBlur={commitMinScore}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
                 style={{
-                  width: 70,
+                  width: 80,
                   padding: "4px 6px",
                   fontSize: 12,
                   border: "1px solid #c4c0b3",
@@ -6868,17 +6915,49 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
                 min={0}
                 max={1}
                 step={0.01}
-                value={maxScore}
-                onChange={(e) =>
-                  setMaxScore(Math.max(minScore, parseFloat(e.target.value) || 0))
-                }
+                value={maxScoreDraft}
+                onChange={(e) => setMaxScoreDraft(e.target.value)}
+                onBlur={commitMaxScore}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
                 style={{
-                  width: 70,
+                  width: 80,
                   padding: "4px 6px",
                   fontSize: 12,
                   border: "1px solid #c4c0b3",
                   borderRadius: 2,
                 }}
+              />
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={minScore}
+                onChange={(e) =>
+                  setMinScore(
+                    Math.min(maxScore, parseFloat(e.target.value)),
+                  )
+                }
+                style={{ width: "100%", accentColor: "#00a3a6" }}
+                aria-label="min probability"
+              />
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={maxScore}
+                onChange={(e) =>
+                  setMaxScore(
+                    Math.max(minScore, parseFloat(e.target.value)),
+                  )
+                }
+                style={{ width: "100%", accentColor: "#00a3a6" }}
+                aria-label="max probability"
               />
             </div>
           </div>
@@ -6894,7 +6973,8 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
                 textTransform: "uppercase",
               }}
             >
-              Rate (% — {(minRate * 100).toFixed(2)} to {(maxRate * 100).toFixed(2)})
+              Rate (% — {(minRate * 100).toFixed(2)} to{" "}
+              {(maxRate * 100).toFixed(2)})
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <input
@@ -6902,11 +6982,11 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
                 min={0}
                 max={100}
                 step={0.01}
-                value={(minRate * 100).toFixed(2)}
-                onChange={(e) => {
-                  const pct = parseFloat(e.target.value);
-                  const r = Number.isFinite(pct) ? pct / 100 : 0;
-                  setMinRate(Math.min(maxRate, Math.max(0, r)));
+                value={minRateDraft}
+                onChange={(e) => setMinRateDraft(e.target.value)}
+                onBlur={commitMinRate}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
                 }}
                 style={{
                   width: 80,
@@ -6922,11 +7002,11 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
                 min={0}
                 max={100}
                 step={0.01}
-                value={(maxRate * 100).toFixed(2)}
-                onChange={(e) => {
-                  const pct = parseFloat(e.target.value);
-                  const r = Number.isFinite(pct) ? pct / 100 : 1;
-                  setMaxRate(Math.max(minRate, Math.min(1, r)));
+                value={maxRateDraft}
+                onChange={(e) => setMaxRateDraft(e.target.value)}
+                onBlur={commitMaxRate}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
                 }}
                 style={{
                   width: 80,
@@ -6935,6 +7015,36 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
                   border: "1px solid #c4c0b3",
                   borderRadius: 2,
                 }}
+              />
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={0.01}
+                value={minRate * 100}
+                onChange={(e) =>
+                  setMinRate(
+                    Math.min(maxRate, parseFloat(e.target.value) / 100),
+                  )
+                }
+                style={{ width: "100%", accentColor: "#00a3a6" }}
+                aria-label="min rate"
+              />
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={0.01}
+                value={maxRate * 100}
+                onChange={(e) =>
+                  setMaxRate(
+                    Math.max(minRate, parseFloat(e.target.value) / 100),
+                  )
+                }
+                style={{ width: "100%", accentColor: "#00a3a6" }}
+                aria-label="max rate"
               />
             </div>
           </div>
