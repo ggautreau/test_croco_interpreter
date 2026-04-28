@@ -2140,6 +2140,8 @@ const NetworkGraph = ({ events, onPick }) => {
           {(hover.e.rate * 100).toFixed(2)}%
           <span className="text-stone-500 ml-2">probability:</span>{" "}
           {hover.e.score.toFixed(3)}
+          <span className="text-stone-500 ml-2">verdict:</span>
+          <VerdictBadge v={hover.e.verdict} />
           <span
             className="ml-auto text-[11px]"
             style={{ color: "#00a3a6", fontWeight: 600 }}
