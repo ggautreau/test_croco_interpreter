@@ -236,7 +236,31 @@ function parseAbundance(text) {
       );
     }
   });
-  return { samples, species: Object.keys(matrix), matrix };
+  // Per-dataset log10 range, computed from non-zero relative abundances.
+  // Used as the axis bounds for every scatterplot in this dataset (gallery
+  // thumbnails AND the big validation/explore plots) so events are
+  // visually comparable and the points aren't squashed into a corner.
+  let minVal = Infinity;
+  let maxVal = -Infinity;
+  const speciesKeys = Object.keys(matrix);
+  samples.forEach((s) => {
+    speciesKeys.forEach((sp) => {
+      const v = matrix[sp][s];
+      if (v > 0) {
+        if (v < minVal) minVal = v;
+        if (v > maxVal) maxVal = v;
+      }
+    });
+  });
+  const logRange =
+    Number.isFinite(minVal) && Number.isFinite(maxVal)
+      ? {
+          min: Math.floor(Math.log10(minVal)),
+          // Clamp upper bound at 0: relative abundances are bounded by 1.
+          max: Math.min(0, Math.ceil(Math.log10(maxVal))),
+        }
+      : { min: -8, max: 0 };
+  return { samples, species: speciesKeys, matrix, logRange };
 }
 
 /* ---------- metadata.tsv ---------- */
@@ -584,7 +608,7 @@ function buildScatter(ab, event) {
     points.push({ species: sp, x: xs, y: ys, onLine: introducedSet.has(sp) });
   });
   const logC = rate > 0 ? Math.log10(rate) : null;
-  return { points, logC, source, target };
+  return { points, logC, source, target, logRange: ab.logRange || null };
 }
 
 function lineDiagnostics(scatter) {
@@ -1244,18 +1268,30 @@ const Scatterplot = ({ scatter, width = 560, height = 500 }) => {
   const w = width - pad.l - pad.r;
   const h = height - pad.t - pad.b;
 
-  const floor = 1e-8;
+  // Use the per-dataset log10 range when the scatter object carries one
+  // (parseAbundance attaches it to ab.logRange and buildScatter forwards
+  // it). This keeps every plot in the dataset on the same axes. Fall
+  // back to per-plot auto-scaling for legacy / orphan callers.
+  let lo;
+  let hi;
+  if (scatter.logRange) {
+    lo = scatter.logRange.min;
+    hi = scatter.logRange.max;
+  } else {
+    const tmpFloor = 1e-8;
+    const tmpX = scatter.points.map((p) => Math.log10(Math.max(p.x, tmpFloor)));
+    const tmpY = scatter.points.map((p) => Math.log10(Math.max(p.y, tmpFloor)));
+    const minL = Math.min(Math.log10(tmpFloor), ...tmpX, ...tmpY);
+    const maxL = Math.max(...tmpX, ...tmpY, -2);
+    lo = Math.floor(minL);
+    hi = Math.ceil(maxL);
+  }
+  const floor = Math.pow(10, lo);
   const pts = scatter.points.map((p) => ({
     ...p,
     lx: Math.log10(Math.max(p.x, floor)),
     ly: Math.log10(Math.max(p.y, floor)),
   }));
-  const allX = pts.map((p) => p.lx);
-  const allY = pts.map((p) => p.ly);
-  const minL = Math.min(Math.log10(floor), ...allX, ...allY);
-  const maxL = Math.max(...allX, ...allY, -2);
-  const lo = Math.floor(minL);
-  const hi = Math.ceil(maxL);
 
   const sx = (v) => pad.l + ((v - lo) / (hi - lo)) * w;
   const sy = (v) => pad.t + h - ((v - lo) / (hi - lo)) * h;
@@ -3923,7 +3959,12 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
       </div>
     );
   }
-  const floor = Math.pow(10, MINI_LO);
+  // Use the per-dataset log10 range when buildScatter has provided one
+  // (parseAbundance computes it from the actual matrix). Fall back to
+  // the global -8..0 default for safety.
+  const lo = scatter.logRange?.min ?? MINI_LO;
+  const hi = scatter.logRange?.max ?? MINI_HI;
+  const floor = Math.pow(10, lo);
   const pts = scatter.points.map((p) => ({
     ...p,
     lx: Math.log10(Math.max(p.x, floor)),
@@ -3948,8 +3989,6 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
       </div>
     );
   }
-  const lo = MINI_LO;
-  const hi = MINI_HI;
   const sx = (v) => pad.l + ((v - lo) / (hi - lo)) * w;
   const sy = (v) => pad.t + h - ((v - lo) / (hi - lo)) * h;
   return (
@@ -3971,12 +4010,14 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
         stroke="#c4c0b3"
         strokeWidth="0.75"
       />
-      {/* axis ticks — every integer log10 step. Labels on even steps
-          only (-8, -6, -4, -2, 0) to avoid crowding the thumbnail. */}
+      {/* axis ticks — every integer log10 step. Label step adapts to
+          the dataset range: every 1 if the span is small, every 2
+          otherwise, to avoid crowding the thumbnail. */}
       {(() => {
         const ticks = [];
-        for (let v = MINI_LO; v <= MINI_HI; v++) {
-          const labeled = v % 2 === 0;
+        const labelStep = hi - lo <= 4 ? 1 : 2;
+        for (let v = lo; v <= hi; v++) {
+          const labeled = (v - hi) % labelStep === 0;
           // Y-axis (left edge): horizontal tick mark + optional label
           ticks.push(
             <line
