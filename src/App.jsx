@@ -10219,9 +10219,12 @@ const HelpTab = ({ onStartTour }) => {
     { id: "h-abundance", label: "species_abundance.tsv" },
     { id: "h-metadata", label: "metadata.tsv" },
     { id: "h-plate", label: "plate_map.tsv" },
+    { id: "h-datasets", label: "Bundled paper datasets" },
     { id: "h-tabs", label: "Tabs walkthrough" },
     { id: "h-criteria", label: "Validation criteria" },
     { id: "h-flags", label: "Sample flags reference" },
+    { id: "h-shortcuts", label: "Keyboard shortcuts" },
+    { id: "h-bulk", label: "Bulk actions" },
     { id: "h-privacy", label: "Privacy & data flow" },
     { id: "h-faq", label: "FAQ" },
     { id: "h-cite", label: "Citing & references" },
@@ -10702,6 +10705,28 @@ const HelpTab = ({ onStartTour }) => {
           </p>
         </HelpSection>
 
+        {/* ---------- Bundled paper datasets ---------- */}
+        <HelpSection
+          id="h-datasets"
+          eyebrow="Try without uploading"
+          title="Bundled paper datasets"
+        >
+          <p>
+            The Datasets tab lists ready-to-explore CroCoDeEL outputs from
+            the paper's benchmark cohorts. Pick one below the description
+            and the full session loads in one click — including the
+            abundance table and (when available) the plate map. The list is
+            served from <code style={{ fontFamily: "ui-monospace, monospace" }}>public/datasets/manifest.json</code>{" "}
+            so it can grow without changing the code.
+          </p>
+          <p>
+            Each card shows the biome, the sample/event counts, the
+            citation and links to the original paper / Dataverse deposit.
+            Loading a dataset replaces your current session (after a
+            confirm modal so curation work isn't lost silently).
+          </p>
+        </HelpSection>
+
         {/* ---------- Tabs walkthrough ---------- */}
         <HelpSection
           id="h-tabs"
@@ -10725,9 +10750,13 @@ const HelpTab = ({ onStartTour }) => {
               <p>
                 Sortable, filterable list of every event. Each row shows
                 source / target sample names with their metadata flags
-                (control, low biomass, biome) and pills for context (related
-                samples, plate proximity, cascade). Click a row to jump into
-                Guided validation.
+                (control, low biomass, biome) and pills for context
+                (related samples, plate proximity, cascade). Probability
+                and rate are rendered as coloured bars (rate uses a log10
+                scale 0.01% – 100%). The list paginates at 500 rows so big
+                datasets stay responsive — sort/filter changes reset the
+                page; toggling a verdict does not. Click a row to jump
+                into Guided validation.
               </p>
             </div>
             <div>
@@ -10735,21 +10764,44 @@ const HelpTab = ({ onStartTour }) => {
                 Scatterplots
               </h4>
               <p>
-                Gallery of source-vs-target scatterplots. Each species is a
-                point. Points above the y=x line indicate species more
-                abundant in the contaminated sample than in the source —
-                their count is one of the assisted criteria.
+                Gallery of source-vs-target thumbnails (100 per page). Each
+                species is a point. The log10 axes are computed once per
+                dataset from the abundance matrix so all thumbnails are on
+                identical bounds and visually comparable. Sort by
+                probability, rate, "pending first" or source name; click
+                an active sort button again to flip ascending/descending.
+                Two sliders (min probability, min rate) hide low-confidence
+                events. Toggle to "Explore new pairs" to inspect pairs
+                that CroCoDeEL did not flag (potential false negatives)
+                and add them as manually-curated events.
               </p>
             </div>
             <div>
-              <h4 style={{ color: "#275662", fontWeight: 700 }}>Network</h4>
+              <h4 style={{ color: "#275662", fontWeight: 700 }}>
+                Contamination network
+              </h4>
               <p>
                 Directed graph of all events. Nodes coloured by role:
-                source-only (white), target-only (deep teal), cascade (both
-                sides — salmon). Edge thickness and colour intensity scale
-                with the contamination rate (log-scaled). Pan with drag,
-                zoom with scroll. Click an edge to open the event in Guided
-                validation.
+                source-only (white), target-only (deep teal), cascade
+                (both sides — salmon). Edge thickness and colour intensity
+                scale with the contamination rate (log-scaled). Pan with
+                drag, zoom with scroll. Click an edge to open the event
+                in Guided validation; hovering shows source → target,
+                rate, probability and current verdict in the bar at the
+                bottom.
+              </p>
+              <p style={{ marginTop: 6 }}>
+                Toolbar features: <strong>verdict checkboxes</strong>{" "}
+                (pending / TP / FP / uncertain) and two threshold sliders
+                (min probability, min rate) hide edges without changing
+                the layout. The right sidebar lists every connected
+                component ranked by sample count; clicking one enters
+                <strong> focus mode</strong>, dedicating the whole canvas
+                to that component — handy for the dense blobs where
+                everything else looks tiny. Sample labels are hidden on
+                components with more than 25 nodes to keep the overview
+                readable; zoom past 1.4×, hover a node, or focus the
+                component to bring them back.
               </p>
             </div>
             <div>
@@ -10757,8 +10809,8 @@ const HelpTab = ({ onStartTour }) => {
               <p>
                 Three sub-views: Overview (thumbnails of all plates),
                 Inspect (single plate with optional contamination arrows),
-                and Edit (drag samples between wells if you need to fix the
-                map manually).
+                and Edit (drag samples between wells if you need to fix
+                the map manually).
               </p>
             </div>
             <div>
@@ -10767,9 +10819,20 @@ const HelpTab = ({ onStartTour }) => {
               </h4>
               <p>
                 One event at a time, with the scatterplot, six diagnostic
-                criteria (see below), the plate position when relevant, and
-                a sample-context panel showing every metadata flag for both
-                source and target. Assign a verdict in three clicks.
+                criteria (see below), the plate position when relevant,
+                and a sample-context panel showing every metadata flag
+                for both source and target. Assign a verdict in three
+                clicks. The event queue in the sidebar auto-scrolls to
+                keep the active row in view as you navigate. See the
+                Keyboard shortcuts and Bulk actions sections for faster
+                workflows.
+              </p>
+            </div>
+            <div>
+              <h4 style={{ color: "#275662", fontWeight: 700 }}>Datasets</h4>
+              <p>
+                Browse and load the bundled paper datasets in one click.
+                See the section above.
               </p>
             </div>
             <div>
@@ -10973,6 +11036,113 @@ const HelpTab = ({ onStartTour }) => {
               </tr>
             </tbody>
           </table>
+        </HelpSection>
+
+        {/* ---------- Keyboard shortcuts ---------- */}
+        <HelpSection
+          id="h-shortcuts"
+          eyebrow="Speed up"
+          title="Keyboard shortcuts (Guided validation)"
+        >
+          <p>
+            Active anywhere on the Guided validation tab, except when the
+            focus is in a text input or the bulk-apply dialog is open.
+            Press <kbd style={{ display: "inline-block", padding: "1px 6px", border: "1px solid #c4c0b3", borderRadius: 3, background: "#fff", fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#275662" }}>?</kbd>{" "}
+            in the app to see the same list inline.
+          </p>
+          <table className="w-full text-left mt-3">
+            <thead>
+              <tr style={{ borderBottom: "2px solid #275662" }}>
+                <th className="py-2 pr-4 text-[11px] uppercase">Key</th>
+                <th className="py-2 text-[11px] uppercase">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                ["T", "Mark current event as True positive"],
+                ["F", "Mark current event as False positive"],
+                ["U", "Mark current event as Uncertain"],
+                ["P", "Reset current event to Pending"],
+                ["←", "Previous PENDING event (skip already-validated)"],
+                ["→", "Next PENDING event (skip already-validated)"],
+                ["↑", "Previous event in the queue (any verdict)"],
+                ["↓", "Next event in the queue (any verdict)"],
+                ["?", "Toggle the in-app shortcuts cheatsheet"],
+                ["Esc", "Close the cheatsheet"],
+              ].map(([k, d]) => (
+                <tr key={k} style={{ borderBottom: "1px solid #f0f2f2" }}>
+                  <td className="py-2.5 pr-4 align-middle">
+                    <kbd
+                      style={{
+                        display: "inline-block",
+                        minWidth: 28,
+                        textAlign: "center",
+                        padding: "2px 8px",
+                        border: "1px solid #c4c0b3",
+                        borderRadius: 3,
+                        background: "#fff",
+                        fontFamily: "ui-monospace, monospace",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: "#275662",
+                      }}
+                    >
+                      {k}
+                    </kbd>
+                  </td>
+                  <td className="py-2.5 align-middle text-[13px]">{d}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </HelpSection>
+
+        {/* ---------- Bulk actions ---------- */}
+        <HelpSection
+          id="h-bulk"
+          eyebrow="Curate at scale"
+          title="Bulk actions"
+        >
+          <p>
+            All bulk actions live in the sidebar of the Guided validation
+            tab. Each goes through a confirmation modal before writing,
+            and existing notes are never destroyed silently — auto-notes
+            are prepended so prior context is preserved.
+          </p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li>
+              <strong>Mark all same-subject contaminations as FP</strong>{" "}
+              — when metadata.tsv carries a <code style={{ fontFamily: "ui-monospace, monospace" }}>subject_id</code>,
+              every PENDING event whose source and target share that id
+              (longitudinal pair) is flipped to false positive with an
+              explanatory note.
+            </li>
+            <li>
+              <strong>Mark all toward NC as TP</strong> — every PENDING
+              event flowing into a sample tagged as a negative control
+              (biome contains "control" / "blank" / "negative") is
+              flipped to true positive: a clean control should have no
+              signal, so any contamination into it is by definition real
+              well-to-well leakage.
+            </li>
+            <li>
+              <strong>Reset all verdicts</strong> — wipes every verdict
+              and note back to pending. Loaded files (events, abundance,
+              metadata, plate map) are not affected.
+            </li>
+            <li>
+              <strong>Bulk apply by criteria…</strong> — opens a dialog
+              that lets you compose an arbitrary filter (probability
+              range, rate range in %, and pass / fail / any per
+              criterion: shape, n on line, decade range, missing source
+              species, above-line points), then apply one verdict
+              (TP / FP / Uncertain / Reset) and an optional shared
+              comment to every matched event. The comment, if non-empty,
+              is prepended to each event's existing notes with a
+              <code style={{ fontFamily: "ui-monospace, monospace", marginLeft: 4 }}>[bulk YYYY-MM-DD]</code>{" "}
+              tag.
+            </li>
+          </ul>
         </HelpSection>
 
         {/* ---------- Privacy ---------- */}
