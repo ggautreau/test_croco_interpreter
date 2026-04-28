@@ -6583,6 +6583,460 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata }) 
   );
 };
 
+/* ---------- BULK APPLY BY CRITERIA DIALOG ----------
+   Modal that lets the user bulk-apply a verdict (TP / FP / Uncertain /
+   Reset) to every event matching a probability range, a rate range and
+   a per-criterion pass/fail filter. The 5 criteria mirror the ones
+   displayed inline in the Guided validation panel — they're computed
+   here on demand for every event using the abundance table.
+
+   Comment behaviour: if the textarea is empty, existing notes on each
+   matched event are preserved untouched. If non-empty, the comment is
+   prepended to whatever notes the event already has, so prior context
+   is never destroyed by a bulk action. */
+const BULK_CRIT = [
+  { id: "shape", label: "Shape — line is straight (R² > 0.8)" },
+  { id: "nOnLine", label: "n on line — > 10 species fall on the line" },
+  { id: "decade", label: "Decade range — line spans ≥ 1.5 decades" },
+  { id: "missing", label: "Missing source species — ≤ 2 missing from target" },
+  { id: "above", label: "Above-line points — none, or all within 0.5 decade" },
+];
+
+const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
+  const [minScore, setMinScore] = useState(0);
+  const [maxScore, setMaxScore] = useState(1);
+  const [minRate, setMinRate] = useState(0);
+  const [maxRate, setMaxRate] = useState(1);
+  const [crit, setCrit] = useState({
+    shape: "any",
+    nOnLine: "any",
+    decade: "any",
+    missing: "any",
+    above: "any",
+  });
+  const [verdict, setVerdict] = useState("true_positive");
+  const [comment, setComment] = useState("");
+
+  // Compute the 5-criteria pass/fail status for every event once. Each
+  // entry is { shape, nOnLine, decade, missing, above } where each
+  // value is true (pass), false (fail), or null (not evaluable).
+  const eventCriteria = useMemo(() => {
+    if (!ab) return null;
+    return events.map((e) => {
+      try {
+        const sc = buildScatter(ab, e);
+        if (!sc || sc.error) return null;
+        const di = lineDiagnostics(sc);
+        const ab2 = pointsAboveLine(sc);
+        const mi = missingAbundantFromSource(ab, e.source, e.target, e.rate);
+        return {
+          shape: di?.r2 != null ? di.r2 > 0.8 : null,
+          nOnLine: di?.n != null ? di.n > 10 : null,
+          decade: di?.decadeRange != null ? di.decadeRange >= 1.5 : null,
+          missing:
+            mi != null ? mi.evaluated === 0 || mi.count <= 2 : null,
+          above:
+            ab2 != null ? ab2.count === 0 || ab2.maxDist < 0.5 : null,
+        };
+      } catch {
+        return null;
+      }
+    });
+  }, [events, ab]);
+
+  const matched = useMemo(() => {
+    return events.filter((e, i) => {
+      if ((e.score ?? 0) < minScore || (e.score ?? 0) > maxScore) return false;
+      if ((e.rate ?? 0) < minRate || (e.rate ?? 0) > maxRate) return false;
+      const c = eventCriteria?.[i];
+      for (const k of Object.keys(crit)) {
+        const want = crit[k];
+        if (want === "any") continue;
+        if (!c) return false; // criteria not computable but a filter is set
+        if (want === "pass" && c[k] !== true) return false;
+        if (want === "fail" && c[k] !== false) return false;
+      }
+      return true;
+    });
+  }, [events, eventCriteria, minScore, maxScore, minRate, maxRate, crit]);
+
+  const apply = () => {
+    onApply(
+      matched.map((e) => e.id),
+      verdict,
+      comment.trim(),
+    );
+    onClose();
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(39,86,98,0.5)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff",
+          borderRadius: 4,
+          padding: "24px 28px",
+          maxWidth: 720,
+          width: "100%",
+          maxHeight: "92vh",
+          overflowY: "auto",
+          boxShadow: "0 12px 32px rgba(0,0,0,0.2)",
+          borderLeft: "4px solid #00a3a6",
+        }}
+      >
+        <h3
+          style={{
+            fontSize: 18,
+            fontWeight: 700,
+            color: "#275662",
+            fontFamily: '"Raleway", sans-serif',
+            marginBottom: 6,
+          }}
+        >
+          Bulk apply verdict by criteria
+        </h3>
+        <p style={{ fontSize: 12, color: "#797870", marginBottom: 16 }}>
+          Match every event whose probability, rate and 5-criteria status
+          fit the filters below, then apply a single verdict (and an
+          optional shared note).
+        </p>
+
+        {/* Score / rate sliders */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 14,
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 11,
+                color: "#797870",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+                marginBottom: 4,
+                letterSpacing: "0.05em",
+                textTransform: "uppercase",
+              }}
+            >
+              Probability ({minScore.toFixed(2)} – {maxScore.toFixed(2)})
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={minScore}
+                onChange={(e) =>
+                  setMinScore(Math.min(maxScore, parseFloat(e.target.value) || 0))
+                }
+                style={{
+                  width: 70,
+                  padding: "4px 6px",
+                  fontSize: 12,
+                  border: "1px solid #c4c0b3",
+                  borderRadius: 2,
+                }}
+              />
+              <span style={{ fontSize: 11, color: "#797870" }}>to</span>
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={maxScore}
+                onChange={(e) =>
+                  setMaxScore(Math.max(minScore, parseFloat(e.target.value) || 0))
+                }
+                style={{
+                  width: 70,
+                  padding: "4px 6px",
+                  fontSize: 12,
+                  border: "1px solid #c4c0b3",
+                  borderRadius: 2,
+                }}
+              />
+            </div>
+          </div>
+          <div>
+            <div
+              style={{
+                fontSize: 11,
+                color: "#797870",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+                marginBottom: 4,
+                letterSpacing: "0.05em",
+                textTransform: "uppercase",
+              }}
+            >
+              Rate ({(minRate * 100).toFixed(1)}% – {(maxRate * 100).toFixed(1)}%)
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.001}
+                value={minRate}
+                onChange={(e) =>
+                  setMinRate(Math.min(maxRate, parseFloat(e.target.value) || 0))
+                }
+                style={{
+                  width: 70,
+                  padding: "4px 6px",
+                  fontSize: 12,
+                  border: "1px solid #c4c0b3",
+                  borderRadius: 2,
+                }}
+              />
+              <span style={{ fontSize: 11, color: "#797870" }}>to</span>
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.001}
+                value={maxRate}
+                onChange={(e) =>
+                  setMaxRate(Math.max(minRate, parseFloat(e.target.value) || 0))
+                }
+                style={{
+                  width: 70,
+                  padding: "4px 6px",
+                  fontSize: 12,
+                  border: "1px solid #c4c0b3",
+                  borderRadius: 2,
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Per-criterion tri-state */}
+        <div
+          style={{
+            fontSize: 11,
+            color: "#797870",
+            fontWeight: 700,
+            fontFamily: '"Raleway", sans-serif',
+            marginBottom: 6,
+            letterSpacing: "0.05em",
+            textTransform: "uppercase",
+          }}
+        >
+          Criteria {!ab && "(load abundance to enable)"}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            marginBottom: 16,
+            opacity: ab ? 1 : 0.5,
+          }}
+        >
+          {BULK_CRIT.map((c) => (
+            <div
+              key={c.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                alignItems: "center",
+                gap: 12,
+                fontSize: 12,
+              }}
+            >
+              <span style={{ color: "#275662" }}>{c.label}</span>
+              <div style={{ display: "flex", gap: 4 }}>
+                {[
+                  { k: "any", lbl: "any" },
+                  { k: "pass", lbl: "✓ pass" },
+                  { k: "fail", lbl: "✗ fail" },
+                ].map((opt) => {
+                  const active = crit[c.id] === opt.k;
+                  return (
+                    <button
+                      key={opt.k}
+                      onClick={() =>
+                        ab && setCrit((s) => ({ ...s, [c.id]: opt.k }))
+                      }
+                      disabled={!ab}
+                      style={{
+                        padding: "3px 9px",
+                        fontSize: 11,
+                        background: active ? "#275662" : "#fff",
+                        color: active ? "#fff" : "#275662",
+                        border: "1px solid #275662",
+                        borderRadius: 2,
+                        cursor: ab ? "pointer" : "not-allowed",
+                        fontWeight: 600,
+                        fontFamily: '"Raleway", sans-serif',
+                      }}
+                    >
+                      {opt.lbl}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Verdict picker */}
+        <div
+          style={{
+            fontSize: 11,
+            color: "#797870",
+            fontWeight: 700,
+            fontFamily: '"Raleway", sans-serif',
+            marginBottom: 6,
+            letterSpacing: "0.05em",
+            textTransform: "uppercase",
+          }}
+        >
+          Apply verdict
+        </div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+          {[
+            { v: "true_positive", lbl: "True positive", bg: "#00a3a6" },
+            { v: "false_positive", lbl: "False positive", bg: "#ed6e6c" },
+            { v: "uncertain", lbl: "Uncertain", bg: "#c4c0b3" },
+            { v: "pending", lbl: "Reset to pending", bg: "#5a5550" },
+          ].map((v) => {
+            const active = verdict === v.v;
+            return (
+              <button
+                key={v.v}
+                onClick={() => setVerdict(v.v)}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  background: active ? v.bg : "#fff",
+                  color: active ? "#fff" : "#275662",
+                  border: `1px solid ${active ? v.bg : "#c4c0b3"}`,
+                  borderRadius: 2,
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                {v.lbl}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Comment */}
+        <div
+          style={{
+            fontSize: 11,
+            color: "#797870",
+            fontWeight: 700,
+            fontFamily: '"Raleway", sans-serif',
+            marginBottom: 6,
+            letterSpacing: "0.05em",
+            textTransform: "uppercase",
+          }}
+        >
+          Comment (optional)
+        </div>
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          placeholder="Leave empty to keep existing notes on matched events. Otherwise this comment is prepended to whatever each event already has."
+          rows={3}
+          style={{
+            width: "100%",
+            padding: "8px",
+            fontSize: 12,
+            border: "1px solid #c4c0b3",
+            borderRadius: 2,
+            fontFamily: "system-ui, sans-serif",
+            marginBottom: 16,
+            resize: "vertical",
+          }}
+        />
+
+        {/* Match count + actions */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+            paddingTop: 12,
+            borderTop: "1px solid #e6e8e8",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 13,
+              color: matched.length > 0 ? "#275662" : "#797870",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+          >
+            {matched.length} event{matched.length !== 1 ? "s" : ""} match
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={onClose}
+              style={{
+                padding: "8px 16px",
+                fontSize: 12,
+                fontWeight: 600,
+                background: "#fff",
+                color: "#797870",
+                border: "1px solid #c4c0b3",
+                borderRadius: 3,
+                cursor: "pointer",
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={apply}
+              disabled={matched.length === 0}
+              style={{
+                padding: "8px 16px",
+                fontSize: 12,
+                fontWeight: 700,
+                background: matched.length === 0 ? "#e6e8e8" : "#00a3a6",
+                color: matched.length === 0 ? "#797870" : "#fff",
+                border: "none",
+                borderRadius: 3,
+                cursor: matched.length === 0 ? "not-allowed" : "pointer",
+                fontFamily: '"Raleway", sans-serif',
+                letterSpacing: "0.02em",
+              }}
+            >
+              Apply to {matched.length} event{matched.length !== 1 ? "s" : ""}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /* ---------- VALIDATE TAB ---------- */
 const ValidateTab = ({
   events,
@@ -6594,6 +7048,7 @@ const ValidateTab = ({
   missing,
   autoScore,
   hasAb,
+  ab,
   setVerdict,
   setNote,
   metadata,
@@ -6601,6 +7056,7 @@ const ValidateTab = ({
   bulkMarkSameSubjectAsFP,
   bulkMarkTowardNCAsTP,
   bulkResetAllVerdicts,
+  bulkApplyToEvents,
 }) => {
   const sel = selected || events[0];
   if (!sel) return null;
@@ -6679,6 +7135,7 @@ const ValidateTab = ({
   // normally). We attach the listener to window and check the focused
   // element on each keypress.
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   useEffect(() => {
     const handler = (e) => {
       const tag = (e.target?.tagName || "").toLowerCase();
@@ -6834,6 +7291,31 @@ const ValidateTab = ({
           >
             <X className="w-3.5 h-3.5 shrink-0" />
             <span>Reset all verdicts ({decidedCount})</span>
+          </button>
+        )}
+        {bulkApplyToEvents && (
+          <button
+            onClick={() => setBulkOpen(true)}
+            className="w-full mb-3 px-3 py-2 text-[11px] rounded-sm flex items-center justify-center gap-1.5 text-left"
+            style={{
+              background: "#fff",
+              color: "#275662",
+              border: "1px solid #275662",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+              cursor: "pointer",
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.borderColor = "#00a3a6";
+              e.currentTarget.style.color = "#00a3a6";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.borderColor = "#275662";
+              e.currentTarget.style.color = "#275662";
+            }}
+            title="Open a dialog to bulk-apply a verdict to every event matching probability/rate/criteria filters"
+          >
+            <span>Bulk apply by criteria…</span>
           </button>
         )}
         </div>
@@ -7479,6 +7961,14 @@ const ValidateTab = ({
           </div>
         </div>
       </div>
+      {bulkOpen && bulkApplyToEvents && (
+        <BulkApplyByCriteriaDialog
+          events={events}
+          ab={ab}
+          onClose={() => setBulkOpen(false)}
+          onApply={bulkApplyToEvents}
+        />
+      )}
     </div>
   );
 };
@@ -12129,6 +12619,40 @@ export default function App() {
   /** Reset every event back to "pending" and clear notes. Used to start
       a curation session over from scratch. Asks for confirmation because
       this is destructive. */
+  /** Apply a verdict (and an optional shared comment) to a precomputed
+      list of event ids. Used by the "Bulk apply by criteria" dialog in
+      Guided validation. If `comment` is empty, existing notes are
+      preserved untouched; otherwise the comment is prepended to each
+      event's notes so prior context is never destroyed. */
+  const bulkApplyToEvents = (ids, verdict, comment) => {
+    if (!ids || ids.length === 0) return;
+    const idSet = new Set(ids);
+    const stamp = new Date().toISOString().slice(0, 10);
+    setBulkConfirm({
+      kind: "confirm",
+      title: `Apply "${verdict.replace("_", " ")}" to ${ids.length} event${ids.length > 1 ? "s" : ""}?`,
+      body:
+        `Existing verdicts on the matched events will be overwritten.` +
+        (comment
+          ? `\n\nThe comment will be prepended to each event's notes (existing notes are preserved).`
+          : `\n\nNo comment provided — existing notes are kept untouched.`),
+      confirmLabel: `Apply to ${ids.length}`,
+      onConfirm: () => {
+        setRawEvents((prev) =>
+          prev.map((e) => {
+            if (!idSet.has(e.id)) return e;
+            const next = { ...e, verdict };
+            if (comment) {
+              const tag = `[bulk ${stamp}] ${comment}`;
+              next.notes = e.notes ? `${tag}\n\n${e.notes}` : tag;
+            }
+            return next;
+          }),
+        );
+      },
+    });
+  };
+
   const bulkResetAllVerdicts = () => {
     const decided = events.filter((e) => e.verdict !== "pending").length;
     const noted = events.filter((e) => e.notes && e.notes.length > 0).length;
@@ -13519,6 +14043,7 @@ export default function App() {
               missing={missing}
               autoScore={autoScore}
               hasAb={!!ab}
+              ab={ab}
               setVerdict={setVerdict}
               setNote={setNote}
               metadata={metadata}
@@ -13526,6 +14051,7 @@ export default function App() {
               bulkMarkSameSubjectAsFP={bulkMarkSameSubjectAsFP}
               bulkMarkTowardNCAsTP={bulkMarkTowardNCAsTP}
               bulkResetAllVerdicts={bulkResetAllVerdicts}
+              bulkApplyToEvents={bulkApplyToEvents}
             />
           )}
           {tab === "export" && (
