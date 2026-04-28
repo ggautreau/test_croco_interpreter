@@ -5136,9 +5136,12 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
   };
   const PAGE_SIZE = 100;
   const [page, setPage] = useState(1);
+  // Numeric thresholds — both default to 0 (show everything).
+  const [minScore, setMinScore] = useState(0);
+  const [minRate, setMinRate] = useState(0);
   useEffect(() => {
     setPage(1);
-  }, [sortBy, sortDir, events]);
+  }, [sortBy, sortDir, events, minScore, minRate]);
 
   // Set of existing pairs (source\u0000target) to prevent duplicates when
   // adding manual events. Built once per events change.
@@ -5167,7 +5170,9 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
   }
 
   const sorted = useMemo(() => {
-    const copy = [...events];
+    const copy = events.filter(
+      (e) => (e.score ?? 0) >= minScore && (e.rate ?? 0) >= minRate,
+    );
     const flip = sortDir === "asc" ? -1 : 1;
     if (sortBy === "score") copy.sort((a, b) => (b.score - a.score) * flip);
     else if (sortBy === "rate") copy.sort((a, b) => (b.rate - a.rate) * flip);
@@ -5183,7 +5188,7 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
       copy.sort((a, b) => a.source.localeCompare(b.source) * flip);
     }
     return copy;
-  }, [events, sortBy, sortDir]);
+  }, [events, sortBy, sortDir, minScore, minRate]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
@@ -5238,6 +5243,72 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
         />
       ) : (
         <>
+      {/* Numeric thresholds — same UI/semantics as the Network tab */}
+      <div className="flex items-center gap-4 mb-4 flex-wrap text-[12px]">
+        <div className="flex items-center gap-2">
+          <span style={{ color: "#797870" }}>min probability</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={minScore}
+            onChange={(e) => setMinScore(parseFloat(e.target.value))}
+            style={{ accentColor: "#00a3a6" }}
+          />
+          <span
+            className="tabular w-10 text-[11px]"
+            style={{
+              color: "#275662",
+              fontWeight: 600,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+          >
+            {minScore.toFixed(2)}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span style={{ color: "#797870" }}>min rate</span>
+          <input
+            type="range"
+            min={0}
+            max={0.5}
+            step={0.01}
+            value={minRate}
+            onChange={(e) => setMinRate(parseFloat(e.target.value))}
+            style={{ accentColor: "#00a3a6" }}
+          />
+          <span
+            className="tabular w-12 text-[11px]"
+            style={{
+              color: "#275662",
+              fontWeight: 600,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+          >
+            {(minRate * 100).toFixed(0)}%
+          </span>
+        </div>
+        {(minScore > 0 || minRate > 0) && (
+          <button
+            onClick={() => {
+              setMinScore(0);
+              setMinRate(0);
+            }}
+            className="text-[10px] px-2 py-0.5 rounded-sm"
+            style={{
+              background: "#fff",
+              color: "#797870",
+              border: "1px solid #c4c0b3",
+              fontWeight: 600,
+              fontFamily: '"Raleway", sans-serif',
+              cursor: "pointer",
+            }}
+          >
+            reset thresholds
+          </button>
+        )}
+      </div>
       <div className="flex items-center gap-3 mb-6 flex-wrap">
         <span
           className="text-[11px] uppercase tracking-[0.1em]"
