@@ -6893,18 +6893,20 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
                 textTransform: "uppercase",
               }}
             >
-              Rate ({(minRate * 100).toFixed(1)}% – {(maxRate * 100).toFixed(1)}%)
+              Rate (% — {(minRate * 100).toFixed(1)} to {(maxRate * 100).toFixed(1)})
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <input
                 type="number"
                 min={0}
-                max={1}
-                step={0.001}
-                value={minRate}
-                onChange={(e) =>
-                  setMinRate(Math.min(maxRate, parseFloat(e.target.value) || 0))
-                }
+                max={100}
+                step={0.1}
+                value={(minRate * 100).toFixed(1)}
+                onChange={(e) => {
+                  const pct = parseFloat(e.target.value);
+                  const r = Number.isFinite(pct) ? pct / 100 : 0;
+                  setMinRate(Math.min(maxRate, Math.max(0, r)));
+                }}
                 style={{
                   width: 70,
                   padding: "4px 6px",
@@ -6917,12 +6919,14 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
               <input
                 type="number"
                 min={0}
-                max={1}
-                step={0.001}
-                value={maxRate}
-                onChange={(e) =>
-                  setMaxRate(Math.max(minRate, parseFloat(e.target.value) || 0))
-                }
+                max={100}
+                step={0.1}
+                value={(maxRate * 100).toFixed(1)}
+                onChange={(e) => {
+                  const pct = parseFloat(e.target.value);
+                  const r = Number.isFinite(pct) ? pct / 100 : 1;
+                  setMaxRate(Math.max(minRate, Math.min(1, r)));
+                }}
                 style={{
                   width: 70,
                   padding: "4px 6px",
