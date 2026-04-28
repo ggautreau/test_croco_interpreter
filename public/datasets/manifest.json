@@ -109,7 +109,8 @@
       "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
       "files": {
         "events": "PRJNA698986_P2/contamination_events.tsv",
-        "abundance": "PRJNA698986_P2/species_abundance.tsv"
+        "abundance": "PRJNA698986_P2/species_abundance.tsv",
+        "plate_map": "PRJNA698986_P2/plate_map.tsv"
       }
     },
     {
