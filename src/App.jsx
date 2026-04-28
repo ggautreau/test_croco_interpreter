@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import * as d3 from "d3";
+import { Range, getTrackBackground } from "react-range";
 import {
   FolderOpen,
   AlertCircle,
@@ -6708,6 +6709,69 @@ const BULK_CRIT = [
   { id: "above", label: "Above-line points — none, or all within 0.5 decade" },
 ];
 
+/** Two-thumb (low / high) slider built on react-range. The track lights
+    up only between the two thumbs to show the selected sub-range. */
+const DualRange = ({ values, min, max, step, onChange }) => (
+  <Range
+    values={values}
+    step={step}
+    min={min}
+    max={max}
+    onChange={onChange}
+    renderTrack={({ props, children }) => (
+      <div
+        onMouseDown={props.onMouseDown}
+        onTouchStart={props.onTouchStart}
+        style={{
+          ...props.style,
+          height: 28,
+          display: "flex",
+          width: "100%",
+        }}
+      >
+        <div
+          ref={props.ref}
+          style={{
+            height: 5,
+            width: "100%",
+            borderRadius: 3,
+            background: getTrackBackground({
+              values,
+              colors: ["#e6e8e8", "#00a3a6", "#e6e8e8"],
+              min,
+              max,
+            }),
+            alignSelf: "center",
+          }}
+        >
+          {children}
+        </div>
+      </div>
+    )}
+    renderThumb={({ props, isDragged }) => {
+      const { key, ...rest } = props;
+      return (
+        <div
+          key={key}
+          {...rest}
+          style={{
+            ...props.style,
+            height: 16,
+            width: 16,
+            borderRadius: "50%",
+            background: "#fff",
+            border: `2px solid ${isDragged ? "#00a3a6" : "#275662"}`,
+            boxShadow: isDragged
+              ? "0 0 0 4px rgba(0,163,166,0.18)"
+              : "0 1px 2px rgba(0,0,0,0.15)",
+            cursor: "grab",
+          }}
+        />
+      );
+    }}
+  />
+);
+
 const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
   const [minScore, setMinScore] = useState(0);
   const [maxScore, setMaxScore] = useState(1);
@@ -6930,34 +6994,16 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
                 }}
               />
             </div>
-            <div style={{ marginTop: 8 }}>
-              <input
-                type="range"
+            <div style={{ marginTop: 12, padding: "0 8px" }}>
+              <DualRange
                 min={0}
                 max={1}
                 step={0.01}
-                value={minScore}
-                onChange={(e) =>
-                  setMinScore(
-                    Math.min(maxScore, parseFloat(e.target.value)),
-                  )
-                }
-                style={{ width: "100%", accentColor: "#00a3a6" }}
-                aria-label="min probability"
-              />
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.01}
-                value={maxScore}
-                onChange={(e) =>
-                  setMaxScore(
-                    Math.max(minScore, parseFloat(e.target.value)),
-                  )
-                }
-                style={{ width: "100%", accentColor: "#00a3a6" }}
-                aria-label="max probability"
+                values={[minScore, maxScore]}
+                onChange={([lo, hi]) => {
+                  setMinScore(lo);
+                  setMaxScore(hi);
+                }}
               />
             </div>
           </div>
@@ -7017,34 +7063,16 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
                 }}
               />
             </div>
-            <div style={{ marginTop: 8 }}>
-              <input
-                type="range"
+            <div style={{ marginTop: 12, padding: "0 8px" }}>
+              <DualRange
                 min={0}
                 max={100}
                 step={0.01}
-                value={minRate * 100}
-                onChange={(e) =>
-                  setMinRate(
-                    Math.min(maxRate, parseFloat(e.target.value) / 100),
-                  )
-                }
-                style={{ width: "100%", accentColor: "#00a3a6" }}
-                aria-label="min rate"
-              />
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={0.01}
-                value={maxRate * 100}
-                onChange={(e) =>
-                  setMaxRate(
-                    Math.max(minRate, parseFloat(e.target.value) / 100),
-                  )
-                }
-                style={{ width: "100%", accentColor: "#00a3a6" }}
-                aria-label="max rate"
+                values={[minRate * 100, maxRate * 100]}
+                onChange={([lo, hi]) => {
+                  setMinRate(lo / 100);
+                  setMaxRate(hi / 100);
+                }}
               />
             </div>
           </div>
