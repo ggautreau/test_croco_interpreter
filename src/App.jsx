@@ -2669,54 +2669,66 @@ const PlateUploadCard = ({ plateMap, setPlateMap, setErr, confirmDialog }) => {
 };
 
 /* ---------- event queue sidebar ---------- */
-const EventQueue = ({ events, currentId, onSelect, compact }) => (
-  <div
-    className="rounded-sm max-h-[640px] overflow-auto"
-    style={{ border: "1px solid #e6e8e8" }}
-  >
-    {events.map((e) => {
-      const active = e.id === currentId;
-      const dotColor =
-        e.verdict === "true_positive" ? "#00a3a6" :
-        e.verdict === "false_positive" ? "#ed6e6c" :
-        e.verdict === "uncertain" ? "#c4c0b3" : "#e6e8e8";
-      return (
-        <button
-          key={e.id}
-          onClick={() => onSelect(e.id)}
-          className="w-full text-left px-3 py-2 text-[12px] flex items-start gap-2"
-          style={{
-            borderBottom: "1px solid #f0f2f2",
-            background: active ? "#275662" : "#fff",
-            color: active ? "#fff" : "#275662",
-          }}
-          onMouseOver={(ev) => { if (!active) ev.currentTarget.style.background = "#f6f7f7"; }}
-          onMouseOut={(ev) => { if (!active) ev.currentTarget.style.background = "#fff"; }}
-        >
-          {!compact && (
-            <span
-              className="mt-0.5 w-2 h-2 shrink-0 rounded-full"
-              style={{ background: dotColor }}
-            />
-          )}
-          <div className="flex-1 min-w-0">
-            <div className="truncate" style={{ fontWeight: 600 }}>
-              {e.source} → {e.target}
+const EventQueue = ({ events, currentId, onSelect, compact }) => {
+  // Keep the active row in view as the user steps through events with the
+  // ↑/↓/←/→ shortcuts. `block: "nearest"` means we only scroll when the
+  // current row has actually fallen out of the visible part of the list.
+  const activeRef = useRef(null);
+  useEffect(() => {
+    if (activeRef.current) {
+      activeRef.current.scrollIntoView({ block: "nearest" });
+    }
+  }, [currentId]);
+  return (
+    <div
+      className="rounded-sm max-h-[640px] overflow-auto"
+      style={{ border: "1px solid #e6e8e8" }}
+    >
+      {events.map((e) => {
+        const active = e.id === currentId;
+        const dotColor =
+          e.verdict === "true_positive" ? "#00a3a6" :
+          e.verdict === "false_positive" ? "#ed6e6c" :
+          e.verdict === "uncertain" ? "#c4c0b3" : "#e6e8e8";
+        return (
+          <button
+            key={e.id}
+            ref={active ? activeRef : null}
+            onClick={() => onSelect(e.id)}
+            className="w-full text-left px-3 py-2 text-[12px] flex items-start gap-2"
+            style={{
+              borderBottom: "1px solid #f0f2f2",
+              background: active ? "#275662" : "#fff",
+              color: active ? "#fff" : "#275662",
+            }}
+            onMouseOver={(ev) => { if (!active) ev.currentTarget.style.background = "#f6f7f7"; }}
+            onMouseOut={(ev) => { if (!active) ev.currentTarget.style.background = "#fff"; }}
+          >
+            {!compact && (
+              <span
+                className="mt-0.5 w-2 h-2 shrink-0 rounded-full"
+                style={{ background: dotColor }}
+              />
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="truncate" style={{ fontWeight: 600 }}>
+                {e.source} → {e.target}
+              </div>
+              <div
+                className="flex justify-between mt-0.5 tabular"
+                style={{ opacity: 0.7, fontFamily: "system-ui, sans-serif" }}
+              >
+                <span>{(e.rate * 100).toFixed(1)}%</span>
+                <span>{e.score.toFixed(2)}</span>
+              </div>
             </div>
-            <div
-              className="flex justify-between mt-0.5 tabular"
-              style={{ opacity: 0.7, fontFamily: "system-ui, sans-serif" }}
-            >
-              <span>{(e.rate * 100).toFixed(1)}%</span>
-              <span>{e.score.toFixed(2)}</span>
-            </div>
-          </div>
-          {e.cascade && <Pill tone="violet">cascade</Pill>}
-        </button>
-      );
-    })}
-  </div>
-);
+            {e.cascade && <Pill tone="violet">cascade</Pill>}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
 
 /* ---------- cascade banner ---------- */
 const CascadeBanner = ({ cascade, onJumpToUpstream }) => {
