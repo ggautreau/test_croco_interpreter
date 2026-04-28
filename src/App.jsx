@@ -2961,6 +2961,36 @@ const ScoreBar = ({ v }) => (
   </div>
 );
 
+/* ---------- rate bar (for events table) ----------
+   Rates span several orders of magnitude (≈ 0.01% to 50%+) and the
+   distribution is heavily skewed toward small values, so a linear bar
+   scaled 0–100% would be useless. We use a log10 mapping over
+   [0.0001, 1] (i.e. -4..0) instead — every visible band of width gets
+   the same multiplicative boost in rate. */
+const RateBar = ({ v }) => {
+  const lo = -4;
+  const hi = 0;
+  const lr = v > 0 ? Math.log10(v) : lo;
+  const t = Math.min(1, Math.max(0, (lr - lo) / (hi - lo)));
+  const color = v > 0.1 ? "#ed6e6c" : v > 0.01 ? "#f4b942" : "#00a3a6";
+  return (
+    <div className="inline-flex items-center gap-2">
+      <div className="w-16 h-1.5 rounded-sm" style={{ background: "#e6e8e8" }}>
+        <div
+          className="h-full rounded-sm"
+          style={{ width: `${t * 100}%`, background: color }}
+        />
+      </div>
+      <span
+        className="tabular"
+        style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
+      >
+        {(v * 100).toFixed(2)}%
+      </span>
+    </div>
+  );
+};
+
 const VerdictBadge = ({ v }) => {
   if (v === "true_positive")
     return (
@@ -3937,11 +3967,8 @@ const EventsTable = ({
                       </div>
                     )}
                   </td>
-                  <td
-                    className="px-3 py-2.5 tabular text-right"
-                    style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
-                  >
-                    {(e.rate * 100).toFixed(2)}%
+                  <td className="px-3 py-2.5 tabular text-right">
+                    <RateBar v={e.rate} />
                   </td>
                   <td className="px-3 py-2.5 tabular text-right">
                     <ScoreBar v={e.score} />
