@@ -3243,14 +3243,18 @@ const RunMetadataBlock = ({ meta }) => {
   const displayFields = [
     { key: "crocodeel version", label: "CroCoDeEL version" },
     { key: "datetime", label: "Run date" },
-    { key: "species_ab_table", label: "Abundance table", shorten: true },
     { key: "rf_model", label: "RF model", shorten: true },
     { key: "probability_cutoff", label: "Probability cutoff" },
     { key: "rate_cutoff", label: "Rate cutoff" },
     {
       key: "filtering_ab_thr_factor",
       label: "Abundance filter",
-      format: formatInt,
+      // Always visible, even when CroCoDeEL was run without
+      // --filter-low-ab. We surface "0" in that case so the reader knows
+      // the run did NOT apply any low-abundance trimming, rather than
+      // silently dropping the field.
+      alwaysShow: true,
+      format: (v) => (!v || v === "None" ? "0" : formatInt(v)),
     },
     { key: "username", label: "User" },
     { key: "hostname", label: "Host" },
@@ -3259,15 +3263,16 @@ const RunMetadataBlock = ({ meta }) => {
     .map((f) => {
       let v = meta[f.key];
       if (v && f.shorten) v = shortenPath(v);
-      if (v && f.format) v = f.format(v);
+      if (f.format) v = f.format(v);
       return {
         label: f.label,
         hint: f.hint,
         value: v || null,
         raw: meta[f.key],
+        alwaysShow: !!f.alwaysShow,
       };
     })
-    .filter((it) => it.value && it.value !== "None");
+    .filter((it) => it.alwaysShow || (it.value && it.value !== "None"));
 
   if (items.length === 0) return null;
 
