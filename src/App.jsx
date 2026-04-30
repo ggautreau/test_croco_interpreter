@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
+  SlidersHorizontal,
   BookOpen,
   GraduationCap,
   Grid3x3,
@@ -3885,6 +3886,103 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
 };
 
 /* ---------- shared filter bar (Events tab + Scatter gallery) ---------- */
+const FILTER_CHIP_BG = "#ffffff";
+const FILTER_CHIP_BORDER = "1px solid #e6e3d8";
+const FILTER_PANEL_BG = "#faf9f6";
+const FILTER_PANEL_BORDER = "1px solid #e6e3d8";
+const FILTER_DIVIDER_BG = "#e0dccd";
+const FILTER_LABEL_STYLE = {
+  color: "#797870",
+  fontWeight: 600,
+  fontFamily: '"Raleway", sans-serif',
+  letterSpacing: "0.04em",
+  textTransform: "uppercase",
+  fontSize: "10px",
+};
+const FILTER_VALUE_STYLE = {
+  fontWeight: 600,
+  fontFamily: '"Raleway", sans-serif',
+  color: "#275662",
+};
+const FILTER_CUTOFF_STYLE = {
+  background: "rgba(0,163,166,0.12)",
+  color: "#275662",
+  fontWeight: 600,
+  fontFamily: '"Raleway", sans-serif',
+  whiteSpace: "nowrap",
+};
+
+const FilterChip = ({ children }) => (
+  <div
+    className="flex items-center gap-1.5 px-2 py-1 rounded-md"
+    style={{ background: FILTER_CHIP_BG, border: FILTER_CHIP_BORDER }}
+  >
+    {children}
+  </div>
+);
+
+const FilterDivider = () => (
+  <div
+    className="self-stretch w-px mx-0.5"
+    style={{ background: FILTER_DIVIDER_BG }}
+  />
+);
+
+const VERDICT_SEGMENTS = [
+  { id: "true_positive", color: "#00a3a6", label: "true positive" },
+  { id: "false_positive", color: "#ed6e6c", label: "false positive" },
+  { id: "uncertain", color: "#c4c0b3", label: "uncertain" },
+  { id: "pending", color: "#e6e8e8", label: "pending" },
+];
+
+const VerdictDistribution = ({ events }) => {
+  const counts = useMemo(() => {
+    const c = { true_positive: 0, false_positive: 0, uncertain: 0, pending: 0 };
+    for (const e of events) {
+      const v = e.verdict;
+      if (v === "true_positive" || v === "false_positive" || v === "uncertain") c[v] += 1;
+      else c.pending += 1;
+    }
+    return c;
+  }, [events]);
+  const total = events.length;
+  if (total === 0) return null;
+  const tip = VERDICT_SEGMENTS
+    .map((s) => `${s.label}: ${counts[s.id]}`)
+    .join(" · ");
+  return (
+    <div
+      className="flex h-2 rounded-full overflow-hidden"
+      style={{ width: 96, background: "#e6e8e8" }}
+      title={tip}
+    >
+      {VERDICT_SEGMENTS.map((s) => {
+        const w = (counts[s.id] / total) * 100;
+        if (w === 0) return null;
+        return (
+          <div
+            key={s.id}
+            style={{ width: `${w}%`, background: s.color }}
+          />
+        );
+      })}
+    </div>
+  );
+};
+
+const SliderChip = ({ label, value, cutoffBadge, children, title }) => (
+  <FilterChip>
+    <span style={FILTER_LABEL_STYLE} title={title}>
+      {label}
+    </span>
+    {children}
+    <span className="tabular text-[12px]" style={FILTER_VALUE_STYLE}>
+      {value}
+    </span>
+    {cutoffBadge}
+  </FilterChip>
+);
+
 const EventFilterBar = ({
   filter,
   setFilter,
@@ -3897,23 +3995,80 @@ const EventFilterBar = ({
   const hasCutoff = Number.isFinite(cutoff) && cutoff > 0;
   const rc = parseFloat(runMetadata?.rate_cutoff);
   const hasRateCutoff = Number.isFinite(rc) && rc > 0;
+
+  const showSubject = !!metadata;
+  const showGroup = !!metadata?.hasGroupIdCol;
+  const showWells = !!plateMap;
+  const hasContextFilters = showSubject || showGroup || showWells;
+  const activeContextCount =
+    (showSubject && filter.subject && filter.subject !== "any" ? 1 : 0) +
+    (showGroup && filter.group && filter.group !== "any" ? 1 : 0) +
+    (showWells && filter.adjacent && filter.adjacent !== "any" ? 1 : 0);
+
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const popoverRef = useRef(null);
+  useEffect(() => {
+    if (!popoverOpen) return;
+    const handle = (e) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
+        setPopoverOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [popoverOpen]);
+
+  const cutoffBadge = (text, tip) => (
+    <span
+      className="text-[10px] px-1.5 py-0.5 rounded-sm"
+      title={tip}
+      style={FILTER_CUTOFF_STYLE}
+    >
+      {text}
+    </span>
+  );
+
+  const selectStyle = {
+    background: FILTER_CHIP_BG,
+    border: FILTER_CHIP_BORDER,
+    color: "#275662",
+    fontWeight: 500,
+  };
+
   return (
-    <div className="flex flex-wrap gap-3 mb-4 items-center">
+    <div
+      className="flex flex-wrap gap-2 mb-4 items-center p-2 rounded-md"
+      style={{ background: FILTER_PANEL_BG, border: FILTER_PANEL_BORDER }}
+    >
+      {/* Search */}
       <div className="relative">
         <Search
-          className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
+          className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
           style={{ color: "#797870" }}
         />
         <input
           value={filter.q}
           onChange={(e) => setFilter({ ...filter, q: e.target.value })}
           placeholder="sample…"
-          className="pl-7 pr-3 py-1.5 text-[12px] rounded-sm w-64 outline-none"
-          style={{ border: "1px solid #c4c0b3" }}
+          className="pl-7 pr-3 py-1 text-[12px] rounded-md w-44 outline-none"
+          style={selectStyle}
         />
       </div>
-      <div className="flex items-center gap-2 text-[12px]">
-        <span style={{ color: "#797870" }}>min probability</span>
+
+      <FilterDivider />
+
+      {/* Thresholds */}
+      <SliderChip
+        label="probability"
+        value={filter.minScore.toFixed(2)}
+        cutoffBadge={
+          hasCutoff &&
+          cutoffBadge(
+            `≥ ${cutoff}`,
+            `CroCoDeEL was run with probability_cutoff = ${cutoff} — events below were never written to the file`,
+          )
+        }
+      >
         <input
           type="range"
           min={0}
@@ -3923,32 +4078,22 @@ const EventFilterBar = ({
           onChange={(e) =>
             setFilter({ ...filter, minScore: parseFloat(e.target.value) })
           }
-          style={{ accentColor: "#00a3a6" }}
+          style={{ accentColor: "#00a3a6", width: 72 }}
         />
-        <span
-          className="tabular w-10"
-          style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
-        >
-          {filter.minScore.toFixed(2)}
-        </span>
-        {hasCutoff && (
-          <span
-            className="text-[10px] px-1.5 py-0.5 rounded-sm"
-            title={`CroCoDeEL was run with probability_cutoff = ${cutoff} — events below were never written to the file`}
-            style={{
-              background: "rgba(0,163,166,0.12)",
-              color: "#275662",
-              fontWeight: 600,
-              fontFamily: '"Raleway", sans-serif',
-              whiteSpace: "nowrap",
-            }}
-          >
-            probability_cutoff: {cutoff}
-          </span>
-        )}
-      </div>
-      <div className="flex items-center gap-2 text-[12px]">
-        <span style={{ color: "#797870" }}>min rate</span>
+      </SliderChip>
+
+      <SliderChip
+        label="rate"
+        value={formatRatePct(filter.minRate)}
+        cutoffBadge={
+          hasRateCutoff &&
+          cutoffBadge(
+            `≥ ${rc}`,
+            `CroCoDeEL was run with rate_cutoff = ${rc} — events below were never written to the file`,
+          )
+        }
+        title="Log-scaled (0.01% to 100%)"
+      >
         <input
           type="range"
           min={RATE_LOG_MIN}
@@ -3961,33 +4106,16 @@ const EventFilterBar = ({
               minRate: sliderToRate(parseFloat(e.target.value)),
             })
           }
-          style={{ accentColor: "#00a3a6" }}
+          style={{ accentColor: "#00a3a6", width: 72 }}
           title="Log-scaled (0.01% to 100%)"
         />
-        <span
-          className="tabular w-14"
-          style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
-        >
-          {formatRatePct(filter.minRate)}
-        </span>
-        {hasRateCutoff && (
-          <span
-            className="text-[10px] px-1.5 py-0.5 rounded-sm"
-            title={`CroCoDeEL was run with rate_cutoff = ${rc} — events below were never written to the file`}
-            style={{
-              background: "rgba(0,163,166,0.12)",
-              color: "#275662",
-              fontWeight: 600,
-              fontFamily: '"Raleway", sans-serif',
-              whiteSpace: "nowrap",
-            }}
-          >
-            rate_cutoff: {rc}
-          </span>
-        )}
-      </div>
-      <div className="flex items-center gap-2 text-[12px]">
-        <span style={{ color: "#797870" }}>min introduced</span>
+      </SliderChip>
+
+      <SliderChip
+        label="introduced"
+        value={`${(filter.minIntroduced || 0).toFixed(1)}%`}
+        title="% of target species introduced by the contamination"
+      >
         <input
           type="range"
           min={0}
@@ -4000,21 +4128,19 @@ const EventFilterBar = ({
               minIntroduced: parseFloat(e.target.value),
             })
           }
-          style={{ accentColor: "#00a3a6" }}
+          style={{ accentColor: "#00a3a6", width: 72 }}
           title="% of target species introduced by the contamination"
         />
-        <span
-          className="tabular w-14"
-          style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
-        >
-          {(filter.minIntroduced || 0).toFixed(1)}%
-        </span>
-      </div>
+      </SliderChip>
+
+      <FilterDivider />
+
+      {/* Verdict + context popover */}
       <select
         value={filter.verdict}
         onChange={(e) => setFilter({ ...filter, verdict: e.target.value })}
-        className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
-        style={{ border: "1px solid #c4c0b3" }}
+        className="px-2 py-1 text-[12px] rounded-md outline-none"
+        style={selectStyle}
       >
         <option value="all">all verdicts</option>
         <option value="pending">pending</option>
@@ -4022,60 +4148,136 @@ const EventFilterBar = ({
         <option value="false_positive">false positive</option>
         <option value="uncertain">uncertain</option>
       </select>
-      {metadata && (
-        <div
-          className="flex items-center gap-1.5 text-[12px]"
-          style={{ color: "#275662" }}
-        >
-          <span style={{ color: "#797870" }}>subject</span>
-          <select
-            value={filter.subject || "any"}
-            onChange={(e) => setFilter({ ...filter, subject: e.target.value })}
-            className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
-            style={{ border: "1px solid #c4c0b3" }}
+
+      {hasContextFilters && (
+        <div className="relative" ref={popoverRef}>
+          <button
+            type="button"
+            onClick={() => setPopoverOpen((o) => !o)}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-[12px] rounded-md outline-none"
+            style={{
+              background:
+                activeContextCount > 0 ? "rgba(0,163,166,0.10)" : FILTER_CHIP_BG,
+              border:
+                activeContextCount > 0
+                  ? "1px solid #00a3a6"
+                  : FILTER_CHIP_BORDER,
+              color: "#275662",
+              fontWeight: 500,
+            }}
           >
-            <option value="any">any</option>
-            <option value="same">same subject</option>
-            <option value="different">different subject</option>
-          </select>
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>filters</span>
+            {activeContextCount > 0 && (
+              <span
+                className="text-[10px] px-1.5 rounded-full"
+                style={{
+                  background: "#00a3a6",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                  lineHeight: "16px",
+                  minWidth: 16,
+                  textAlign: "center",
+                }}
+              >
+                {activeContextCount}
+              </span>
+            )}
+            <ChevronDown
+              className="w-3 h-3 transition-transform"
+              style={{
+                transform: popoverOpen ? "rotate(180deg)" : "none",
+              }}
+            />
+          </button>
+          {popoverOpen && (
+            <div
+              className="absolute right-0 top-full mt-1.5 z-20 p-3 rounded-md flex flex-col gap-2.5"
+              style={{
+                background: "#fff",
+                border: "1px solid #c4c0b3",
+                boxShadow: "0 8px 24px rgba(39,86,98,0.12)",
+                minWidth: 220,
+              }}
+            >
+              {showSubject && (
+                <label className="flex flex-col gap-1 text-[12px]">
+                  <span style={FILTER_LABEL_STYLE}>subject</span>
+                  <select
+                    value={filter.subject || "any"}
+                    onChange={(e) =>
+                      setFilter({ ...filter, subject: e.target.value })
+                    }
+                    className="px-2 py-1 text-[12px] rounded-md outline-none"
+                    style={selectStyle}
+                  >
+                    <option value="any">any</option>
+                    <option value="same">same subject</option>
+                    <option value="different">different subject</option>
+                  </select>
+                </label>
+              )}
+              {showGroup && (
+                <label className="flex flex-col gap-1 text-[12px]">
+                  <span style={FILTER_LABEL_STYLE}>group</span>
+                  <select
+                    value={filter.group || "any"}
+                    onChange={(e) =>
+                      setFilter({ ...filter, group: e.target.value })
+                    }
+                    className="px-2 py-1 text-[12px] rounded-md outline-none"
+                    style={selectStyle}
+                  >
+                    <option value="any">any</option>
+                    <option value="same">same group</option>
+                    <option value="different">different group</option>
+                  </select>
+                </label>
+              )}
+              {showWells && (
+                <label className="flex flex-col gap-1 text-[12px]">
+                  <span style={FILTER_LABEL_STYLE}>wells</span>
+                  <select
+                    value={filter.adjacent || "any"}
+                    onChange={(e) =>
+                      setFilter({ ...filter, adjacent: e.target.value })
+                    }
+                    className="px-2 py-1 text-[12px] rounded-md outline-none"
+                    style={selectStyle}
+                  >
+                    <option value="any">any</option>
+                    <option value="adjacent">adjacent only</option>
+                    <option value="non-adjacent">non-adjacent only</option>
+                  </select>
+                </label>
+              )}
+              {activeContextCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFilter({
+                      ...filter,
+                      subject: "any",
+                      group: "any",
+                      adjacent: "any",
+                    })
+                  }
+                  className="self-start text-[11px] mt-1"
+                  style={{
+                    color: "#00a3a6",
+                    fontWeight: 600,
+                    fontFamily: '"Raleway", sans-serif',
+                  }}
+                >
+                  clear filters
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
-      {metadata?.hasGroupIdCol && (
-        <div
-          className="flex items-center gap-1.5 text-[12px]"
-          style={{ color: "#275662" }}
-        >
-          <span style={{ color: "#797870" }}>group</span>
-          <select
-            value={filter.group || "any"}
-            onChange={(e) => setFilter({ ...filter, group: e.target.value })}
-            className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
-            style={{ border: "1px solid #c4c0b3" }}
-          >
-            <option value="any">any</option>
-            <option value="same">same group</option>
-            <option value="different">different group</option>
-          </select>
-        </div>
-      )}
-      {plateMap && (
-        <div
-          className="flex items-center gap-1.5 text-[12px]"
-          style={{ color: "#275662" }}
-        >
-          <span style={{ color: "#797870" }}>wells</span>
-          <select
-            value={filter.adjacent || "any"}
-            onChange={(e) => setFilter({ ...filter, adjacent: e.target.value })}
-            className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
-            style={{ border: "1px solid #c4c0b3" }}
-          >
-            <option value="any">any</option>
-            <option value="adjacent">adjacent only</option>
-            <option value="non-adjacent">non-adjacent only</option>
-          </select>
-        </div>
-      )}
+
       {children}
     </div>
   );
@@ -4134,13 +4336,16 @@ const EventsTable = ({
         plateMap={plateMap}
         runMetadata={runMetadata}
       >
-        <span className="text-[12px] ml-auto" style={{ color: "#797870" }}>
-          {events.length === 0
-            ? `0 / ${total}`
-            : totalPages > 1
-              ? `${startIdx + 1}–${startIdx + visible.length} of ${events.length} (filtered) / ${total} total`
-              : `${events.length} / ${total}`}
-        </span>
+        <div className="ml-auto flex items-center gap-2.5">
+          <VerdictDistribution events={events} />
+          <span className="text-[12px]" style={{ color: "#797870" }}>
+            {events.length === 0
+              ? `0 / ${total}`
+              : totalPages > 1
+                ? `${startIdx + 1}–${startIdx + visible.length} of ${events.length} (filtered) / ${total} total`
+                : `${events.length} / ${total}`}
+          </span>
+        </div>
       </EventFilterBar>
 
       <div
@@ -5516,9 +5721,12 @@ const ScatterTab = ({
         plateMap={plateMap}
         runMetadata={runMetadata}
       >
-        <span className="text-[12px] ml-auto" style={{ color: "#797870" }}>
-          {sorted.length} / {events.length}
-        </span>
+        <div className="ml-auto flex items-center gap-2.5">
+          <VerdictDistribution events={sorted} />
+          <span className="text-[12px]" style={{ color: "#797870" }}>
+            {sorted.length} / {events.length}
+          </span>
+        </div>
       </EventFilterBar>
       <div className="flex items-center gap-3 mb-6 flex-wrap">
         <span
