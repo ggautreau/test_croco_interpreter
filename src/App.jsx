@@ -1620,6 +1620,7 @@ const NetworkGraph = ({ events, onPick }) => {
   // Numeric thresholds — both default to 0 (show everything).
   const [minScore, setMinScore] = useState(0);
   const [minRate, setMinRate] = useState(0);
+  const [minIntroduced, setMinIntroduced] = useState(0);
   const svgRef = useRef(null);
   const zoomBehaviorRef = useRef(null);
 
@@ -1933,11 +1934,35 @@ const NetworkGraph = ({ events, onPick }) => {
               {formatRatePct(minRate)}
             </span>
           </div>
-          {(minScore > 0 || minRate > 0) && (
+          <div className="flex items-center gap-2">
+            <span style={{ color: "#797870" }}>min introduced</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={0.5}
+              value={minIntroduced}
+              onChange={(e) => setMinIntroduced(parseFloat(e.target.value))}
+              style={{ accentColor: "#00a3a6" }}
+              title="% of target species introduced by the contamination"
+            />
+            <span
+              className="tabular w-14 text-[11px]"
+              style={{
+                color: "#275662",
+                fontWeight: 600,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              {minIntroduced.toFixed(1)}%
+            </span>
+          </div>
+          {(minScore > 0 || minRate > 0 || minIntroduced > 0) && (
             <button
               onClick={() => {
                 setMinScore(0);
                 setMinRate(0);
+                setMinIntroduced(0);
               }}
               className="text-[10px] px-2 py-0.5 rounded-sm"
               style={{
@@ -2078,6 +2103,10 @@ const NetworkGraph = ({ events, onPick }) => {
             if (!verdictFilter[e.verdict || "pending"]) return null;
             if ((e.score ?? 0) < minScore) return null;
             if ((e.rate ?? 0) < minRate) return null;
+            if (minIntroduced > 0) {
+              if (e.introducedPct == null) return null;
+              if (e.introducedPct < minIntroduced) return null;
+            }
             const rejected = e.verdict === "false_positive";
             const accepted = e.verdict === "true_positive";
             const isHovered = hover?.kind === "edge" && hover.e.id === e.id;
@@ -3879,7 +3908,7 @@ const EventsTable = ({
   // jump the user back to page 1 each time they curate.
   useEffect(() => {
     setPage(1);
-  }, [filter.q, filter.minScore, filter.minRate, filter.verdict, filter.hideRelated, filter.adjacentOnly, sort.by, sort.dir, total]);
+  }, [filter.q, filter.minScore, filter.minRate, filter.minIntroduced, filter.verdict, filter.hideRelated, filter.adjacentOnly, sort.by, sort.dir, total]);
   const totalPages = Math.max(1, Math.ceil(events.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
   const startIdx = (safePage - 1) * PAGE_SIZE;
@@ -3995,6 +4024,30 @@ const EventsTable = ({
               </span>
             );
           })()}
+        </div>
+        <div className="flex items-center gap-2 text-[12px]">
+          <span style={{ color: "#797870" }}>min introduced</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={0.5}
+            value={filter.minIntroduced || 0}
+            onChange={(e) =>
+              setFilter({
+                ...filter,
+                minIntroduced: parseFloat(e.target.value),
+              })
+            }
+            style={{ accentColor: "#00a3a6" }}
+            title="% of target species introduced by the contamination"
+          />
+          <span
+            className="tabular w-14"
+            style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
+          >
+            {(filter.minIntroduced || 0).toFixed(1)}%
+          </span>
         </div>
         <select
           value={filter.verdict}
@@ -5298,12 +5351,13 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
   };
   const PAGE_SIZE = 100;
   const [page, setPage] = useState(1);
-  // Numeric thresholds — both default to 0 (show everything).
+  // Numeric thresholds — all default to 0 (show everything).
   const [minScore, setMinScore] = useState(0);
   const [minRate, setMinRate] = useState(0);
+  const [minIntroduced, setMinIntroduced] = useState(0);
   useEffect(() => {
     setPage(1);
-  }, [sortBy, sortDir, events, minScore, minRate]);
+  }, [sortBy, sortDir, events, minScore, minRate, minIntroduced]);
 
   // Set of existing pairs (source\u0000target) to prevent duplicates when
   // adding manual events. Built once per events change.
@@ -5332,9 +5386,15 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
   }
 
   const sorted = useMemo(() => {
-    const copy = events.filter(
-      (e) => (e.score ?? 0) >= minScore && (e.rate ?? 0) >= minRate,
-    );
+    const copy = events.filter((e) => {
+      if ((e.score ?? 0) < minScore) return false;
+      if ((e.rate ?? 0) < minRate) return false;
+      if (minIntroduced > 0) {
+        if (e.introducedPct == null) return false;
+        if (e.introducedPct < minIntroduced) return false;
+      }
+      return true;
+    });
     const flip = sortDir === "asc" ? -1 : 1;
     if (sortBy === "score") copy.sort((a, b) => (b.score - a.score) * flip);
     else if (sortBy === "rate") copy.sort((a, b) => (b.rate - a.rate) * flip);
@@ -5350,7 +5410,7 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
       copy.sort((a, b) => a.source.localeCompare(b.source) * flip);
     }
     return copy;
-  }, [events, sortBy, sortDir, minScore, minRate]);
+  }, [events, sortBy, sortDir, minScore, minRate, minIntroduced]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
@@ -5454,11 +5514,35 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
             {formatRatePct(minRate)}
           </span>
         </div>
-        {(minScore > 0 || minRate > 0) && (
+        <div className="flex items-center gap-2">
+          <span style={{ color: "#797870" }}>min introduced</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={0.5}
+            value={minIntroduced}
+            onChange={(e) => setMinIntroduced(parseFloat(e.target.value))}
+            style={{ accentColor: "#00a3a6" }}
+            title="% of target species introduced by the contamination"
+          />
+          <span
+            className="tabular w-14 text-[11px]"
+            style={{
+              color: "#275662",
+              fontWeight: 600,
+              fontFamily: '"Raleway", sans-serif',
+            }}
+          >
+            {minIntroduced.toFixed(1)}%
+          </span>
+        </div>
+        {(minScore > 0 || minRate > 0 || minIntroduced > 0) && (
           <button
             onClick={() => {
               setMinScore(0);
               setMinRate(0);
+              setMinIntroduced(0);
             }}
             className="text-[10px] px-2 py-0.5 rounded-sm"
             style={{
@@ -12861,6 +12945,7 @@ export default function App() {
       minScore: 0,
       verdict: "all",
       minRate: 0,
+      minIntroduced: 0,
       hideRelated: false,
       adjacentOnly: false,
     },
@@ -13214,9 +13299,14 @@ export default function App() {
 
   const filtered = useMemo(() => {
     const q = filter.q.trim().toLowerCase();
+    const minIntro = filter.minIntroduced || 0;
     let res = events.filter((e) => {
       if (e.score < filter.minScore) return false;
       if (e.rate < filter.minRate) return false;
+      if (minIntro > 0) {
+        if (e.introducedPct == null) return false;
+        if (e.introducedPct < minIntro) return false;
+      }
       if (filter.verdict !== "all" && e.verdict !== filter.verdict) return false;
       if (filter.hideRelated) {
         const r = areRelated(metadata, e.source, e.target);
