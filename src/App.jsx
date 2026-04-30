@@ -3912,10 +3912,11 @@ const FILTER_CUTOFF_STYLE = {
   whiteSpace: "nowrap",
 };
 
-const FilterChip = ({ children }) => (
+const FilterChip = ({ children, title }) => (
   <div
     className="flex items-center gap-1.5 px-2 py-1 rounded-md"
     style={{ background: FILTER_CHIP_BG, border: FILTER_CHIP_BORDER }}
+    title={title}
   >
     {children}
   </div>
@@ -3971,10 +3972,8 @@ const VerdictDistribution = ({ events }) => {
 };
 
 const SliderChip = ({ label, value, cutoffBadge, children, title }) => (
-  <FilterChip>
-    <span style={FILTER_LABEL_STYLE} title={title}>
-      {label}
-    </span>
+  <FilterChip title={title}>
+    <span style={FILTER_LABEL_STYLE}>{label}</span>
     {children}
     <span className="tabular text-[12px]" style={FILTER_VALUE_STYLE}>
       {value}
@@ -4061,6 +4060,7 @@ const EventFilterBar = ({
       <SliderChip
         label="probability"
         value={filter.minScore.toFixed(2)}
+        title="CroCoDeEL Random-Forest probability that the contamination event is real (0–1). Higher = more confident. Drag to hide events below the threshold."
         cutoffBadge={
           hasCutoff &&
           cutoffBadge(
@@ -4092,7 +4092,7 @@ const EventFilterBar = ({
             `CroCoDeEL was run with rate_cutoff = ${rc} — events below were never written to the file`,
           )
         }
-        title="Log-scaled (0.01% to 100%)"
+        title="Contamination rate: estimated proportion of the contaminated sample that originates from the source. Slider is log-scaled from 0.01% to 100%."
       >
         <input
           type="range"
@@ -4114,7 +4114,7 @@ const EventFilterBar = ({
       <SliderChip
         label="introduced"
         value={`${(filter.minIntroduced || 0).toFixed(1)}%`}
-        title="% of target species introduced by the contamination"
+        title="Percentage of the target sample's species that are likely introduced by the contamination event (vs. native to the target). Higher = more of the target's biodiversity is explained by the source."
       >
         <input
           type="range"
