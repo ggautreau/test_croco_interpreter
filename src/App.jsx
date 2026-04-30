@@ -4058,31 +4058,6 @@ const EventFilterBar = ({
 
       {/* Thresholds */}
       <SliderChip
-        label="probability"
-        value={filter.minScore.toFixed(2)}
-        title="CroCoDeEL Random-Forest probability that the contamination event is real (0–1). Higher = more confident. Drag to hide events below the threshold."
-        cutoffBadge={
-          hasCutoff &&
-          cutoffBadge(
-            `≥ ${cutoff}`,
-            `CroCoDeEL was run with probability_cutoff = ${cutoff} — events below were never written to the file`,
-          )
-        }
-      >
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={filter.minScore}
-          onChange={(e) =>
-            setFilter({ ...filter, minScore: parseFloat(e.target.value) })
-          }
-          style={{ accentColor: "#00a3a6", width: 72 }}
-        />
-      </SliderChip>
-
-      <SliderChip
         label="rate"
         value={formatRatePct(filter.minRate)}
         cutoffBadge={
@@ -4108,6 +4083,31 @@ const EventFilterBar = ({
           }
           style={{ accentColor: "#00a3a6", width: 72 }}
           title="Log-scaled (0.01% to 100%)"
+        />
+      </SliderChip>
+
+      <SliderChip
+        label="probability"
+        value={filter.minScore.toFixed(2)}
+        title="CroCoDeEL Random-Forest probability that the contamination event is real (0–1). Higher = more confident. Drag to hide events below the threshold."
+        cutoffBadge={
+          hasCutoff &&
+          cutoffBadge(
+            `≥ ${cutoff}`,
+            `CroCoDeEL was run with probability_cutoff = ${cutoff} — events below were never written to the file`,
+          )
+        }
+      >
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={filter.minScore}
+          onChange={(e) =>
+            setFilter({ ...filter, minScore: parseFloat(e.target.value) })
+          }
+          style={{ accentColor: "#00a3a6", width: 72 }}
         />
       </SliderChip>
 
