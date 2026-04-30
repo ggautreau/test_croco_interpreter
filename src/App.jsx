@@ -12525,11 +12525,25 @@ const DatasetsTab = ({ onLoadDataset, hasCurrentData }) => {
   );
 };
 
+/** Detect the abundance profiler used to process a dataset. The manifest
+    can declare it explicitly via a `profiler` field; otherwise we infer
+    it from the id/short_title/title. Returns null when no signal is
+    available — in that case we render no tag. */
+const detectProfiler = (dataset) => {
+  if (dataset.profiler) return dataset.profiler;
+  const hay = `${dataset.id || ""} ${dataset.short_title || ""} ${dataset.title || ""}`.toLowerCase();
+  if (hay.includes("metaphlan")) return "MetaPhlAn4";
+  if (hay.includes("sylph")) return "Sylph";
+  if (hay.includes("meteor")) return "Meteor";
+  return null;
+};
+
 /** Card displaying one dataset entry from the manifest, with a Load button
     and links out to the original paper / Dataverse. */
 const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
   const hasMetadata = !!dataset.files.metadata;
   const hasPlate = !!dataset.files.plate_map;
+  const profiler = detectProfiler(dataset);
   return (
     <div
       className="p-5 rounded-sm flex flex-col"
@@ -12609,6 +12623,21 @@ const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
       </div>
 
       <div className="flex flex-wrap gap-1.5 mb-3">
+        {profiler && (
+          <span
+            className="text-[9px] tracking-[0.05em] uppercase px-2 py-0.5 rounded-sm"
+            style={{
+              background: "#f3eafd",
+              color: "#5a3a8a",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+              border: "1px solid #c8a8e6",
+            }}
+            title={`Abundance profiles produced by ${profiler}`}
+          >
+            {profiler}
+          </span>
+        )}
         <span
           className="text-[9px] tracking-[0.05em] uppercase px-2 py-0.5 rounded-sm"
           style={{
