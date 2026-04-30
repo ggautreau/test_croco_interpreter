@@ -19,6 +19,8 @@ import {
   ChevronRight,
   Search,
   SlidersHorizontal,
+  ListChecks,
+  CheckCheck,
   BookOpen,
   GraduationCap,
   Grid3x3,
@@ -1611,6 +1613,7 @@ const NetworkGraph = ({
   runMetadata,
   totalEvents,
   onPick,
+  onBulkApply,
 }) => {
   const [hover, setHover] = useState(null);
   const [zoom, setZoom] = useState({ k: 1, x: 0, y: 0 });
@@ -1856,6 +1859,7 @@ const NetworkGraph = ({
             metadata={metadata}
             plateMap={plateMap}
             runMetadata={runMetadata}
+            onBulkApply={onBulkApply}
           >
             <div className="ml-auto flex items-center gap-2.5">
               <VerdictDistribution
@@ -3840,7 +3844,7 @@ const VerdictDistribution = ({ events }) => {
   return (
     <div
       className="flex h-2 rounded-full overflow-hidden"
-      style={{ width: 96, background: "#e6e8e8" }}
+      style={{ width: 64, background: "#e6e8e8" }}
       title={tip}
     >
       {VERDICT_SEGMENTS.map((s) => {
@@ -3874,6 +3878,7 @@ const EventFilterBar = ({
   metadata,
   plateMap,
   runMetadata,
+  onBulkApply,
   children,
 }) => {
   const cutoff = parseFloat(runMetadata?.probability_cutoff);
@@ -3930,7 +3935,7 @@ const EventFilterBar = ({
     : VERDICT_OPTIONS.map((v) => v.id);
   const allVerdictsSelected = selectedVerdicts.length === VERDICT_OPTIONS.length;
   const verdictLabel = allVerdictsSelected
-    ? "all verdicts"
+    ? "verdicts"
     : selectedVerdicts.length === 0
       ? "no verdicts"
       : selectedVerdicts.length === 1
@@ -4067,8 +4072,10 @@ const EventFilterBar = ({
         <button
           type="button"
           onClick={() => setVerdictPopoverOpen((o) => !o)}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-[12px] rounded-md outline-none"
+          className="flex items-center justify-center rounded-md outline-none relative"
           style={{
+            width: 28,
+            height: 28,
             background: !allVerdictsSelected
               ? "rgba(0,163,166,0.10)"
               : FILTER_CHIP_BG,
@@ -4076,32 +4083,31 @@ const EventFilterBar = ({
               ? "1px solid #00a3a6"
               : FILTER_CHIP_BORDER,
             color: "#275662",
-            fontWeight: 500,
           }}
+          title={`Verdicts: ${verdictLabel}`}
+          aria-label={`Verdicts: ${verdictLabel}`}
         >
-          <span>{verdictLabel}</span>
+          <CheckCheck className="w-4 h-4" />
           {!allVerdictsSelected && (
             <span
-              className="text-[10px] px-1.5 rounded-full"
+              className="absolute text-[9px] rounded-full"
               style={{
+                top: -4,
+                right: -4,
                 background: "#00a3a6",
                 color: "#fff",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
-                lineHeight: "16px",
-                minWidth: 16,
+                lineHeight: "13px",
+                minWidth: 13,
+                height: 13,
+                padding: "0 3px",
                 textAlign: "center",
               }}
             >
               {selectedVerdicts.length}
             </span>
           )}
-          <ChevronDown
-            className="w-3 h-3 transition-transform"
-            style={{
-              transform: verdictPopoverOpen ? "rotate(180deg)" : "none",
-            }}
-          />
         </button>
         {verdictPopoverOpen && (
           <div
@@ -4113,6 +4119,16 @@ const EventFilterBar = ({
               minWidth: 180,
             }}
           >
+            <div
+              className="text-[10px] tracking-[0.1em] uppercase mb-1"
+              style={{
+                color: "#797870",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              Verdicts
+            </div>
             {VERDICT_OPTIONS.map((v) => (
               <label
                 key={v.id}
@@ -4168,8 +4184,10 @@ const EventFilterBar = ({
           <button
             type="button"
             onClick={() => setPopoverOpen((o) => !o)}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-[12px] rounded-md outline-none"
+            className="flex items-center justify-center rounded-md outline-none relative"
             style={{
+              width: 28,
+              height: 28,
               background:
                 activeContextCount > 0 ? "rgba(0,163,166,0.10)" : FILTER_CHIP_BG,
               border:
@@ -4177,33 +4195,35 @@ const EventFilterBar = ({
                   ? "1px solid #00a3a6"
                   : FILTER_CHIP_BORDER,
               color: "#275662",
-              fontWeight: 500,
             }}
+            title={
+              activeContextCount > 0
+                ? `Context filters (${activeContextCount} active)`
+                : "Context filters"
+            }
+            aria-label="Context filters"
           >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>filters</span>
+            <SlidersHorizontal className="w-4 h-4" />
             {activeContextCount > 0 && (
               <span
-                className="text-[10px] px-1.5 rounded-full"
+                className="absolute text-[9px] rounded-full"
                 style={{
+                  top: -4,
+                  right: -4,
                   background: "#00a3a6",
                   color: "#fff",
                   fontWeight: 700,
                   fontFamily: '"Raleway", sans-serif',
-                  lineHeight: "16px",
-                  minWidth: 16,
+                  lineHeight: "13px",
+                  minWidth: 13,
+                  height: 13,
+                  padding: "0 3px",
                   textAlign: "center",
                 }}
               >
                 {activeContextCount}
               </span>
             )}
-            <ChevronDown
-              className="w-3 h-3 transition-transform"
-              style={{
-                transform: popoverOpen ? "rotate(180deg)" : "none",
-              }}
-            />
           </button>
           {popoverOpen && (
             <div
@@ -4215,6 +4235,16 @@ const EventFilterBar = ({
                 minWidth: 220,
               }}
             >
+              <div
+                className="text-[10px] tracking-[0.1em] uppercase"
+                style={{
+                  color: "#797870",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                Context filters
+              </div>
               {showSubject && (
                 <label className="flex flex-col gap-1 text-[12px]">
                   <span style={FILTER_LABEL_STYLE}>subject</span>
@@ -4292,6 +4322,25 @@ const EventFilterBar = ({
         </div>
       )}
 
+      {onBulkApply && (
+        <button
+          type="button"
+          onClick={onBulkApply}
+          className="flex items-center justify-center rounded-md outline-none"
+          style={{
+            width: 28,
+            height: 28,
+            background: FILTER_CHIP_BG,
+            border: FILTER_CHIP_BORDER,
+            color: "#275662",
+          }}
+          title="Bulk apply a verdict to all events matching probability / rate / criteria filters"
+          aria-label="Bulk apply verdict"
+        >
+          <ListChecks className="w-4 h-4" />
+        </button>
+      )}
+
       {children}
     </div>
   );
@@ -4310,6 +4359,7 @@ const EventsTable = ({
   metadata,
   plateMap,
   runMetadata,
+  onBulkApply,
 }) => {
   const PAGE_SIZE = 500;
   const [page, setPage] = useState(1);
@@ -4349,6 +4399,7 @@ const EventsTable = ({
         metadata={metadata}
         plateMap={plateMap}
         runMetadata={runMetadata}
+        onBulkApply={onBulkApply}
       >
         <div className="ml-auto flex items-center gap-2.5">
           <VerdictDistribution events={events} />
@@ -5728,6 +5779,7 @@ const ScatterTab = ({
   setVerdict,
   onPick,
   onAddManualEvent,
+  onBulkApply,
 }) => {
   const [mode, setMode] = useState("flagged"); // "flagged" or "explore"
   const [sortBy, setSortBy] = useState("score");
@@ -5861,6 +5913,7 @@ const ScatterTab = ({
         metadata={metadata}
         plateMap={plateMap}
         runMetadata={runMetadata}
+        onBulkApply={onBulkApply}
       >
         <div className="ml-auto flex items-center gap-2.5">
           <VerdictDistribution events={sorted} />
@@ -5969,6 +6022,7 @@ const NetworkTab = ({
   plateMap,
   runMetadata,
   onPick,
+  onBulkApply,
 }) => {
   const filteredIds = useMemo(
     () => new Set(filtered.map((e) => e.id)),
@@ -5993,6 +6047,7 @@ const NetworkTab = ({
       runMetadata={runMetadata}
       totalEvents={events.length}
       onPick={onPick}
+      onBulkApply={onBulkApply}
     />
     <p
       className="text-[11px] mt-3 flex items-center gap-1.5"
@@ -7367,7 +7422,34 @@ const DualRange = ({ values, min, max, step, onChange }) => (
   />
 );
 
-const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
+const BulkApplyByCriteriaDialog = ({
+  events,
+  ab,
+  metadata,
+  onClose,
+  onApply,
+  bulkMarkSameSubjectAsFP,
+  bulkMarkTowardNCAsTP,
+}) => {
+  const pendingSameSubjectCount = useMemo(() => {
+    if (!metadata) return 0;
+    return events.filter((e) => {
+      const r = areRelated(metadata, e.source, e.target);
+      return r?.related === true && r.kind === "subject" && e.verdict === "pending";
+    }).length;
+  }, [events, metadata]);
+  const pendingTowardNCCount = useMemo(() => {
+    if (!metadata) return 0;
+    return events.filter((e) => {
+      const t = flagSample(e.target, metadata);
+      return t.isControl && e.verdict === "pending";
+    }).length;
+  }, [events, metadata]);
+  const runPreset = (fn) => {
+    if (!fn) return;
+    fn();
+    onClose();
+  };
   const [minScore, setMinScore] = useState(0);
   const [maxScore, setMaxScore] = useState(1);
   const [minRate, setMinRate] = useState(0);
@@ -7572,6 +7654,99 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
           5-criteria status fit the filters below, then apply a single
           verdict (and an optional shared note).
         </p>
+
+        {/* Quick presets — one-click bulk actions for the two most common
+            scenarios. Skipped entirely when neither preset has matching
+            pending events. */}
+        {((pendingSameSubjectCount > 0 && bulkMarkSameSubjectAsFP) ||
+          (pendingTowardNCCount > 0 && bulkMarkTowardNCAsTP)) && (
+          <div
+            style={{
+              padding: 12,
+              marginBottom: 16,
+              borderRadius: 4,
+              background: "#f6f7f7",
+              border: "1px solid #e6e8e8",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 10,
+                color: "#797870",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                marginBottom: 8,
+              }}
+            >
+              Quick presets
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {pendingSameSubjectCount > 0 && bulkMarkSameSubjectAsFP && (
+                <button
+                  type="button"
+                  onClick={() => runPreset(bulkMarkSameSubjectAsFP)}
+                  className="px-3 py-2 text-[11px] rounded-sm flex items-center gap-2"
+                  style={{
+                    background: "#fff",
+                    color: "#275662",
+                    border: "1px solid #c4c0b3",
+                    fontWeight: 600,
+                    fontFamily: '"Raleway", sans-serif',
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.borderColor = "#ed6e6c";
+                    e.currentTarget.style.color = "#ed6e6c";
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.borderColor = "#c4c0b3";
+                    e.currentTarget.style.color = "#275662";
+                  }}
+                  title="Bulk-classify same-subject (longitudinal) events as false positives, with an explanatory note"
+                >
+                  <XCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    Mark all same-subject contaminations as FP (
+                    {pendingSameSubjectCount} pending)
+                  </span>
+                </button>
+              )}
+              {pendingTowardNCCount > 0 && bulkMarkTowardNCAsTP && (
+                <button
+                  type="button"
+                  onClick={() => runPreset(bulkMarkTowardNCAsTP)}
+                  className="px-3 py-2 text-[11px] rounded-sm flex items-center gap-2"
+                  style={{
+                    background: "#fff",
+                    color: "#275662",
+                    border: "1px solid #c4c0b3",
+                    fontWeight: 600,
+                    fontFamily: '"Raleway", sans-serif',
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.borderColor = "#00a3a6";
+                    e.currentTarget.style.color = "#00a3a6";
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.borderColor = "#c4c0b3";
+                    e.currentTarget.style.color = "#275662";
+                  }}
+                  title="Bulk-classify events flowing into a negative control as true positives"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    Mark all toward NC as TP ({pendingTowardNCCount} pending)
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Score / rate sliders */}
         <div
@@ -8024,6 +8199,10 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
 /* ---------- VALIDATE TAB ---------- */
 const ValidateTab = ({
   events,
+  filteredEvents,
+  filter,
+  setFilter,
+  runMetadata,
   selected,
   onSelect,
   scatter,
@@ -8037,35 +8216,26 @@ const ValidateTab = ({
   setNote,
   metadata,
   plateMap,
-  bulkMarkSameSubjectAsFP,
-  bulkMarkTowardNCAsTP,
   bulkResetAllVerdicts,
   bulkApplyToEvents,
   onOpenPlate,
+  bulkApplyOpen,
+  onOpenBulkApply,
 }) => {
-  const sel = selected || events[0];
+  // Queue we step through with prev/next is the filtered subset; if the
+  // user navigated here from another tab and that event was excluded by
+  // the filter, fall back to the full set for the lookup so the event
+  // still renders.
+  const queue = filteredEvents && filteredEvents.length > 0 ? filteredEvents : events;
+  const sel = selected
+    ? queue.find((e) => e.id === selected.id) ||
+      events.find((e) => e.id === selected.id) ||
+      queue[0]
+    : queue[0];
   if (!sel) return null;
-  const idx = events.findIndex((e) => e.id === sel.id);
+  const idx = queue.findIndex((e) => e.id === sel.id);
   const related = areRelated(metadata, sel.source, sel.target);
   const pd = plateDistance(plateMap, sel.source, sel.target);
-
-  // Count pending same-subject events for the bulk-action button.
-  const pendingSameSubjectCount = useMemo(() => {
-    if (!metadata) return 0;
-    return events.filter((e) => {
-      const r = areRelated(metadata, e.source, e.target);
-      return r?.related === true && r.kind === "subject" && e.verdict === "pending";
-    }).length;
-  }, [events, metadata]);
-
-  // Count pending events targeting a negative control.
-  const pendingTowardNCCount = useMemo(() => {
-    if (!metadata) return 0;
-    return events.filter((e) => {
-      const t = flagSample(e.target, metadata);
-      return t.isControl && e.verdict === "pending";
-    }).length;
-  }, [events, metadata]);
 
   // Count events that have either a verdict or a note — used to decide
   // whether to show the "Reset all" button.
@@ -8080,26 +8250,26 @@ const ValidateTab = ({
   /* ---- Navigation helpers (pending-only) ---- */
   const goPrevPending = () => {
     for (let i = idx - 1; i >= 0; i--) {
-      if (events[i].verdict === "pending") {
-        onSelect(events[i].id);
+      if (queue[i].verdict === "pending") {
+        onSelect(queue[i].id);
         return;
       }
     }
   };
   const goNextPending = () => {
-    for (let i = idx + 1; i < events.length; i++) {
-      if (events[i].verdict === "pending") {
-        onSelect(events[i].id);
+    for (let i = idx + 1; i < queue.length; i++) {
+      if (queue[i].verdict === "pending") {
+        onSelect(queue[i].id);
         return;
       }
     }
   };
   /* ---- Navigation helpers (any verdict) ---- */
   const goPrev = () => {
-    if (idx > 0) onSelect(events[idx - 1].id);
+    if (idx > 0) onSelect(queue[idx - 1].id);
   };
   const goNext = () => {
-    if (idx >= 0 && idx < events.length - 1) onSelect(events[idx + 1].id);
+    if (idx >= 0 && idx < queue.length - 1) onSelect(queue[idx + 1].id);
   };
   const hasPrevPending = useMemo(() => {
     for (let i = idx - 1; i >= 0; i--) {
@@ -8120,11 +8290,10 @@ const ValidateTab = ({
   // normally). We attach the listener to window and check the focused
   // element on each keypress.
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
-  const [bulkOpen, setBulkOpen] = useState(false);
   useEffect(() => {
     const handler = (e) => {
       // Don't compete with the bulk-apply dialog's own input handling.
-      if (bulkOpen) return;
+      if (bulkApplyOpen) return;
       const tag = (e.target?.tagName || "").toLowerCase();
       const editable = e.target?.isContentEditable;
       if (tag === "input" || tag === "textarea" || editable) return;
@@ -8179,10 +8348,30 @@ const ValidateTab = ({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [sel.id, idx, events, bulkOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sel.id, idx, events, bulkApplyOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="grid lg:grid-cols-[260px_1fr] gap-8">
+    <div>
+      {filter && setFilter && (
+        <EventFilterBar
+          filter={filter}
+          setFilter={setFilter}
+          metadata={metadata}
+          plateMap={plateMap}
+          runMetadata={runMetadata}
+          onBulkApply={
+            bulkApplyToEvents && onOpenBulkApply ? onOpenBulkApply : undefined
+          }
+        >
+          <div className="ml-auto flex items-center gap-2.5">
+            <VerdictDistribution events={queue} />
+            <span className="text-[12px]" style={{ color: "#797870" }}>
+              {queue.length} / {events.length}
+            </span>
+          </div>
+        </EventFilterBar>
+      )}
+      <div className="grid lg:grid-cols-[260px_1fr] gap-8">
       <aside>
         <div
           className="text-[10px] tracking-[0.15em] uppercase mb-3 flex items-center justify-between"
@@ -8194,66 +8383,10 @@ const ValidateTab = ({
         >
           <span>Event queue</span>
           <span className="tabular" style={{ color: "#275662" }}>
-            {idx + 1}/{events.length}
+            {idx + 1}/{queue.length}
           </span>
         </div>
         <div data-tutorial="bulk-actions">
-        {pendingSameSubjectCount > 0 && bulkMarkSameSubjectAsFP && (
-          <button
-            onClick={bulkMarkSameSubjectAsFP}
-            className="w-full mb-2 px-3 py-2 text-[11px] rounded-sm flex items-center justify-center gap-1.5 text-left"
-            style={{
-              background: "#fff",
-              color: "#275662",
-              border: "1px solid #c4c0b3",
-              fontWeight: 600,
-              fontFamily: '"Raleway", sans-serif',
-              cursor: "pointer",
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.borderColor = "#00a3a6";
-              e.currentTarget.style.color = "#00a3a6";
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.borderColor = "#c4c0b3";
-              e.currentTarget.style.color = "#275662";
-            }}
-            title="Bulk-classify same-subject (longitudinal) events as false positives, with an explanatory note"
-          >
-            <XCircle className="w-3.5 h-3.5 shrink-0" />
-            <span>
-              Mark all same-subject contaminations as FP ({pendingSameSubjectCount} identified)
-            </span>
-          </button>
-        )}
-        {pendingTowardNCCount > 0 && bulkMarkTowardNCAsTP && (
-          <button
-            onClick={bulkMarkTowardNCAsTP}
-            className="w-full mb-2 px-3 py-2 text-[11px] rounded-sm flex items-center justify-center gap-1.5 text-left"
-            style={{
-              background: "#fff",
-              color: "#275662",
-              border: "1px solid #c4c0b3",
-              fontWeight: 600,
-              fontFamily: '"Raleway", sans-serif',
-              cursor: "pointer",
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.borderColor = "#00a3a6";
-              e.currentTarget.style.color = "#00a3a6";
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.borderColor = "#c4c0b3";
-              e.currentTarget.style.color = "#275662";
-            }}
-            title="Bulk-classify events flowing into a negative control as true positives"
-          >
-            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-            <span>
-              Mark all toward NC as TP ({pendingTowardNCCount} identified)
-            </span>
-          </button>
-        )}
         {decidedCount > 0 && bulkResetAllVerdicts && (
           <button
             onClick={bulkResetAllVerdicts}
@@ -8280,33 +8413,8 @@ const ValidateTab = ({
             <span>Reset all verdicts ({decidedCount})</span>
           </button>
         )}
-        {bulkApplyToEvents && (
-          <button
-            onClick={() => setBulkOpen(true)}
-            className="w-full mb-3 px-3 py-2 text-[11px] rounded-sm flex items-center justify-center gap-1.5 text-left"
-            style={{
-              background: "#fff",
-              color: "#275662",
-              border: "1px solid #275662",
-              fontWeight: 700,
-              fontFamily: '"Raleway", sans-serif',
-              cursor: "pointer",
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.borderColor = "#00a3a6";
-              e.currentTarget.style.color = "#00a3a6";
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.borderColor = "#275662";
-              e.currentTarget.style.color = "#275662";
-            }}
-            title="Open a dialog to bulk-apply a verdict to every event matching probability/rate/criteria filters"
-          >
-            <span>Bulk apply by criteria…</span>
-          </button>
-        )}
         </div>
-        <EventQueue events={events} currentId={sel.id} onSelect={onSelect} />
+        <EventQueue events={queue} currentId={sel.id} onSelect={onSelect} />
       </aside>
 
       <div>
@@ -8983,14 +9091,7 @@ const ValidateTab = ({
           </div>
         </div>
       </div>
-      {bulkOpen && bulkApplyToEvents && (
-        <BulkApplyByCriteriaDialog
-          events={events}
-          ab={ab}
-          onClose={() => setBulkOpen(false)}
-          onApply={bulkApplyToEvents}
-        />
-      )}
+      </div>
     </div>
   );
 };
@@ -13304,6 +13405,7 @@ export default function App() {
     initial?.selId !== undefined ? initial.selId : null,
   );
   const [focusPlate, setFocusPlate] = useState(null);
+  const [bulkApplyOpen, setBulkApplyOpen] = useState(false);
   const [filter, setFilter] = useState(() => {
     // Migrate legacy boolean fields (hideRelated / adjacentOnly) to the
     // tri-state strings while preserving the user's last selection.
@@ -15276,6 +15378,9 @@ export default function App() {
                 setTab(ab ? "validate" : "scatter");
               }}
               setVerdict={setVerdict}
+              onBulkApply={
+                bulkApplyToEvents ? () => setBulkApplyOpen(true) : undefined
+              }
             />
           )}
           {tab === "scatter" && (
@@ -15294,6 +15399,9 @@ export default function App() {
                 setTab("validate");
               }}
               onAddManualEvent={addManualEvent}
+              onBulkApply={
+                bulkApplyToEvents ? () => setBulkApplyOpen(true) : undefined
+              }
             />
           )}
           {tab === "network" && (
@@ -15309,6 +15417,9 @@ export default function App() {
                 setSelId(id);
                 setTab("validate");
               }}
+              onBulkApply={
+                bulkApplyToEvents ? () => setBulkApplyOpen(true) : undefined
+              }
             />
           )}
           {tab === "plate" && (
@@ -15328,6 +15439,10 @@ export default function App() {
           {tab === "validate" && (
             <ValidateTab
               events={events}
+              filteredEvents={filtered}
+              filter={filter}
+              setFilter={setFilter}
+              runMetadata={runMetadata}
               selected={selected}
               onSelect={setSelId}
               scatter={scatter}
@@ -15341,14 +15456,14 @@ export default function App() {
               setNote={setNote}
               metadata={metadata}
               plateMap={plateMap}
-              bulkMarkSameSubjectAsFP={bulkMarkSameSubjectAsFP}
-              bulkMarkTowardNCAsTP={bulkMarkTowardNCAsTP}
               bulkResetAllVerdicts={bulkResetAllVerdicts}
               bulkApplyToEvents={bulkApplyToEvents}
               onOpenPlate={(plateId) => {
                 setFocusPlate(plateId || null);
                 setTab("plate");
               }}
+              bulkApplyOpen={bulkApplyOpen}
+              onOpenBulkApply={() => setBulkApplyOpen(true)}
             />
           )}
           {tab === "export" && (
@@ -15567,6 +15682,17 @@ export default function App() {
           </div>
         </div>
       </footer>
+      {bulkApplyOpen && bulkApplyToEvents && (
+        <BulkApplyByCriteriaDialog
+          events={events}
+          ab={ab}
+          metadata={metadata}
+          onClose={() => setBulkApplyOpen(false)}
+          onApply={bulkApplyToEvents}
+          bulkMarkSameSubjectAsFP={bulkMarkSameSubjectAsFP}
+          bulkMarkTowardNCAsTP={bulkMarkTowardNCAsTP}
+        />
+      )}
     </div>
   );
 }
