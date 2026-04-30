@@ -3903,6 +3903,47 @@ const EventFilterBar = ({
     return () => document.removeEventListener("mousedown", handle);
   }, [popoverOpen]);
 
+  const [verdictPopoverOpen, setVerdictPopoverOpen] = useState(false);
+  const verdictPopoverRef = useRef(null);
+  useEffect(() => {
+    if (!verdictPopoverOpen) return;
+    const handle = (e) => {
+      if (
+        verdictPopoverRef.current &&
+        !verdictPopoverRef.current.contains(e.target)
+      ) {
+        setVerdictPopoverOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [verdictPopoverOpen]);
+
+  const VERDICT_OPTIONS = [
+    { id: "pending", label: "pending" },
+    { id: "true_positive", label: "true positive" },
+    { id: "false_positive", label: "false positive" },
+    { id: "uncertain", label: "uncertain" },
+  ];
+  const selectedVerdicts = Array.isArray(filter.verdicts)
+    ? filter.verdicts
+    : VERDICT_OPTIONS.map((v) => v.id);
+  const allVerdictsSelected = selectedVerdicts.length === VERDICT_OPTIONS.length;
+  const verdictLabel = allVerdictsSelected
+    ? "all verdicts"
+    : selectedVerdicts.length === 0
+      ? "no verdicts"
+      : selectedVerdicts.length === 1
+        ? VERDICT_OPTIONS.find((v) => v.id === selectedVerdicts[0])?.label ||
+          "verdicts"
+        : `${selectedVerdicts.length} verdicts`;
+  const toggleVerdict = (id) => {
+    const next = selectedVerdicts.includes(id)
+      ? selectedVerdicts.filter((v) => v !== id)
+      : [...selectedVerdicts, id];
+    setFilter({ ...filter, verdicts: next });
+  };
+
   const cutoffBadge = (text, tip) => (
     <span
       className="text-[10px] px-1.5 py-0.5 rounded-sm"
@@ -4022,18 +4063,105 @@ const EventFilterBar = ({
       <FilterDivider />
 
       {/* Verdict + context popover */}
-      <select
-        value={filter.verdict}
-        onChange={(e) => setFilter({ ...filter, verdict: e.target.value })}
-        className="px-2 py-1 text-[12px] rounded-md outline-none"
-        style={selectStyle}
-      >
-        <option value="all">all verdicts</option>
-        <option value="pending">pending</option>
-        <option value="true_positive">true positive</option>
-        <option value="false_positive">false positive</option>
-        <option value="uncertain">uncertain</option>
-      </select>
+      <div className="relative" ref={verdictPopoverRef}>
+        <button
+          type="button"
+          onClick={() => setVerdictPopoverOpen((o) => !o)}
+          className="flex items-center gap-1.5 px-2.5 py-1 text-[12px] rounded-md outline-none"
+          style={{
+            background: !allVerdictsSelected
+              ? "rgba(0,163,166,0.10)"
+              : FILTER_CHIP_BG,
+            border: !allVerdictsSelected
+              ? "1px solid #00a3a6"
+              : FILTER_CHIP_BORDER,
+            color: "#275662",
+            fontWeight: 500,
+          }}
+        >
+          <span>{verdictLabel}</span>
+          {!allVerdictsSelected && (
+            <span
+              className="text-[10px] px-1.5 rounded-full"
+              style={{
+                background: "#00a3a6",
+                color: "#fff",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+                lineHeight: "16px",
+                minWidth: 16,
+                textAlign: "center",
+              }}
+            >
+              {selectedVerdicts.length}
+            </span>
+          )}
+          <ChevronDown
+            className="w-3 h-3 transition-transform"
+            style={{
+              transform: verdictPopoverOpen ? "rotate(180deg)" : "none",
+            }}
+          />
+        </button>
+        {verdictPopoverOpen && (
+          <div
+            className="absolute right-0 top-full mt-1.5 z-20 p-3 rounded-md flex flex-col gap-2"
+            style={{
+              background: "#fff",
+              border: "1px solid #c4c0b3",
+              boxShadow: "0 8px 24px rgba(39,86,98,0.12)",
+              minWidth: 180,
+            }}
+          >
+            {VERDICT_OPTIONS.map((v) => (
+              <label
+                key={v.id}
+                className="flex items-center gap-2 text-[12px] cursor-pointer"
+                style={{ color: "#275662", userSelect: "none" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedVerdicts.includes(v.id)}
+                  onChange={() => toggleVerdict(v.id)}
+                  style={{ accentColor: "#00a3a6" }}
+                />
+                {v.label}
+              </label>
+            ))}
+            <div className="flex items-center gap-3 mt-1">
+              <button
+                type="button"
+                onClick={() =>
+                  setFilter({
+                    ...filter,
+                    verdicts: VERDICT_OPTIONS.map((v) => v.id),
+                  })
+                }
+                className="text-[11px]"
+                style={{
+                  color: "#00a3a6",
+                  fontWeight: 600,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                all
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilter({ ...filter, verdicts: [] })}
+                className="text-[11px]"
+                style={{
+                  color: "#797870",
+                  fontWeight: 600,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                none
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {hasContextFilters && (
         <div className="relative" ref={popoverRef}>
@@ -4190,7 +4318,7 @@ const EventsTable = ({
   // jump the user back to page 1 each time they curate.
   useEffect(() => {
     setPage(1);
-  }, [filter.q, filter.minScore, filter.minRate, filter.minIntroduced, filter.verdict, filter.subject, filter.group, filter.adjacent, sort.by, sort.dir, total]);
+  }, [filter.q, filter.minScore, filter.minRate, filter.minIntroduced, filter.verdicts, filter.subject, filter.group, filter.adjacent, sort.by, sort.dir, total]);
   const totalPages = Math.max(1, Math.ceil(events.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
   const startIdx = (safePage - 1) * PAGE_SIZE;
@@ -4257,8 +4385,8 @@ const EventsTable = ({
               <Th onClick={() => toggleSort("introducedPct")} right>
                 Introduced <SortIcon col="introducedPct" />
               </Th>
-              {hasContext && <Th>Context</Th>}
               <Th right>Species</Th>
+              {hasContext && <Th>Context</Th>}
               <Th>Verdict</Th>
               <Th>Action</Th>
             </tr>
@@ -4314,6 +4442,12 @@ const EventsTable = ({
                   <td className="px-3 py-2.5 tabular text-right">
                     <IntroducedBar v={e.introducedPct} />
                   </td>
+                  <td
+                    className="px-3 py-2.5 text-right tabular"
+                    style={{ color: "#797870" }}
+                  >
+                    {e.introduced.length}
+                  </td>
                   {hasContext && (
                     <td className="px-3 py-2.5">
                       <div className="flex gap-1 flex-wrap">
@@ -4335,12 +4469,6 @@ const EventsTable = ({
                       </div>
                     </td>
                   )}
-                  <td
-                    className="px-3 py-2.5 text-right tabular"
-                    style={{ color: "#797870" }}
-                  >
-                    {e.introduced.length}
-                  </td>
                   <td className="px-3 py-2.5">
                     <VerdictBadge v={e.verdict} />
                   </td>
@@ -7320,7 +7448,7 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns: "1fr 1fr 1fr",
             gap: 14,
             marginBottom: 16,
           }}
@@ -7472,90 +7600,87 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Introduced %  filter */}
-        <div style={{ marginBottom: 16 }}>
-          <div
-            style={{
-              fontSize: 11,
-              color: "#797870",
-              fontWeight: 700,
-              fontFamily: '"Raleway", sans-serif',
-              marginBottom: 4,
-              letterSpacing: "0.05em",
-              textTransform: "uppercase",
-            }}
-          >
-            Introduced % ({minIntroduced.toFixed(1)} – {maxIntroduced.toFixed(1)})
+          <div>
+            <div
+              style={{
+                fontSize: 11,
+                color: "#797870",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+                marginBottom: 4,
+                letterSpacing: "0.05em",
+                textTransform: "uppercase",
+              }}
+            >
+              Introduced % ({minIntroduced.toFixed(1)} – {maxIntroduced.toFixed(1)})
+            </div>
             {!ab && (
-              <span
+              <div
                 style={{
-                  marginLeft: 8,
-                  textTransform: "none",
-                  letterSpacing: 0,
-                  fontWeight: 500,
+                  fontSize: 10,
                   color: "#ed6e6c",
+                  fontWeight: 500,
+                  marginBottom: 4,
                 }}
               >
                 load abundance to enable
-              </span>
+              </div>
             )}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={0.1}
-              value={minIntroducedDraft}
-              onChange={(e) => setMinIntroducedDraft(e.target.value)}
-              onBlur={commitMinIntroduced}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") e.currentTarget.blur();
-              }}
-              disabled={!ab}
-              style={{
-                width: 80,
-                padding: "4px 6px",
-                fontSize: 12,
-                border: "1px solid #c4c0b3",
-                borderRadius: 2,
-              }}
-            />
-            <span style={{ fontSize: 11, color: "#797870" }}>to</span>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step={0.1}
-              value={maxIntroducedDraft}
-              onChange={(e) => setMaxIntroducedDraft(e.target.value)}
-              onBlur={commitMaxIntroduced}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") e.currentTarget.blur();
-              }}
-              disabled={!ab}
-              style={{
-                width: 80,
-                padding: "4px 6px",
-                fontSize: 12,
-                border: "1px solid #c4c0b3",
-                borderRadius: 2,
-              }}
-            />
-          </div>
-          <div style={{ marginTop: 12, padding: "0 8px" }}>
-            <DualRange
-              min={0}
-              max={100}
-              step={0.5}
-              values={[minIntroduced, maxIntroduced]}
-              onChange={([lo, hi]) => {
-                setMinIntroduced(lo);
-                setMaxIntroduced(hi);
-              }}
-            />
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.1}
+                value={minIntroducedDraft}
+                onChange={(e) => setMinIntroducedDraft(e.target.value)}
+                onBlur={commitMinIntroduced}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+                disabled={!ab}
+                style={{
+                  width: 80,
+                  padding: "4px 6px",
+                  fontSize: 12,
+                  border: "1px solid #c4c0b3",
+                  borderRadius: 2,
+                }}
+              />
+              <span style={{ fontSize: 11, color: "#797870" }}>to</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.1}
+                value={maxIntroducedDraft}
+                onChange={(e) => setMaxIntroducedDraft(e.target.value)}
+                onBlur={commitMaxIntroduced}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+                disabled={!ab}
+                style={{
+                  width: 80,
+                  padding: "4px 6px",
+                  fontSize: 12,
+                  border: "1px solid #c4c0b3",
+                  borderRadius: 2,
+                }}
+              />
+            </div>
+            <div style={{ marginTop: 12, padding: "0 8px" }}>
+              <DualRange
+                min={0}
+                max={100}
+                step={0.5}
+                values={[minIntroduced, maxIntroduced]}
+                onChange={([lo, hi]) => {
+                  setMinIntroduced(lo);
+                  setMaxIntroduced(hi);
+                }}
+              />
+            </div>
           </div>
         </div>
 
@@ -13053,13 +13178,20 @@ export default function App() {
   const [filter, setFilter] = useState(() => {
     // Migrate legacy boolean fields (hideRelated / adjacentOnly) to the
     // tri-state strings while preserving the user's last selection.
+    // Verdict went from a single string ("all" | "pending" | ...) to a
+    // multi-select array; promote the old shape if found.
     const f = initial?.filter || {};
+    const ALL_VERDICTS = ["pending", "true_positive", "false_positive", "uncertain"];
+    let verdicts;
+    if (Array.isArray(f.verdicts)) verdicts = f.verdicts;
+    else if (f.verdict && f.verdict !== "all") verdicts = [f.verdict];
+    else verdicts = ALL_VERDICTS;
     return {
       q: f.q ?? "",
       minScore: f.minScore ?? 0,
       minRate: f.minRate ?? 0,
       minIntroduced: f.minIntroduced ?? 0,
-      verdict: f.verdict ?? "all",
+      verdicts,
       subject: f.subject ?? (f.hideRelated ? "different" : "any"),
       group: f.group ?? "any",
       adjacent: f.adjacent ?? (f.adjacentOnly ? "adjacent" : "any"),
@@ -13422,7 +13554,9 @@ export default function App() {
         if (e.introducedPct == null) return false;
         if (e.introducedPct < minIntro) return false;
       }
-      if (filter.verdict !== "all" && e.verdict !== filter.verdict) return false;
+      if (filter.verdicts && filter.verdicts.length < 4) {
+        if (!filter.verdicts.includes(e.verdict || "pending")) return false;
+      }
       // Subject filter — events are "same subject" only when both samples
       // are annotated and share a subject_id (areRelated.kind === "subject").
       // Events with missing/unknown subjects are treated as "different" so
