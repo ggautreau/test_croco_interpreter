@@ -3884,6 +3884,203 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
   );
 };
 
+/* ---------- shared filter bar (Events tab + Scatter gallery) ---------- */
+const EventFilterBar = ({
+  filter,
+  setFilter,
+  metadata,
+  plateMap,
+  runMetadata,
+  children,
+}) => {
+  const cutoff = parseFloat(runMetadata?.probability_cutoff);
+  const hasCutoff = Number.isFinite(cutoff) && cutoff > 0;
+  const rc = parseFloat(runMetadata?.rate_cutoff);
+  const hasRateCutoff = Number.isFinite(rc) && rc > 0;
+  return (
+    <div className="flex flex-wrap gap-3 mb-4 items-center">
+      <div className="relative">
+        <Search
+          className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
+          style={{ color: "#797870" }}
+        />
+        <input
+          value={filter.q}
+          onChange={(e) => setFilter({ ...filter, q: e.target.value })}
+          placeholder="sample…"
+          className="pl-7 pr-3 py-1.5 text-[12px] rounded-sm w-64 outline-none"
+          style={{ border: "1px solid #c4c0b3" }}
+        />
+      </div>
+      <div className="flex items-center gap-2 text-[12px]">
+        <span style={{ color: "#797870" }}>min probability</span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={filter.minScore}
+          onChange={(e) =>
+            setFilter({ ...filter, minScore: parseFloat(e.target.value) })
+          }
+          style={{ accentColor: "#00a3a6" }}
+        />
+        <span
+          className="tabular w-10"
+          style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
+        >
+          {filter.minScore.toFixed(2)}
+        </span>
+        {hasCutoff && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded-sm"
+            title={`CroCoDeEL was run with probability_cutoff = ${cutoff} — events below were never written to the file`}
+            style={{
+              background: "rgba(0,163,166,0.12)",
+              color: "#275662",
+              fontWeight: 600,
+              fontFamily: '"Raleway", sans-serif',
+              whiteSpace: "nowrap",
+            }}
+          >
+            probability_cutoff: {cutoff}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-[12px]">
+        <span style={{ color: "#797870" }}>min rate</span>
+        <input
+          type="range"
+          min={RATE_LOG_MIN}
+          max={RATE_LOG_MAX}
+          step={0.05}
+          value={rateToSlider(filter.minRate)}
+          onChange={(e) =>
+            setFilter({
+              ...filter,
+              minRate: sliderToRate(parseFloat(e.target.value)),
+            })
+          }
+          style={{ accentColor: "#00a3a6" }}
+          title="Log-scaled (0.01% to 100%)"
+        />
+        <span
+          className="tabular w-14"
+          style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
+        >
+          {formatRatePct(filter.minRate)}
+        </span>
+        {hasRateCutoff && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded-sm"
+            title={`CroCoDeEL was run with rate_cutoff = ${rc} — events below were never written to the file`}
+            style={{
+              background: "rgba(0,163,166,0.12)",
+              color: "#275662",
+              fontWeight: 600,
+              fontFamily: '"Raleway", sans-serif',
+              whiteSpace: "nowrap",
+            }}
+          >
+            rate_cutoff: {rc}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-[12px]">
+        <span style={{ color: "#797870" }}>min introduced</span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={0.5}
+          value={filter.minIntroduced || 0}
+          onChange={(e) =>
+            setFilter({
+              ...filter,
+              minIntroduced: parseFloat(e.target.value),
+            })
+          }
+          style={{ accentColor: "#00a3a6" }}
+          title="% of target species introduced by the contamination"
+        />
+        <span
+          className="tabular w-14"
+          style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
+        >
+          {(filter.minIntroduced || 0).toFixed(1)}%
+        </span>
+      </div>
+      <select
+        value={filter.verdict}
+        onChange={(e) => setFilter({ ...filter, verdict: e.target.value })}
+        className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
+        style={{ border: "1px solid #c4c0b3" }}
+      >
+        <option value="all">all verdicts</option>
+        <option value="pending">pending</option>
+        <option value="true_positive">true positive</option>
+        <option value="false_positive">false positive</option>
+        <option value="uncertain">uncertain</option>
+      </select>
+      {metadata && (
+        <div
+          className="flex items-center gap-1.5 text-[12px]"
+          style={{ color: "#275662" }}
+        >
+          <span style={{ color: "#797870" }}>subject</span>
+          <select
+            value={filter.subject || "any"}
+            onChange={(e) => setFilter({ ...filter, subject: e.target.value })}
+            className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
+            style={{ border: "1px solid #c4c0b3" }}
+          >
+            <option value="any">any</option>
+            <option value="same">same subject</option>
+            <option value="different">different subject</option>
+          </select>
+        </div>
+      )}
+      {metadata?.hasGroupIdCol && (
+        <div
+          className="flex items-center gap-1.5 text-[12px]"
+          style={{ color: "#275662" }}
+        >
+          <span style={{ color: "#797870" }}>group</span>
+          <select
+            value={filter.group || "any"}
+            onChange={(e) => setFilter({ ...filter, group: e.target.value })}
+            className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
+            style={{ border: "1px solid #c4c0b3" }}
+          >
+            <option value="any">any</option>
+            <option value="same">same group</option>
+            <option value="different">different group</option>
+          </select>
+        </div>
+      )}
+      {plateMap && (
+        <div
+          className="flex items-center gap-1.5 text-[12px]"
+          style={{ color: "#275662" }}
+        >
+          <span style={{ color: "#797870" }}>wells</span>
+          <select
+            value={filter.adjacent || "any"}
+            onChange={(e) => setFilter({ ...filter, adjacent: e.target.value })}
+            className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
+            style={{ border: "1px solid #c4c0b3" }}
+          >
+            <option value="any">any</option>
+            <option value="adjacent">adjacent only</option>
+            <option value="non-adjacent">non-adjacent only</option>
+          </select>
+        </div>
+      )}
+      {children}
+    </div>
+  );
+};
+
 /* ---------- EVENTS TABLE ---------- */
 const EventsTable = ({
   events,
@@ -3898,9 +4095,6 @@ const EventsTable = ({
   plateMap,
   runMetadata,
 }) => {
-  const cutoff = parseFloat(runMetadata?.probability_cutoff);
-  const hasCutoff = Number.isFinite(cutoff) && cutoff > 0;
-
   const PAGE_SIZE = 500;
   const [page, setPage] = useState(1);
   // Reset to page 1 when filter or sort changes. Don't include `events` —
@@ -3933,179 +4127,13 @@ const EventsTable = ({
         Filter, sort, and click a row to open the event in the validation workflow.
       </SectionTitle>
 
-      <div className="flex flex-wrap gap-3 mb-4 items-center">
-        <div className="relative">
-          <Search
-            className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
-            style={{ color: "#797870" }}
-          />
-          <input
-            value={filter.q}
-            onChange={(e) => setFilter({ ...filter, q: e.target.value })}
-            placeholder="sample…"
-            className="pl-7 pr-3 py-1.5 text-[12px] rounded-sm w-64 outline-none"
-            style={{ border: "1px solid #c4c0b3" }}
-          />
-        </div>
-        <div className="flex items-center gap-2 text-[12px]">
-          <span style={{ color: "#797870" }}>min probability</span>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={filter.minScore}
-            onChange={(e) =>
-              setFilter({ ...filter, minScore: parseFloat(e.target.value) })
-            }
-            style={{ accentColor: "#00a3a6" }}
-          />
-          <span
-            className="tabular w-10"
-            style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
-          >
-            {filter.minScore.toFixed(2)}
-          </span>
-          {hasCutoff && (
-            <span
-              className="text-[10px] px-1.5 py-0.5 rounded-sm"
-              title={`CroCoDeEL was run with probability_cutoff = ${cutoff} — events below were never written to the file`}
-              style={{
-                background: "rgba(0,163,166,0.12)",
-                color: "#275662",
-                fontWeight: 600,
-                fontFamily: '"Raleway", sans-serif',
-                whiteSpace: "nowrap",
-              }}
-            >
-              probability_cutoff: {cutoff}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 text-[12px]">
-          <span style={{ color: "#797870" }}>min rate</span>
-          <input
-            type="range"
-            min={RATE_LOG_MIN}
-            max={RATE_LOG_MAX}
-            step={0.05}
-            value={rateToSlider(filter.minRate)}
-            onChange={(e) =>
-              setFilter({
-                ...filter,
-                minRate: sliderToRate(parseFloat(e.target.value)),
-              })
-            }
-            style={{ accentColor: "#00a3a6" }}
-            title="Log-scaled (0.01% to 100%)"
-          />
-          <span
-            className="tabular w-14"
-            style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
-          >
-            {formatRatePct(filter.minRate)}
-          </span>
-          {(() => {
-            const rc = parseFloat(runMetadata?.rate_cutoff);
-            if (!Number.isFinite(rc) || rc <= 0) return null;
-            return (
-              <span
-                className="text-[10px] px-1.5 py-0.5 rounded-sm"
-                title={`CroCoDeEL was run with rate_cutoff = ${rc} — events below were never written to the file`}
-                style={{
-                  background: "rgba(0,163,166,0.12)",
-                  color: "#275662",
-                  fontWeight: 600,
-                  fontFamily: '"Raleway", sans-serif',
-                  whiteSpace: "nowrap",
-                }}
-              >
-                rate_cutoff: {rc}
-              </span>
-            );
-          })()}
-        </div>
-        <div className="flex items-center gap-2 text-[12px]">
-          <span style={{ color: "#797870" }}>min introduced</span>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={0.5}
-            value={filter.minIntroduced || 0}
-            onChange={(e) =>
-              setFilter({
-                ...filter,
-                minIntroduced: parseFloat(e.target.value),
-              })
-            }
-            style={{ accentColor: "#00a3a6" }}
-            title="% of target species introduced by the contamination"
-          />
-          <span
-            className="tabular w-14"
-            style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
-          >
-            {(filter.minIntroduced || 0).toFixed(1)}%
-          </span>
-        </div>
-        <select
-          value={filter.verdict}
-          onChange={(e) => setFilter({ ...filter, verdict: e.target.value })}
-          className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
-          style={{ border: "1px solid #c4c0b3" }}
-        >
-          <option value="all">all verdicts</option>
-          <option value="pending">pending</option>
-          <option value="true_positive">true positive</option>
-          <option value="false_positive">false positive</option>
-          <option value="uncertain">uncertain</option>
-        </select>
-        {metadata && (
-          <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "#275662" }}>
-            <span style={{ color: "#797870" }}>subject</span>
-            <select
-              value={filter.subject || "any"}
-              onChange={(e) => setFilter({ ...filter, subject: e.target.value })}
-              className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
-              style={{ border: "1px solid #c4c0b3" }}
-            >
-              <option value="any">any</option>
-              <option value="same">same subject</option>
-              <option value="different">different subject</option>
-            </select>
-          </div>
-        )}
-        {metadata?.hasGroupIdCol && (
-          <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "#275662" }}>
-            <span style={{ color: "#797870" }}>group</span>
-            <select
-              value={filter.group || "any"}
-              onChange={(e) => setFilter({ ...filter, group: e.target.value })}
-              className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
-              style={{ border: "1px solid #c4c0b3" }}
-            >
-              <option value="any">any</option>
-              <option value="same">same group</option>
-              <option value="different">different group</option>
-            </select>
-          </div>
-        )}
-        {plateMap && (
-          <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "#275662" }}>
-            <span style={{ color: "#797870" }}>wells</span>
-            <select
-              value={filter.adjacent || "any"}
-              onChange={(e) => setFilter({ ...filter, adjacent: e.target.value })}
-              className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
-              style={{ border: "1px solid #c4c0b3" }}
-            >
-              <option value="any">any</option>
-              <option value="adjacent">adjacent only</option>
-              <option value="non-adjacent">non-adjacent only</option>
-            </select>
-          </div>
-        )}
+      <EventFilterBar
+        filter={filter}
+        setFilter={setFilter}
+        metadata={metadata}
+        plateMap={plateMap}
+        runMetadata={runMetadata}
+      >
         <span className="text-[12px] ml-auto" style={{ color: "#797870" }}>
           {events.length === 0
             ? `0 / ${total}`
@@ -4113,7 +4141,7 @@ const EventsTable = ({
               ? `${startIdx + 1}–${startIdx + visible.length} of ${events.length} (filtered) / ${total} total`
               : `${events.length} / ${total}`}
         </span>
-      </div>
+      </EventFilterBar>
 
       <div
         className="rounded-sm overflow-x-auto"
@@ -5351,7 +5379,18 @@ const Pagination = ({ page, totalPages, onChange }) => {
   );
 };
 
-const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }) => {
+const ScatterTab = ({
+  events,
+  filtered,
+  filter,
+  setFilter,
+  ab,
+  metadata,
+  plateMap,
+  runMetadata,
+  onPick,
+  onAddManualEvent,
+}) => {
   const [mode, setMode] = useState("flagged"); // "flagged" or "explore"
   const [sortBy, setSortBy] = useState("score");
   // Direction per sort key — defaults match what most users expect
@@ -5368,13 +5407,9 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
   };
   const PAGE_SIZE = 100;
   const [page, setPage] = useState(1);
-  // Numeric thresholds — all default to 0 (show everything).
-  const [minScore, setMinScore] = useState(0);
-  const [minRate, setMinRate] = useState(0);
-  const [minIntroduced, setMinIntroduced] = useState(0);
   useEffect(() => {
     setPage(1);
-  }, [sortBy, sortDir, events, minScore, minRate, minIntroduced]);
+  }, [sortBy, sortDir, filtered]);
 
   // Set of existing pairs (source\u0000target) to prevent duplicates when
   // adding manual events. Built once per events change.
@@ -5403,15 +5438,7 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
   }
 
   const sorted = useMemo(() => {
-    const copy = events.filter((e) => {
-      if ((e.score ?? 0) < minScore) return false;
-      if ((e.rate ?? 0) < minRate) return false;
-      if (minIntroduced > 0) {
-        if (e.introducedPct == null) return false;
-        if (e.introducedPct < minIntroduced) return false;
-      }
-      return true;
-    });
+    const copy = filtered.slice();
     const flip = sortDir === "asc" ? -1 : 1;
     if (sortBy === "score") copy.sort((a, b) => (b.score - a.score) * flip);
     else if (sortBy === "rate") copy.sort((a, b) => (b.rate - a.rate) * flip);
@@ -5427,7 +5454,7 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
       copy.sort((a, b) => a.source.localeCompare(b.source) * flip);
     }
     return copy;
-  }, [events, sortBy, sortDir, minScore, minRate, minIntroduced]);
+  }, [filtered, sortBy, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
@@ -5482,99 +5509,17 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
         />
       ) : (
         <>
-      {/* Numeric thresholds — same UI/semantics as the Network tab */}
-      <div className="flex items-center gap-4 mb-4 flex-wrap text-[12px]">
-        <div className="flex items-center gap-2">
-          <span style={{ color: "#797870" }}>min probability</span>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={minScore}
-            onChange={(e) => setMinScore(parseFloat(e.target.value))}
-            style={{ accentColor: "#00a3a6" }}
-          />
-          <span
-            className="tabular w-10 text-[11px]"
-            style={{
-              color: "#275662",
-              fontWeight: 600,
-              fontFamily: '"Raleway", sans-serif',
-            }}
-          >
-            {minScore.toFixed(2)}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span style={{ color: "#797870" }}>min rate</span>
-          <input
-            type="range"
-            min={RATE_LOG_MIN}
-            max={RATE_LOG_MAX}
-            step={0.05}
-            value={rateToSlider(minRate)}
-            onChange={(e) =>
-              setMinRate(sliderToRate(parseFloat(e.target.value)))
-            }
-            style={{ accentColor: "#00a3a6" }}
-            title="Log-scaled (0.01% to 100%)"
-          />
-          <span
-            className="tabular w-14 text-[11px]"
-            style={{
-              color: "#275662",
-              fontWeight: 600,
-              fontFamily: '"Raleway", sans-serif',
-            }}
-          >
-            {formatRatePct(minRate)}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span style={{ color: "#797870" }}>min introduced</span>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={0.5}
-            value={minIntroduced}
-            onChange={(e) => setMinIntroduced(parseFloat(e.target.value))}
-            style={{ accentColor: "#00a3a6" }}
-            title="% of target species introduced by the contamination"
-          />
-          <span
-            className="tabular w-14 text-[11px]"
-            style={{
-              color: "#275662",
-              fontWeight: 600,
-              fontFamily: '"Raleway", sans-serif',
-            }}
-          >
-            {minIntroduced.toFixed(1)}%
-          </span>
-        </div>
-        {(minScore > 0 || minRate > 0 || minIntroduced > 0) && (
-          <button
-            onClick={() => {
-              setMinScore(0);
-              setMinRate(0);
-              setMinIntroduced(0);
-            }}
-            className="text-[10px] px-2 py-0.5 rounded-sm"
-            style={{
-              background: "#fff",
-              color: "#797870",
-              border: "1px solid #c4c0b3",
-              fontWeight: 600,
-              fontFamily: '"Raleway", sans-serif',
-              cursor: "pointer",
-            }}
-          >
-            reset thresholds
-          </button>
-        )}
-      </div>
+      <EventFilterBar
+        filter={filter}
+        setFilter={setFilter}
+        metadata={metadata}
+        plateMap={plateMap}
+        runMetadata={runMetadata}
+      >
+        <span className="text-[12px] ml-auto" style={{ color: "#797870" }}>
+          {sorted.length} / {events.length}
+        </span>
+      </EventFilterBar>
       <div className="flex items-center gap-3 mb-6 flex-wrap">
         <span
           className="text-[11px] uppercase tracking-[0.1em]"
@@ -14924,9 +14869,13 @@ export default function App() {
           {tab === "scatter" && (
             <ScatterTab
               events={events}
+              filtered={filtered}
+              filter={filter}
+              setFilter={setFilter}
               ab={ab}
               metadata={metadata}
               plateMap={plateMap}
+              runMetadata={runMetadata}
               onPick={(id) => {
                 setSelId(id);
                 setTab("validate");
