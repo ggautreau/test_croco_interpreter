@@ -3908,7 +3908,7 @@ const EventsTable = ({
   // jump the user back to page 1 each time they curate.
   useEffect(() => {
     setPage(1);
-  }, [filter.q, filter.minScore, filter.minRate, filter.minIntroduced, filter.verdict, filter.hideRelated, filter.adjacentOnly, sort.by, sort.dir, total]);
+  }, [filter.q, filter.minScore, filter.minRate, filter.minIntroduced, filter.verdict, filter.subject, filter.group, filter.adjacent, sort.by, sort.dir, total]);
   const totalPages = Math.max(1, Math.ceil(events.length / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
   const startIdx = (safePage - 1) * PAGE_SIZE;
@@ -4062,32 +4062,49 @@ const EventsTable = ({
           <option value="uncertain">uncertain</option>
         </select>
         {metadata && (
-          <label
-            className="flex items-center gap-1.5 text-[12px] cursor-pointer"
-            style={{ color: "#275662" }}
-          >
-            <input
-              type="checkbox"
-              checked={filter.hideRelated}
-              onChange={(e) => setFilter({ ...filter, hideRelated: e.target.checked })}
-              style={{ accentColor: "#00a3a6" }}
-            />
-            hide same subject
-          </label>
+          <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "#275662" }}>
+            <span style={{ color: "#797870" }}>subject</span>
+            <select
+              value={filter.subject || "any"}
+              onChange={(e) => setFilter({ ...filter, subject: e.target.value })}
+              className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
+              style={{ border: "1px solid #c4c0b3" }}
+            >
+              <option value="any">any</option>
+              <option value="same">same subject</option>
+              <option value="different">different subject</option>
+            </select>
+          </div>
+        )}
+        {metadata?.hasGroupIdCol && (
+          <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "#275662" }}>
+            <span style={{ color: "#797870" }}>group</span>
+            <select
+              value={filter.group || "any"}
+              onChange={(e) => setFilter({ ...filter, group: e.target.value })}
+              className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
+              style={{ border: "1px solid #c4c0b3" }}
+            >
+              <option value="any">any</option>
+              <option value="same">same group</option>
+              <option value="different">different group</option>
+            </select>
+          </div>
         )}
         {plateMap && (
-          <label
-            className="flex items-center gap-1.5 text-[12px] cursor-pointer"
-            style={{ color: "#275662" }}
-          >
-            <input
-              type="checkbox"
-              checked={filter.adjacentOnly}
-              onChange={(e) => setFilter({ ...filter, adjacentOnly: e.target.checked })}
-              style={{ accentColor: "#00a3a6" }}
-            />
-            adjacent wells only
-          </label>
+          <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "#275662" }}>
+            <span style={{ color: "#797870" }}>wells</span>
+            <select
+              value={filter.adjacent || "any"}
+              onChange={(e) => setFilter({ ...filter, adjacent: e.target.value })}
+              className="px-2 py-1.5 text-[12px] rounded-sm outline-none"
+              style={{ border: "1px solid #c4c0b3" }}
+            >
+              <option value="any">any</option>
+              <option value="adjacent">adjacent only</option>
+              <option value="non-adjacent">non-adjacent only</option>
+            </select>
+          </div>
         )}
         <span className="text-[12px] ml-auto" style={{ color: "#797870" }}>
           {events.length === 0
@@ -12939,17 +12956,21 @@ export default function App() {
   const [selId, setSelId] = useState(
     initial?.selId !== undefined ? initial.selId : null,
   );
-  const [filter, setFilter] = useState(
-    initial?.filter || {
-      q: "",
-      minScore: 0,
-      verdict: "all",
-      minRate: 0,
-      minIntroduced: 0,
-      hideRelated: false,
-      adjacentOnly: false,
-    },
-  );
+  const [filter, setFilter] = useState(() => {
+    // Migrate legacy boolean fields (hideRelated / adjacentOnly) to the
+    // tri-state strings while preserving the user's last selection.
+    const f = initial?.filter || {};
+    return {
+      q: f.q ?? "",
+      minScore: f.minScore ?? 0,
+      minRate: f.minRate ?? 0,
+      minIntroduced: f.minIntroduced ?? 0,
+      verdict: f.verdict ?? "all",
+      subject: f.subject ?? (f.hideRelated ? "different" : "any"),
+      group: f.group ?? "any",
+      adjacent: f.adjacent ?? (f.adjacentOnly ? "adjacent" : "any"),
+    };
+  });
   const [sort, setSort] = useState(initial?.sort || { by: "score", dir: "desc" });
   const [err, setErr] = useState(null);
   const eventFileRef = useRef(null);
@@ -13308,14 +13329,29 @@ export default function App() {
         if (e.introducedPct < minIntro) return false;
       }
       if (filter.verdict !== "all" && e.verdict !== filter.verdict) return false;
-      if (filter.hideRelated) {
+      // Subject filter — events are "same subject" only when both samples
+      // are annotated and share a subject_id (areRelated.kind === "subject").
+      // Events with missing/unknown subjects are treated as "different" so
+      // they pass the "different" filter.
+      if (filter.subject && filter.subject !== "any") {
         const r = areRelated(metadata, e.source, e.target);
-        if (r?.related === true && r.kind === "subject") return false;
+        const sameSubject = r?.related === true && r.kind === "subject";
+        if (filter.subject === "same" && !sameSubject) return false;
+        if (filter.subject === "different" && sameSubject) return false;
       }
-      if (filter.adjacentOnly) {
+      // Group filter — same logic on group_id.
+      if (filter.group && filter.group !== "any") {
+        const r = areRelated(metadata, e.source, e.target);
+        const sameGroup = r?.related === true && r.kind === "group";
+        if (filter.group === "same" && !sameGroup) return false;
+        if (filter.group === "different" && sameGroup) return false;
+      }
+      if (filter.adjacent && filter.adjacent !== "any") {
         const pd = plateDistance(plateMap, e.source, e.target);
-        if (!pd || !pd.samePlate || pd.distance == null || pd.distance > 1)
-          return false;
+        const isAdjacent =
+          pd && pd.samePlate && pd.distance != null && pd.distance <= 1;
+        if (filter.adjacent === "adjacent" && !isAdjacent) return false;
+        if (filter.adjacent === "non-adjacent" && isAdjacent) return false;
       }
       if (q) {
         // Search across sample IDs only (source and target). Case-
