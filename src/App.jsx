@@ -1601,27 +1601,26 @@ function layoutComponent(comp, cellWidth, cellHeight) {
   };
 }
 
-const NetworkGraph = ({ events, onPick }) => {
+const NetworkGraph = ({
+  events,
+  filteredIds,
+  filter,
+  setFilter,
+  metadata,
+  plateMap,
+  runMetadata,
+  totalEvents,
+  onPick,
+}) => {
   const [hover, setHover] = useState(null);
   const [zoom, setZoom] = useState({ k: 1, x: 0, y: 0 });
   // null = browse all components in a grid; otherwise the index (in
   // sortedComponents) of the single component currently being focused.
   const [focusIdx, setFocusIdx] = useState(null);
-  // Edge visibility per verdict — checkboxes in the toolbar. Components
-  // are still computed from ALL events so the layout doesn't shift when
-  // a verdict is toggled; we only skip drawing the matching edges.
-  const [verdictFilter, setVerdictFilter] = useState({
-    pending: true,
-    true_positive: true,
-    false_positive: true,
-    uncertain: true,
-  });
-  const toggleVerdict = (v) =>
-    setVerdictFilter((f) => ({ ...f, [v]: !f[v] }));
-  // Numeric thresholds — both default to 0 (show everything).
-  const [minScore, setMinScore] = useState(0);
-  const [minRate, setMinRate] = useState(0);
-  const [minIntroduced, setMinIntroduced] = useState(0);
+  // Components are computed from ALL events so the layout stays put
+  // when the user changes filters — we only skip drawing the edges
+  // that don't pass the filter (filteredIds === null means show all).
+  const visibleCount = filteredIds ? filteredIds.size : events.length;
   const svgRef = useRef(null);
   const zoomBehaviorRef = useRef(null);
 
@@ -1849,136 +1848,29 @@ const NetworkGraph = ({ events, onPick }) => {
             )}
           </span>
         )}
-        {/* Verdict filter — checkboxes that toggle edge visibility per
-            verdict. The graph layout doesn't change when these are
-            toggled; only edge rendering is skipped. */}
-        <div
-          className="ml-auto flex items-center gap-3 flex-wrap"
-          style={{ color: "#275662" }}
-        >
-          <span
-            className="text-[10px] tracking-[0.1em] uppercase"
-            style={{ color: "#797870", fontWeight: 700, fontFamily: '"Raleway", sans-serif' }}
+        </div>
+        {filter && setFilter && (
+          <EventFilterBar
+            filter={filter}
+            setFilter={setFilter}
+            metadata={metadata}
+            plateMap={plateMap}
+            runMetadata={runMetadata}
           >
-            Show
-          </span>
-          {[
-            { id: "pending", label: "pending" },
-            { id: "true_positive", label: "TP" },
-            { id: "false_positive", label: "FP" },
-            { id: "uncertain", label: "uncertain" },
-          ].map((v) => (
-            <label
-              key={v.id}
-              className="flex items-center gap-1.5 text-[11px] cursor-pointer"
-              style={{ userSelect: "none" }}
-            >
-              <input
-                type="checkbox"
-                checked={verdictFilter[v.id]}
-                onChange={() => toggleVerdict(v.id)}
-                style={{ accentColor: "#00a3a6" }}
+            <div className="ml-auto flex items-center gap-2.5">
+              <VerdictDistribution
+                events={
+                  filteredIds
+                    ? events.filter((e) => filteredIds.has(e.id))
+                    : events
+                }
               />
-              {v.label}
-            </label>
-          ))}
-        </div>
-        </div>
-        {/* Numeric thresholds — hide edges below the chosen probability
-            or contamination rate. Combined with the verdict checkboxes
-            above; layout is unaffected. */}
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span style={{ color: "#797870" }}>min probability</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={minScore}
-              onChange={(e) => setMinScore(parseFloat(e.target.value))}
-              style={{ accentColor: "#00a3a6" }}
-            />
-            <span
-              className="tabular w-10 text-[11px]"
-              style={{
-                color: "#275662",
-                fontWeight: 600,
-                fontFamily: '"Raleway", sans-serif',
-              }}
-            >
-              {minScore.toFixed(2)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span style={{ color: "#797870" }}>min rate</span>
-            <input
-              type="range"
-              min={RATE_LOG_MIN}
-              max={RATE_LOG_MAX}
-              step={0.05}
-              value={rateToSlider(minRate)}
-              onChange={(e) =>
-                setMinRate(sliderToRate(parseFloat(e.target.value)))
-              }
-              style={{ accentColor: "#00a3a6" }}
-              title="Log-scaled (0.01% to 100%)"
-            />
-            <span
-              className="tabular w-14 text-[11px]"
-              style={{
-                color: "#275662",
-                fontWeight: 600,
-                fontFamily: '"Raleway", sans-serif',
-              }}
-            >
-              {formatRatePct(minRate)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span style={{ color: "#797870" }}>min introduced</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={0.5}
-              value={minIntroduced}
-              onChange={(e) => setMinIntroduced(parseFloat(e.target.value))}
-              style={{ accentColor: "#00a3a6" }}
-              title="% of target species introduced by the contamination"
-            />
-            <span
-              className="tabular w-14 text-[11px]"
-              style={{
-                color: "#275662",
-                fontWeight: 600,
-                fontFamily: '"Raleway", sans-serif',
-              }}
-            >
-              {minIntroduced.toFixed(1)}%
-            </span>
-          </div>
-          {(minScore > 0 || minRate > 0 || minIntroduced > 0) && (
-            <button
-              onClick={() => {
-                setMinScore(0);
-                setMinRate(0);
-                setMinIntroduced(0);
-              }}
-              className="text-[10px] px-2 py-0.5 rounded-sm"
-              style={{
-                background: "#fff",
-                color: "#797870",
-                border: "1px solid #c4c0b3",
-                fontWeight: 600,
-                fontFamily: '"Raleway", sans-serif',
-                cursor: "pointer",
-              }}
-            >
-              reset thresholds
-            </button>
-          )}
-        </div>
+              <span className="text-[12px]" style={{ color: "#797870" }}>
+                {visibleCount} / {totalEvents ?? events.length}
+              </span>
+            </div>
+          </EventFilterBar>
+        )}
       </div>
 
       <div className="flex">
@@ -2098,16 +1990,10 @@ const NetworkGraph = ({ events, onPick }) => {
             const a = c.nodes[e.source];
             const b = c.nodes[e.target];
             if (!a || !b) return null;
-            // Skip edges whose verdict has been hidden via the toolbar
-            // checkboxes, or whose probability/rate falls below the
-            // threshold sliders. Layout is unaffected.
-            if (!verdictFilter[e.verdict || "pending"]) return null;
-            if ((e.score ?? 0) < minScore) return null;
-            if ((e.rate ?? 0) < minRate) return null;
-            if (minIntroduced > 0) {
-              if (e.introducedPct == null) return null;
-              if (e.introducedPct < minIntroduced) return null;
-            }
+            // Skip edges that don't match the active filter; layout
+            // (component positions) is unaffected because components
+            // are computed from all events upstream.
+            if (filteredIds && !filteredIds.has(e.id)) return null;
             const rejected = e.verdict === "false_positive";
             const accepted = e.verdict === "true_positive";
             const isHovered = hover?.kind === "edge" && hover.e.id === e.id;
@@ -5817,7 +5703,21 @@ const ScatterTab = ({
 };
 
 /* ---------- NETWORK TAB ---------- */
-const NetworkTab = ({ events, onPick }) => (
+const NetworkTab = ({
+  events,
+  filtered,
+  filter,
+  setFilter,
+  metadata,
+  plateMap,
+  runMetadata,
+  onPick,
+}) => {
+  const filteredIds = useMemo(
+    () => new Set(filtered.map((e) => e.id)),
+    [filtered],
+  );
+  return (
   <div>
     <SectionTitle eyebrow="Network" title="Contamination network">
       Directed graph from source to target. Edge thickness and color intensity
@@ -5826,7 +5726,17 @@ const NetworkTab = ({ events, onPick }) => (
       contamination cascade. Hover any edge for details, click to open it in
       Guided validation.
     </SectionTitle>
-    <NetworkGraph events={events} onPick={onPick} />
+    <NetworkGraph
+      events={events}
+      filteredIds={filteredIds}
+      filter={filter}
+      setFilter={setFilter}
+      metadata={metadata}
+      plateMap={plateMap}
+      runMetadata={runMetadata}
+      totalEvents={events.length}
+      onPick={onPick}
+    />
     <p
       className="text-[11px] mt-3 flex items-center gap-1.5"
       style={{ color: "#797870" }}
@@ -5847,7 +5757,8 @@ const NetworkTab = ({ events, onPick }) => (
       focus on it (or zoom past 1.4× / hover a node) to see them.
     </p>
   </div>
-);
+  );
+};
 /* ---------- PLATE TAB ---------- */
 const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
   const [format, setFormat] = useState(
@@ -6389,9 +6300,15 @@ const PlateThumbnail = ({
 };
 
 /* ---------- PLATE TAB ---------- */
-const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata }) => {
+const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, focusPlate }) => {
   const [mode, setMode] = useState(plateMap ? "overview" : "edit");
   const [currentPlate, setCurrentPlate] = useState(null);
+  useEffect(() => {
+    if (focusPlate) {
+      setMode("inspect");
+      setCurrentPlate(focusPlate);
+    }
+  }, [focusPlate]);
   const [hoverEvent, setHoverEvent] = useState(null);
   const [plateFilter, setPlateFilter] = useState("all"); // all | withEvents
   const [eventFilter, setEventFilter] = useState("all"); // all | thisPlate | interPlate | adjacent
@@ -7870,6 +7787,7 @@ const ValidateTab = ({
   bulkMarkTowardNCAsTP,
   bulkResetAllVerdicts,
   bulkApplyToEvents,
+  onOpenPlate,
 }) => {
   const sel = selected || events[0];
   if (!sel) return null;
@@ -8333,29 +8251,51 @@ const ValidateTab = ({
             </div>
 
             {plateMap && pd?.samePlate && (
-              <div className="mt-4">
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenPlate &&
+                  onOpenPlate(plateMap.bySample[sel.source]?.plate)
+                }
+                className="mt-4 text-left w-full block rounded-sm transition-colors"
+                style={{
+                  cursor: onOpenPlate ? "pointer" : "default",
+                  padding: 4,
+                  margin: -4,
+                }}
+                title={
+                  onOpenPlate
+                    ? "Open this plate in the Plate inspection tab"
+                    : undefined
+                }
+              >
                 <div
-                  className="text-[10px] tracking-[0.15em] uppercase mb-2"
+                  className="text-[10px] tracking-[0.15em] uppercase mb-2 flex items-center gap-1.5"
                   style={{
                     color: "#ed6e6c",
                     fontWeight: 700,
                     fontFamily: '"Raleway", sans-serif',
                   }}
                 >
-                  Position on {plateMap.bySample[sel.source]?.plate}
+                  <span>Position on {plateMap.bySample[sel.source]?.plate}</span>
+                  {onOpenPlate && (
+                    <ArrowRight className="w-3 h-3 opacity-60" />
+                  )}
                 </div>
-                <PlateGrid
-                  format={plateMap.format}
-                  plateId={plateMap.bySample[sel.source]?.plate}
-                  plateMap={plateMap}
-                  highlightSamples={{
-                    [sel.source]: "#00a3a6",
-                    [sel.target]: "#ed6e6c",
-                  }}
-                  labelMode="none"
-                  size={18}
-                />
-              </div>
+                <div style={{ pointerEvents: "none" }}>
+                  <PlateGrid
+                    format={plateMap.format}
+                    plateId={plateMap.bySample[sel.source]?.plate}
+                    plateMap={plateMap}
+                    highlightSamples={{
+                      [sel.source]: "#00a3a6",
+                      [sel.target]: "#ed6e6c",
+                    }}
+                    labelMode="none"
+                    size={18}
+                  />
+                </div>
+              </button>
             )}
 
             {metadata &&
@@ -13109,6 +13049,7 @@ export default function App() {
   const [selId, setSelId] = useState(
     initial?.selId !== undefined ? initial.selId : null,
   );
+  const [focusPlate, setFocusPlate] = useState(null);
   const [filter, setFilter] = useState(() => {
     // Migrate legacy boolean fields (hideRelated / adjacentOnly) to the
     // tri-state strings while preserving the user's last selection.
@@ -15094,6 +15035,12 @@ export default function App() {
           {tab === "network" && (
             <NetworkTab
               events={events}
+              filtered={filtered}
+              filter={filter}
+              setFilter={setFilter}
+              metadata={metadata}
+              plateMap={plateMap}
+              runMetadata={runMetadata}
               onPick={(id) => {
                 setSelId(id);
                 setTab("validate");
@@ -15107,6 +15054,7 @@ export default function App() {
               setPlateMap={setPlateMap}
               samples={allSamples}
               metadata={metadata}
+              focusPlate={focusPlate}
               onPick={(id) => {
                 setSelId(id);
                 setTab("validate");
@@ -15133,6 +15081,10 @@ export default function App() {
               bulkMarkTowardNCAsTP={bulkMarkTowardNCAsTP}
               bulkResetAllVerdicts={bulkResetAllVerdicts}
               bulkApplyToEvents={bulkApplyToEvents}
+              onOpenPlate={(plateId) => {
+                setFocusPlate(plateId || null);
+                setTab("plate");
+              }}
             />
           )}
           {tab === "export" && (
