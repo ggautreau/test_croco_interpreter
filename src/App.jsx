@@ -2275,6 +2275,12 @@ const NetworkGraph = ({ events, onPick }) => {
           {(hover.e.rate * 100).toFixed(2)}%
           <span className="text-stone-500 ml-2">probability:</span>{" "}
           {hover.e.score.toFixed(3)}
+          {hover.e.introducedPct != null && (
+            <>
+              <span className="text-stone-500 ml-2">introduced:</span>{" "}
+              {formatIntroducedPct(hover.e.introducedPct)}
+            </>
+          )}
           <span className="text-stone-500 ml-2">verdict:</span>
           <VerdictBadge v={hover.e.verdict} />
           <span
@@ -3003,6 +3009,42 @@ const CascadeBanner = ({ cascade, onJumpToUpstream }) => {
   );
 };
 
+/* ---------- introduced-species-fraction bar (for events table) ----------
+   Linear 0-100%: % of target's species that came in via the contamination
+   line (= introduced.length / count(species in target)). Distinct from
+   the rate (which is abundance-based) — high pct means many species are
+   affected, regardless of how much abundance they carry. */
+const IntroducedBar = ({ v }) => {
+  if (v == null) {
+    return (
+      <span className="tabular text-[11px]" style={{ color: "#c4c0b3" }}>
+        —
+      </span>
+    );
+  }
+  const t = Math.min(1, Math.max(0, v / 100));
+  const color = v > 30 ? "#ed6e6c" : v > 10 ? "#f4b942" : "#9b6dd7";
+  return (
+    <div className="inline-flex items-center gap-2">
+      <div className="w-16 h-1.5 rounded-sm" style={{ background: "#e6e8e8" }}>
+        <div
+          className="h-full rounded-sm"
+          style={{ width: `${t * 100}%`, background: color }}
+        />
+      </div>
+      <span
+        className="tabular"
+        style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
+      >
+        {v.toFixed(1)}%
+      </span>
+    </div>
+  );
+};
+
+const formatIntroducedPct = (v) =>
+  v == null ? "—" : `${v.toFixed(1)}%`;
+
 /* ---------- score bar (for events table) ---------- */
 const ScoreBar = ({ v }) => (
   <div className="inline-flex items-center gap-2">
@@ -3609,6 +3651,13 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
   const topByRate = [...events].sort((a, b) => b.rate - a.rate).slice(0, 5);
   const bottomByScore = [...events].sort((a, b) => a.score - b.score).slice(0, 5);
   const bottomByRate = [...events].sort((a, b) => a.rate - b.rate).slice(0, 5);
+  const eventsWithIntroduced = events.filter((e) => e.introducedPct != null);
+  const topByIntroduced = [...eventsWithIntroduced]
+    .sort((a, b) => b.introducedPct - a.introducedPct)
+    .slice(0, 5);
+  const bottomByIntroduced = [...eventsWithIntroduced]
+    .sort((a, b) => a.introducedPct - b.introducedPct)
+    .slice(0, 5);
   const noData = events.length === 0;
 
   const relatedCount = useMemo(() => {
@@ -3625,6 +3674,12 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
   }, [events, plateMap]);
 
   const cascadeCount = events.filter((e) => e.cascade).length;
+
+  const avgIntroducedPct =
+    eventsWithIntroduced.length > 0
+      ? eventsWithIntroduced.reduce((s, e) => s + e.introducedPct, 0) /
+        eventsWithIntroduced.length
+      : null;
 
   return (
     <div>
@@ -3702,10 +3757,18 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
 
       {runMetadata && <RunMetadataBlock meta={runMetadata} />}
 
-      <div className="grid md:grid-cols-5 gap-3 mt-8 mb-4">
+      <div className="grid md:grid-cols-3 lg:grid-cols-6 gap-3 mt-8 mb-4">
         <Stat label="Events" value={counts.total} />
         <Stat label="Samples involved" value={counts.samples} />
         <Stat label="Mean rate" value={`${(counts.avgRate * 100).toFixed(2)}%`} />
+        <Stat
+          label="Mean introduced %"
+          value={
+            avgIntroducedPct == null
+              ? "—"
+              : `${avgIntroducedPct.toFixed(1)}%`
+          }
+        />
         <Stat label="Validated (TP)" value={counts.tp} tone="good" />
         <Stat label="Rejected (FP)" value={counts.fp} tone="bad" />
       </div>
@@ -3771,6 +3834,22 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
           onOpen={onOpen}
           fmt={(e) => e.score.toFixed(3)}
         />
+        {eventsWithIntroduced.length > 0 && (
+          <>
+            <TopList
+              title="Top 5 by introduced %"
+              items={topByIntroduced}
+              onOpen={onOpen}
+              fmt={(e) => formatIntroducedPct(e.introducedPct)}
+            />
+            <TopList
+              title="Bottom 5 by introduced %"
+              items={bottomByIntroduced}
+              onOpen={onOpen}
+              fmt={(e) => formatIntroducedPct(e.introducedPct)}
+            />
+          </>
+        )}
       </div>
     </div>
   );
@@ -3986,6 +4065,9 @@ const EventsTable = ({
               <Th onClick={() => toggleSort("score")} right>
                 Probability <SortIcon col="score" />
               </Th>
+              <Th onClick={() => toggleSort("introducedPct")} right>
+                Introduced <SortIcon col="introducedPct" />
+              </Th>
               {hasContext && <Th>Context</Th>}
               <Th right>Species</Th>
               <Th>Verdict</Th>
@@ -4039,6 +4121,9 @@ const EventsTable = ({
                   </td>
                   <td className="px-3 py-2.5 tabular text-right">
                     <ScoreBar v={e.score} />
+                  </td>
+                  <td className="px-3 py-2.5 tabular text-right">
+                    <IntroducedBar v={e.introducedPct} />
                   </td>
                   {hasContext && (
                     <td className="px-3 py-2.5">
@@ -4401,6 +4486,14 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick }) => {
               {(event.rate * 100).toFixed(2)}%
             </b>
           </span>
+          {event.introducedPct != null && (
+            <span>
+              intro.{" "}
+              <b style={{ color: "#275662" }}>
+                {formatIntroducedPct(event.introducedPct)}
+              </b>
+            </span>
+          )}
         </div>
         {(related?.related === true ||
           (pd && pd.samePlate && pd.distance != null && pd.distance <= 2) ||
@@ -5057,7 +5150,17 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
             </span>
           ) : (
             <span className="text-[11px]" style={{ color: "#797870" }}>
-              {introducedFromLine.length} species fall on the line you placed.
+              {introducedFromLine.length} species fall on the line you placed
+              {(() => {
+                if (!ab || !tgt) return null;
+                let n = 0;
+                for (const sp of ab.species) {
+                  if ((ab.matrix[sp]?.[tgt] || 0) > 0) n++;
+                }
+                if (n === 0) return null;
+                const pct = (introducedFromLine.length / n) * 100;
+                return ` (${pct.toFixed(1)}% of ${tgt}'s species)`;
+              })()}.
             </span>
           )}
           {feedback && (
@@ -6696,6 +6799,9 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata }) 
                       style={{ color: "#797870" }}
                     >
                       {e.source} → {e.target} · probability {e.score.toFixed(2)}
+                      {e.introducedPct != null && (
+                        <> · introduced {formatIntroducedPct(e.introducedPct)}</>
+                      )}
                     </div>
                   </button>
                 );
@@ -6838,11 +6944,12 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
   const [maxScore, setMaxScore] = useState(1);
   const [minRate, setMinRate] = useState(0);
   const [maxRate, setMaxRate] = useState(1);
-  // "Draft" strings for the four number inputs — what the user is
-  // currently typing. We only commit to the real numeric state on blur
-  // (or Enter); otherwise re-formatting on every keystroke would mangle
-  // mid-typing values like "1" → "1.00", making it impossible to type
-  // "10".
+  const [minIntroduced, setMinIntroduced] = useState(0);
+  const [maxIntroduced, setMaxIntroduced] = useState(100);
+  // "Draft" strings for the number inputs — what the user is currently
+  // typing. We only commit to the real numeric state on blur (or Enter);
+  // otherwise re-formatting on every keystroke would mangle mid-typing
+  // values like "1" → "1.00", making it impossible to type "10".
   const [minScoreDraft, setMinScoreDraft] = useState(minScore.toFixed(2));
   const [maxScoreDraft, setMaxScoreDraft] = useState(maxScore.toFixed(2));
   const [minRateDraft, setMinRateDraft] = useState(
@@ -6851,12 +6958,26 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
   const [maxRateDraft, setMaxRateDraft] = useState(
     (maxRate * 100).toFixed(2),
   );
+  const [minIntroducedDraft, setMinIntroducedDraft] = useState(
+    minIntroduced.toFixed(1),
+  );
+  const [maxIntroducedDraft, setMaxIntroducedDraft] = useState(
+    maxIntroduced.toFixed(1),
+  );
   // Sync drafts when the underlying state changes externally (slider
   // movement, reset, etc.).
   useEffect(() => setMinScoreDraft(minScore.toFixed(2)), [minScore]);
   useEffect(() => setMaxScoreDraft(maxScore.toFixed(2)), [maxScore]);
   useEffect(() => setMinRateDraft((minRate * 100).toFixed(2)), [minRate]);
   useEffect(() => setMaxRateDraft((maxRate * 100).toFixed(2)), [maxRate]);
+  useEffect(
+    () => setMinIntroducedDraft(minIntroduced.toFixed(1)),
+    [minIntroduced],
+  );
+  useEffect(
+    () => setMaxIntroducedDraft(maxIntroduced.toFixed(1)),
+    [maxIntroduced],
+  );
 
   const commitMinScore = () => {
     const v = parseFloat(minScoreDraft);
@@ -6881,6 +7002,18 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
     if (Number.isFinite(v))
       setMaxRate(Math.max(minRate, Math.min(1, v / 100)));
     else setMaxRateDraft((maxRate * 100).toFixed(2));
+  };
+  const commitMinIntroduced = () => {
+    const v = parseFloat(minIntroducedDraft);
+    if (Number.isFinite(v))
+      setMinIntroduced(Math.min(maxIntroduced, Math.max(0, v)));
+    else setMinIntroducedDraft(minIntroduced.toFixed(1));
+  };
+  const commitMaxIntroduced = () => {
+    const v = parseFloat(maxIntroducedDraft);
+    if (Number.isFinite(v))
+      setMaxIntroduced(Math.max(minIntroduced, Math.min(100, v)));
+    else setMaxIntroducedDraft(maxIntroduced.toFixed(1));
   };
 
   const [crit, setCrit] = useState({
@@ -6920,10 +7053,20 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
     });
   }, [events, ab]);
 
+  const introducedFilterActive = minIntroduced > 0 || maxIntroduced < 100;
+
   const matched = useMemo(() => {
     return events.filter((e, i) => {
       if ((e.score ?? 0) < minScore || (e.score ?? 0) > maxScore) return false;
       if ((e.rate ?? 0) < minRate || (e.rate ?? 0) > maxRate) return false;
+      if (introducedFilterActive) {
+        // When the user constrains introduced %, exclude events where it
+        // can't be computed (no abundance loaded) — otherwise the filter
+        // would silently match everything.
+        if (e.introducedPct == null) return false;
+        if (e.introducedPct < minIntroduced || e.introducedPct > maxIntroduced)
+          return false;
+      }
       const c = eventCriteria?.[i];
       for (const k of Object.keys(crit)) {
         const want = crit[k];
@@ -6934,7 +7077,18 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
       }
       return true;
     });
-  }, [events, eventCriteria, minScore, maxScore, minRate, maxRate, crit]);
+  }, [
+    events,
+    eventCriteria,
+    minScore,
+    maxScore,
+    minRate,
+    maxRate,
+    minIntroduced,
+    maxIntroduced,
+    introducedFilterActive,
+    crit,
+  ]);
 
   const apply = () => {
     onApply(
@@ -6986,9 +7140,9 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
           Bulk apply verdict by criteria
         </h3>
         <p style={{ fontSize: 12, color: "#797870", marginBottom: 16 }}>
-          Match every event whose probability, rate and 5-criteria status
-          fit the filters below, then apply a single verdict (and an
-          optional shared note).
+          Match every event whose probability, rate, introduced %  and
+          5-criteria status fit the filters below, then apply a single
+          verdict (and an optional shared note).
         </p>
 
         {/* Score / rate sliders */}
@@ -7146,6 +7300,91 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
                 <span>100%</span>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Introduced %  filter */}
+        <div style={{ marginBottom: 16 }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: "#797870",
+              fontWeight: 700,
+              fontFamily: '"Raleway", sans-serif',
+              marginBottom: 4,
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
+            }}
+          >
+            Introduced % ({minIntroduced.toFixed(1)} – {maxIntroduced.toFixed(1)})
+            {!ab && (
+              <span
+                style={{
+                  marginLeft: 8,
+                  textTransform: "none",
+                  letterSpacing: 0,
+                  fontWeight: 500,
+                  color: "#ed6e6c",
+                }}
+              >
+                load abundance to enable
+              </span>
+            )}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={0.1}
+              value={minIntroducedDraft}
+              onChange={(e) => setMinIntroducedDraft(e.target.value)}
+              onBlur={commitMinIntroduced}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+              disabled={!ab}
+              style={{
+                width: 80,
+                padding: "4px 6px",
+                fontSize: 12,
+                border: "1px solid #c4c0b3",
+                borderRadius: 2,
+              }}
+            />
+            <span style={{ fontSize: 11, color: "#797870" }}>to</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={0.1}
+              value={maxIntroducedDraft}
+              onChange={(e) => setMaxIntroducedDraft(e.target.value)}
+              onBlur={commitMaxIntroduced}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+              disabled={!ab}
+              style={{
+                width: 80,
+                padding: "4px 6px",
+                fontSize: 12,
+                border: "1px solid #c4c0b3",
+                borderRadius: 2,
+              }}
+            />
+          </div>
+          <div style={{ marginTop: 12, padding: "0 8px" }}>
+            <DualRange
+              min={0}
+              max={100}
+              step={0.5}
+              values={[minIntroduced, maxIntroduced]}
+              onChange={([lo, hi]) => {
+                setMinIntroduced(lo);
+                setMaxIntroduced(hi);
+              }}
+            />
           </div>
         </div>
 
@@ -7817,13 +8056,26 @@ const ValidateTab = ({
                 enable diagnostic checks.
               </div>
             )}
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-4 grid grid-cols-3 gap-2">
               <Diag
                 label="Probability"
                 value={sel.score.toFixed(3)}
                 tone={sel.score > 0.9 ? "good" : sel.score > 0.7 ? "warn" : "bad"}
               />
               <Diag label="Rate" value={`${(sel.rate * 100).toFixed(2)}%`} />
+              <Diag
+                label="Introduced"
+                value={formatIntroducedPct(sel.introducedPct)}
+                tone={
+                  sel.introducedPct == null
+                    ? "neutral"
+                    : sel.introducedPct > 30
+                      ? "bad"
+                      : sel.introducedPct > 10
+                        ? "warn"
+                        : "good"
+                }
+              />
             </div>
 
             {plateMap && pd?.samePlate && (
@@ -12895,10 +13147,33 @@ export default function App() {
   }, [runMetadata]);
 
   /* ---- derived state ---- */
-  const events = useMemo(
-    () => detectCascades(rawEvents, ab),
-    [rawEvents, ab],
-  );
+  /** Count of species with non-zero abundance per sample. Used to compute
+      introducedPct (= introduced species / target's total species). */
+  const targetSpeciesCounts = useMemo(() => {
+    if (!ab) return null;
+    const counts = {};
+    for (const sample of ab.samples) {
+      let n = 0;
+      for (const sp of ab.species) {
+        if ((ab.matrix[sp]?.[sample] || 0) > 0) n++;
+      }
+      counts[sample] = n;
+    }
+    return counts;
+  }, [ab]);
+
+  const events = useMemo(() => {
+    const cascaded = detectCascades(rawEvents, ab);
+    if (!targetSpeciesCounts) return cascaded;
+    return cascaded.map((e) => {
+      const total = targetSpeciesCounts[e.target];
+      const pct =
+        total > 0 && Array.isArray(e.introduced)
+          ? (e.introduced.length / total) * 100
+          : null;
+      return { ...e, introducedPct: pct };
+    });
+  }, [rawEvents, ab, targetSpeciesCounts]);
 
   const allSamples = useMemo(() => {
     if (ab) return ab.samples;
@@ -13629,6 +13904,7 @@ export default function App() {
           <td>${escapeHTML(e.target)}</td>
           <td class="num">${(e.rate * 100).toFixed(2)}%</td>
           <td class="num">${e.score.toFixed(3)}</td>
+          <td class="num">${e.introducedPct == null ? "—" : `${e.introducedPct.toFixed(1)}%`}</td>
           <td>${verdictPill(e.verdict)}</td>
           <td>${rel?.related ? `<em>${escapeHTML(rel.reason)}</em>` : ""}</td>
           <td>${pd != null ? `Δ ${pd}` : ""}</td>
@@ -13671,6 +13947,7 @@ export default function App() {
               <tr><th>Target</th><td><code>${escapeHTML(e.target)}</code></td></tr>
               <tr><th>Contamination rate</th><td>${(e.rate * 100).toFixed(2)}%</td></tr>
               <tr><th>RF probability</th><td>${e.score.toFixed(3)}</td></tr>
+              ${e.introducedPct == null ? "" : `<tr><th>Introduced (% of target species)</th><td>${e.introducedPct.toFixed(1)}%</td></tr>`}
               <tr><th>Verdict</th><td>${verdictPill(e.verdict)}</td></tr>
               ${rel?.related ? `<tr><th>Sample relatedness</th><td><em>${escapeHTML(rel.reason)}</em></td></tr>` : ""}
               ${pd != null ? `<tr><th>Plate distance</th><td>Δ ${pd} well${pd > 1 ? "s" : ""}</td></tr>` : ""}
@@ -13932,6 +14209,7 @@ export default function App() {
         <th>Target</th>
         <th>Rate</th>
         <th>Probability</th>
+        <th>Introduced %</th>
         <th>Verdict</th>
         <th>Related</th>
         <th>Plate</th>
