@@ -4563,8 +4563,8 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
     return (
       <div
         style={{
-          width,
-          height,
+          width: "100%",
+          aspectRatio: `${width} / ${height}`,
           background: "#fdeceb",
           border: "1px solid #ed6e6c",
           display: "flex",
@@ -4614,7 +4614,11 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
   const sx = (v) => pad.l + ((v - lo) / (hi - lo)) * w;
   const sy = (v) => pad.t + h - ((v - lo) / (hi - lo)) * h;
   return (
-    <svg width={width} height={height} style={{ display: "block", background: "#fff" }}>
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ display: "block", background: "#fff", width: "100%", height: "auto" }}
+    >
       {/* axes */}
       <line
         x1={pad.l}
@@ -4736,7 +4740,7 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
 };
 
 /* ----- Gallery card ----- */
-const GalleryCard = ({ event, ab, metadata, plateMap, onPick }) => {
+const GalleryCard = ({ event, ab, metadata, plateMap, onPick, setVerdict }) => {
   const scatter = useMemo(() => buildScatter(ab, event), [ab, event]);
   const related = areRelated(metadata, event.source, event.target);
   const pd = plateDistance(plateMap, event.source, event.target);
@@ -4744,11 +4748,24 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick }) => {
     event.verdict === "true_positive" ? "#00a3a6" :
     event.verdict === "false_positive" ? "#ed6e6c" :
     event.verdict === "uncertain" ? "#c4c0b3" : null;
+  const toggleVerdict = (target) => (e) => {
+    e.stopPropagation();
+    if (!setVerdict) return;
+    setVerdict(event.id, event.verdict === target ? "pending" : target);
+  };
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onPick(event.id)}
-      className="text-left rounded-sm"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onPick(event.id);
+        }
+      }}
+      className="text-left rounded-sm cursor-pointer"
       style={{
         border: "1px solid #e6e8e8",
         background: "#fff",
@@ -4768,11 +4785,79 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick }) => {
         e.currentTarget.style.borderColor = "#e6e8e8";
       }}
     >
-      <div style={{ background: "#fff", borderBottom: "1px solid #f0f2f2" }}>
+      <div
+        style={{
+          background: "#fff",
+          borderBottom: "1px solid #f0f2f2",
+          position: "relative",
+        }}
+      >
         <MiniScatter scatter={scatter} width={240} height={180} />
+        {setVerdict && (
+          <div
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex flex-col gap-1"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {[
+              {
+                id: "true_positive",
+                tone: "good",
+                label: "mark as true positive",
+                Icon: CheckCircle2,
+              },
+              {
+                id: "false_positive",
+                tone: "bad",
+                label: "mark as false positive",
+                Icon: XCircle,
+              },
+              {
+                id: "uncertain",
+                tone: "neutral",
+                label: "mark as uncertain",
+                Icon: HelpCircle,
+              },
+            ].map(({ id, tone, label, Icon }) => {
+              const active = event.verdict === id;
+              const bg = active
+                ? tone === "good"
+                  ? "#00a3a6"
+                  : tone === "bad"
+                    ? "#ed6e6c"
+                    : "#c4c0b3"
+                : "rgba(255,255,255,0.85)";
+              const color = active ? "#fff" : "#275662";
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={toggleVerdict(id)}
+                  title={label}
+                  className="rounded-full"
+                  style={{
+                    width: 28,
+                    height: 28,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: bg,
+                    color,
+                    border: active
+                      ? "1px solid transparent"
+                      : "1px solid #c4c0b3",
+                    backdropFilter: active ? "none" : "blur(4px)",
+                    transition: "background 0.12s, color 0.12s",
+                  }}
+                >
+                  <Icon className="w-4 h-4" />
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
-      <div style={{ padding: "10px 12px" }}>
-        <div className="flex items-center gap-1.5 mb-1">
+      <div style={{ padding: "8px 10px" }}>
+        <div className="flex items-center gap-1.5 mb-1.5">
           {verdictDot && (
             <span
               className="w-2 h-2 rounded-full shrink-0"
@@ -4780,36 +4865,69 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick }) => {
             />
           )}
           <div
-            className="text-[12px] truncate"
+            className="text-[11px] truncate"
             style={{
               color: "#275662",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
             }}
+            title={`${event.source} → ${event.target}`}
           >
             {event.source} → {event.target}
           </div>
         </div>
         <div
-          className="flex items-center justify-between text-[11px] tabular mb-2"
-          style={{ color: "#797870" }}
+          className="grid gap-x-2 gap-y-0.5 text-[10px] tabular mb-1.5"
+          style={{
+            color: "#797870",
+            gridTemplateColumns: "max-content 1fr",
+          }}
         >
-          <span>
-            probability <b style={{ color: "#275662" }}>{event.score.toFixed(3)}</b>
+          <span
+            style={{
+              fontFamily: '"Raleway", sans-serif',
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              fontSize: 9,
+              fontWeight: 700,
+            }}
+          >
+            prob
           </span>
-          <span>
-            rate{" "}
-            <b style={{ color: "#275662" }}>
-              {(event.rate * 100).toFixed(2)}%
-            </b>
+          <b style={{ color: "#275662", textAlign: "right" }}>
+            {event.score.toFixed(3)}
+          </b>
+          <span
+            style={{
+              fontFamily: '"Raleway", sans-serif',
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              fontSize: 9,
+              fontWeight: 700,
+            }}
+          >
+            rate
           </span>
+          <b style={{ color: "#275662", textAlign: "right" }}>
+            {(event.rate * 100).toFixed(2)}%
+          </b>
           {event.introducedPct != null && (
-            <span>
-              intro.{" "}
-              <b style={{ color: "#275662" }}>
+            <>
+              <span
+                style={{
+                  fontFamily: '"Raleway", sans-serif',
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  fontSize: 9,
+                  fontWeight: 700,
+                }}
+              >
+                intro
+              </span>
+              <b style={{ color: "#275662", textAlign: "right" }}>
                 {formatIntroducedPct(event.introducedPct)}
               </b>
-            </span>
+            </>
           )}
         </div>
         {(related?.related === true ||
@@ -4831,7 +4949,7 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick }) => {
           </div>
         )}
       </div>
-    </button>
+    </div>
   );
 };
 
@@ -5607,6 +5725,7 @@ const ScatterTab = ({
   metadata,
   plateMap,
   runMetadata,
+  setVerdict,
   onPick,
   onAddManualEvent,
 }) => {
@@ -5614,7 +5733,7 @@ const ScatterTab = ({
   const [sortBy, setSortBy] = useState("score");
   // Direction per sort key — defaults match what most users expect
   // (descending for numeric severity, ascending for alphabetical).
-  const SORT_DEFAULT_DIR = { score: "desc", rate: "desc", source: "asc", pending: "asc" };
+  const SORT_DEFAULT_DIR = { score: "desc", rate: "desc", introducedPct: "desc", source: "asc", pending: "asc" };
   const [sortDir, setSortDir] = useState(SORT_DEFAULT_DIR.score);
   const handleSortClick = (id) => {
     if (sortBy === id) {
@@ -5661,7 +5780,15 @@ const ScatterTab = ({
     const flip = sortDir === "asc" ? -1 : 1;
     if (sortBy === "score") copy.sort((a, b) => (b.score - a.score) * flip);
     else if (sortBy === "rate") copy.sort((a, b) => (b.rate - a.rate) * flip);
-    else if (sortBy === "pending") {
+    else if (sortBy === "introducedPct") {
+      // Treat null as -Infinity so events without an introduced% land at
+      // the bottom of a descending sort (and top of ascending).
+      copy.sort(
+        (a, b) =>
+          ((b.introducedPct ?? -Infinity) - (a.introducedPct ?? -Infinity)) *
+          flip,
+      );
+    } else if (sortBy === "pending") {
       const rank = (v) =>
         v === "pending" ? 0 : v === "uncertain" ? 1 : v === "true_positive" ? 2 : 3;
       copy.sort(
@@ -5756,6 +5883,7 @@ const ScatterTab = ({
         {[
           { id: "score", label: "probability" },
           { id: "rate", label: "rate" },
+          { id: "introducedPct", label: "introduced" },
           { id: "pending", label: "pending first" },
           { id: "source", label: "source" },
         ].map((opt) => {
@@ -5795,9 +5923,9 @@ const ScatterTab = ({
       </div>
 
       <div
-        className="grid gap-4"
+        className="grid gap-3"
         style={{
-          gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
         }}
       >
         {visible.map((e) => (
@@ -5808,6 +5936,7 @@ const ScatterTab = ({
             metadata={metadata}
             plateMap={plateMap}
             onPick={onPick}
+            setVerdict={setVerdict}
           />
         ))}
       </div>
@@ -15159,6 +15288,7 @@ export default function App() {
               metadata={metadata}
               plateMap={plateMap}
               runMetadata={runMetadata}
+              setVerdict={setVerdict}
               onPick={(id) => {
                 setSelId(id);
                 setTab("validate");
