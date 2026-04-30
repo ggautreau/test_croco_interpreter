@@ -168,9 +168,8 @@ const EVENT_COLS = {
    special-cased to rate = 0 so the filter can be cleared from the
    slider itself (and so the "clear" buttons that key off `rate > 0`
    keep working). */
-const RATE_LOG_MIN = -4;                       // 10^-4 = 0.01%
-const RATE_LOG_MAX_HALF = Math.log10(0.5);     // ≈ -0.301 — single-thumb min-rate sliders cap at 50%
-const RATE_LOG_MAX_FULL = 0;                   // 10^0  = 100% — dual-range upper bound
+const RATE_LOG_MIN = -4; // 10^-4 = 0.01%
+const RATE_LOG_MAX = 0;  // 10^0  = 100%
 
 const sliderToRate = (logVal) =>
   logVal <= RATE_LOG_MIN ? 0 : Math.pow(10, logVal);
@@ -1890,14 +1889,14 @@ const NetworkGraph = ({ events, onPick }) => {
             <input
               type="range"
               min={RATE_LOG_MIN}
-              max={RATE_LOG_MAX_HALF}
+              max={RATE_LOG_MAX}
               step={0.05}
               value={rateToSlider(minRate)}
               onChange={(e) =>
                 setMinRate(sliderToRate(parseFloat(e.target.value)))
               }
               style={{ accentColor: "#00a3a6" }}
-              title="Log-scaled (0.01% to 50%)"
+              title="Log-scaled (0.01% to 100%)"
             />
             <span
               className="tabular w-14 text-[11px]"
@@ -3852,7 +3851,7 @@ const EventsTable = ({
           <input
             type="range"
             min={RATE_LOG_MIN}
-            max={RATE_LOG_MAX_HALF}
+            max={RATE_LOG_MAX}
             step={0.05}
             value={rateToSlider(filter.minRate)}
             onChange={(e) =>
@@ -3862,7 +3861,7 @@ const EventsTable = ({
               })
             }
             style={{ accentColor: "#00a3a6" }}
-            title="Log-scaled (0.01% to 50%)"
+            title="Log-scaled (0.01% to 100%)"
           />
           <span
             className="tabular w-14"
@@ -5304,14 +5303,14 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
           <input
             type="range"
             min={RATE_LOG_MIN}
-            max={RATE_LOG_MAX_HALF}
+            max={RATE_LOG_MAX}
             step={0.05}
             value={rateToSlider(minRate)}
             onChange={(e) =>
               setMinRate(sliderToRate(parseFloat(e.target.value)))
             }
             style={{ accentColor: "#00a3a6" }}
-            title="Log-scaled (0.01% to 50%)"
+            title="Log-scaled (0.01% to 100%)"
           />
           <span
             className="tabular w-14 text-[11px]"
@@ -7100,7 +7099,7 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
             <div style={{ marginTop: 12, padding: "0 8px" }}>
               <DualRange
                 min={RATE_LOG_MIN}
-                max={RATE_LOG_MAX_FULL}
+                max={RATE_LOG_MAX}
                 step={0.05}
                 values={[rateToSlider(minRate), rateToSlider(maxRate)]}
                 onChange={([lo, hi]) => {
