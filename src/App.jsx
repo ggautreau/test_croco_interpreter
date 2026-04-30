@@ -162,6 +162,30 @@ const EVENT_COLS = {
   ],
 };
 
+/* ---------- contamination-rate slider helpers ----------
+   Rates span several orders of magnitude (0.01% to 50%+), so all rate
+   sliders work in log10 space. The leftmost slider position is
+   special-cased to rate = 0 so the filter can be cleared from the
+   slider itself (and so the "clear" buttons that key off `rate > 0`
+   keep working). */
+const RATE_LOG_MIN = -4;                       // 10^-4 = 0.01%
+const RATE_LOG_MAX_HALF = Math.log10(0.5);     // ≈ -0.301 — single-thumb min-rate sliders cap at 50%
+const RATE_LOG_MAX_FULL = 0;                   // 10^0  = 100% — dual-range upper bound
+
+const sliderToRate = (logVal) =>
+  logVal <= RATE_LOG_MIN ? 0 : Math.pow(10, logVal);
+
+const rateToSlider = (rate) =>
+  rate <= 0 ? RATE_LOG_MIN : Math.max(RATE_LOG_MIN, Math.log10(rate));
+
+const formatRatePct = (rate) => {
+  if (rate <= 0) return "0%";
+  const pct = rate * 100;
+  if (pct < 1) return `${pct.toFixed(2)}%`;
+  if (pct < 10) return `${pct.toFixed(1)}%`;
+  return `${Math.round(pct)}%`;
+};
+
 function normalizeEvent(raw, cols, idx) {
   const species = (raw[cols.species] || "")
     .split(/[,;]\s*/)
@@ -1865,22 +1889,25 @@ const NetworkGraph = ({ events, onPick }) => {
             <span style={{ color: "#797870" }}>min rate</span>
             <input
               type="range"
-              min={0}
-              max={0.5}
-              step={0.01}
-              value={minRate}
-              onChange={(e) => setMinRate(parseFloat(e.target.value))}
+              min={RATE_LOG_MIN}
+              max={RATE_LOG_MAX_HALF}
+              step={0.05}
+              value={rateToSlider(minRate)}
+              onChange={(e) =>
+                setMinRate(sliderToRate(parseFloat(e.target.value)))
+              }
               style={{ accentColor: "#00a3a6" }}
+              title="Log-scaled (0.01% to 50%)"
             />
             <span
-              className="tabular w-12 text-[11px]"
+              className="tabular w-14 text-[11px]"
               style={{
                 color: "#275662",
                 fontWeight: 600,
                 fontFamily: '"Raleway", sans-serif',
               }}
             >
-              {(minRate * 100).toFixed(0)}%
+              {formatRatePct(minRate)}
             </span>
           </div>
           {(minScore > 0 || minRate > 0) && (
@@ -3824,20 +3851,24 @@ const EventsTable = ({
           <span style={{ color: "#797870" }}>min rate</span>
           <input
             type="range"
-            min={0}
-            max={0.5}
-            step={0.01}
-            value={filter.minRate}
+            min={RATE_LOG_MIN}
+            max={RATE_LOG_MAX_HALF}
+            step={0.05}
+            value={rateToSlider(filter.minRate)}
             onChange={(e) =>
-              setFilter({ ...filter, minRate: parseFloat(e.target.value) })
+              setFilter({
+                ...filter,
+                minRate: sliderToRate(parseFloat(e.target.value)),
+              })
             }
             style={{ accentColor: "#00a3a6" }}
+            title="Log-scaled (0.01% to 50%)"
           />
           <span
-            className="tabular w-12"
+            className="tabular w-14"
             style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
           >
-            {(filter.minRate * 100).toFixed(0)}%
+            {formatRatePct(filter.minRate)}
           </span>
           {(() => {
             const rc = parseFloat(runMetadata?.rate_cutoff);
@@ -5272,22 +5303,25 @@ const ScatterTab = ({ events, ab, metadata, plateMap, onPick, onAddManualEvent }
           <span style={{ color: "#797870" }}>min rate</span>
           <input
             type="range"
-            min={0}
-            max={0.5}
-            step={0.01}
-            value={minRate}
-            onChange={(e) => setMinRate(parseFloat(e.target.value))}
+            min={RATE_LOG_MIN}
+            max={RATE_LOG_MAX_HALF}
+            step={0.05}
+            value={rateToSlider(minRate)}
+            onChange={(e) =>
+              setMinRate(sliderToRate(parseFloat(e.target.value)))
+            }
             style={{ accentColor: "#00a3a6" }}
+            title="Log-scaled (0.01% to 50%)"
           />
           <span
-            className="tabular w-12 text-[11px]"
+            className="tabular w-14 text-[11px]"
             style={{
               color: "#275662",
               fontWeight: 600,
               fontFamily: '"Raleway", sans-serif',
             }}
           >
-            {(minRate * 100).toFixed(0)}%
+            {formatRatePct(minRate)}
           </span>
         </div>
         {(minScore > 0 || minRate > 0) && (
@@ -7065,15 +7099,25 @@ const BulkApplyByCriteriaDialog = ({ events, ab, onClose, onApply }) => {
             </div>
             <div style={{ marginTop: 12, padding: "0 8px" }}>
               <DualRange
-                min={0}
-                max={100}
-                step={0.01}
-                values={[minRate * 100, maxRate * 100]}
+                min={RATE_LOG_MIN}
+                max={RATE_LOG_MAX_FULL}
+                step={0.05}
+                values={[rateToSlider(minRate), rateToSlider(maxRate)]}
                 onChange={([lo, hi]) => {
-                  setMinRate(lo / 100);
-                  setMaxRate(hi / 100);
+                  setMinRate(sliderToRate(lo));
+                  setMaxRate(sliderToRate(hi));
                 }}
               />
+              <div
+                className="flex justify-between text-[10px] mt-0.5"
+                style={{ color: "#797870" }}
+              >
+                <span>0%</span>
+                <span>0.1%</span>
+                <span>1%</span>
+                <span>10%</span>
+                <span>100%</span>
+              </div>
             </div>
           </div>
         </div>
