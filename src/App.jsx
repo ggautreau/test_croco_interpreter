@@ -25,6 +25,7 @@ import {
   ShieldAlert,
   Beaker,
   Droplets,
+  Activity,
   Library,
   User,
   Users,
@@ -315,6 +316,13 @@ const METADATA_COLS = {
     "sample_site",
   ],
   lowBiomass: ["low_biomass", "is_low_biomass", "lowbiomass"],
+  lowSequencingDepth: [
+    "low_sequencing_depth",
+    "is_low_sequencing_depth",
+    "lowsequencingdepth",
+    "low_seq_depth",
+    "low_depth",
+  ],
   groupId: [
     // Canonical name first
     "group_id",
@@ -352,6 +360,7 @@ function parseMetadata(text) {
     timepoint: pickCol(header, METADATA_COLS.timepoint),
     biome: pickCol(header, METADATA_COLS.biome),
     lowBiomass: pickCol(header, METADATA_COLS.lowBiomass),
+    lowSequencingDepth: pickCol(header, METADATA_COLS.lowSequencingDepth),
     groupId: pickCol(header, METADATA_COLS.groupId),
   };
   if (!cols.sample) throw new Error("sample_id column not found");
@@ -373,6 +382,9 @@ function parseMetadata(text) {
       lowBiomassExplicit: parseBool(
         cols.lowBiomass ? r[cols.lowBiomass] : null,
       ),
+      lowSequencingDepthExplicit: parseBool(
+        cols.lowSequencingDepth ? r[cols.lowSequencingDepth] : null,
+      ),
       groupId: cols.groupId ? r[cols.groupId] || "" : "",
       extra: { ...r },
     };
@@ -384,17 +396,19 @@ function parseMetadata(text) {
     nSamples: Object.keys(bySample).length,
     hasBiomeCol: !!cols.biome,
     hasLowBiomassCol: !!cols.lowBiomass,
+    hasLowSequencingDepthCol: !!cols.lowSequencingDepth,
     hasGroupIdCol: !!cols.groupId,
   };
 }
 
 /** Collect every sample-level flag we can derive from explicit metadata
-    columns. Returns { isControl, isLowBiomass, biome, subject, timepoint,
-    groupId, other }. */
+    columns. Returns { isControl, isLowBiomass, isLowSequencingDepth, biome,
+    subject, timepoint, groupId, other }. */
 function flagSample(sampleId, metadata) {
   const flags = {
     isControl: false,
     isLowBiomass: false,
+    isLowSequencingDepth: false,
     biome: null,
     subject: null,
     timepoint: null,
@@ -407,6 +421,7 @@ function flagSample(sampleId, metadata) {
 
   if (meta.isControl === true) flags.isControl = true;
   if (meta.lowBiomassExplicit === true) flags.isLowBiomass = true;
+  if (meta.lowSequencingDepthExplicit === true) flags.isLowSequencingDepth = true;
   if (meta.biome) flags.biome = meta.biome;
   if (meta.subject) flags.subject = meta.subject;
   if (meta.timepoint) flags.timepoint = meta.timepoint;
@@ -421,6 +436,7 @@ function flagSample(sampleId, metadata) {
         metadata.cols.timepoint,
         metadata.cols.biome,
         metadata.cols.lowBiomass,
+        metadata.cols.lowSequencingDepth,
         metadata.cols.groupId,
       ].filter(Boolean),
     );
@@ -986,6 +1002,14 @@ const SampleFlags = ({ flags, compact = false }) => {
       <Pill key="lb" tone="warn">
         <Droplets className="w-3 h-3" />
         low biomass
+      </Pill>,
+    );
+  }
+  if (flags.isLowSequencingDepth) {
+    items.push(
+      <Pill key="lsd" tone="warn">
+        <Activity className="w-3 h-3" />
+        low sequencing depth
       </Pill>,
     );
   }
@@ -2794,6 +2818,10 @@ const MetadataUploadCard = ({ metadata, setMetadata, setErr, confirmDialog }) =>
           ,{" "}
           <code style={{ fontFamily: "ui-monospace, monospace" }}>
             low_biomass
+          </code>
+          ,{" "}
+          <code style={{ fontFamily: "ui-monospace, monospace" }}>
+            low_sequencing_depth
           </code>
           ,{" "}
           <code style={{ fontFamily: "ui-monospace, monospace" }}>
@@ -10769,6 +10797,19 @@ const HelpTab = ({ onStartTour }) => {
                 example={`sample_id  low_biomass\n69D4       true\n72D6       true\nNC3        true\n58D43      false\n58M        false`}
               />
               <HelpCol
+                name="low_sequencing_depth"
+                recognized
+                type="bool"
+                desc="True/false flag for samples with low sequencing depth (sparser abundance profiles, weaker contamination signal). Shown as an activity pill. Accepted values: true/1/yes or false/0/no."
+                aliases={[
+                  "is_low_sequencing_depth",
+                  "lowsequencingdepth",
+                  "low_seq_depth",
+                  "low_depth",
+                ]}
+                example={`sample_id  low_sequencing_depth\n69D4       true\nNC3        true\n58D43      false\n58M        false`}
+              />
+              <HelpCol
                 name="group_id"
                 recognized
                 type="string"
@@ -11155,6 +11196,21 @@ const HelpTab = ({ onStartTour }) => {
                 <td className="py-3 align-middle text-[13px]">
                   Low-biomass sample — more vulnerable to background
                   contamination per Lou et al. 2023.
+                </td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+                <td className="py-3 pr-4 align-middle">
+                  <Pill tone="warn">
+                    <Activity className="w-3 h-3" />
+                    low sequencing depth
+                  </Pill>
+                </td>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                  low_sequencing_depth = true
+                </td>
+                <td className="py-3 align-middle text-[13px]">
+                  Sample sequenced shallowly — sparser abundance profile,
+                  weaker contamination signal.
                 </td>
               </tr>
               <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
