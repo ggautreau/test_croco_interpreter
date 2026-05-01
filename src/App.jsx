@@ -1621,6 +1621,9 @@ const NetworkGraph = ({
   // null = browse all components in a grid; otherwise the index (in
   // sortedComponents) of the single component currently being focused.
   const [focusIdx, setFocusIdx] = useState(null);
+  // Index (in sortedComponents) of the sidebar entry currently hovered —
+  // used to draw a soft frame around its grid cell in the SVG.
+  const [hoverCompIdx, setHoverCompIdx] = useState(null);
   // Components are computed from ALL events so the layout stays put
   // when the user changes filters — we only skip drawing the edges
   // that don't pass the filter (filteredIds === null means show all).
@@ -2030,6 +2033,39 @@ const NetworkGraph = ({
         {/* Everything below transforms with zoom/pan */}
         <g transform={`translate(${zoom.x},${zoom.y}) scale(${zoom.k})`}>
 
+        {/* Soft frame around the grid cell of the component currently
+            hovered in the right sidebar. Sits underneath the edges/nodes
+            and is non-interactive. */}
+        {hoverCompIdx != null &&
+          (() => {
+            // Map sidebar index → laidOut entry. In grid mode the indices
+            // line up; in focused mode only one cell exists, and only the
+            // focused component has a visible cell.
+            const cell =
+              focusIdx == null
+                ? laidOut[hoverCompIdx]
+                : hoverCompIdx === focusIdx
+                  ? laidOut[0]
+                  : null;
+            if (!cell) return null;
+            const inset = 6;
+            return (
+              <rect
+                x={cell.ox + inset}
+                y={cell.oy + inset}
+                width={cell.cw - inset * 2}
+                height={cell.ch - inset * 2}
+                rx={6}
+                fill="rgba(0,163,166,0.06)"
+                stroke="#00a3a6"
+                strokeOpacity={0.55}
+                strokeWidth={1.25}
+                strokeDasharray="4 3"
+                pointerEvents="none"
+              />
+            );
+          })()}
+
         {/* Edges (drawn first so nodes overlay endpoints) */}
         {laidOut.map((c) => {
           // For dense components, hide non-hovered rate badges to reduce clutter.
@@ -2338,6 +2374,8 @@ const NetworkGraph = ({
               <button
                 key={i}
                 onClick={() => setFocusIdx(active ? null : i)}
+                onMouseEnter={() => setHoverCompIdx(i)}
+                onMouseLeave={() => setHoverCompIdx(null)}
                 className="w-full text-left px-3 py-2"
                 style={{
                   background: active ? "#eef8f8" : "transparent",
