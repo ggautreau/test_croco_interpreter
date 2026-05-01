@@ -1749,6 +1749,22 @@ const NetworkGraph = ({
     return m;
   }, [allNodes]);
 
+  // Nodes that touch at least one currently-visible edge. Layout is kept
+  // stable (computed from all events upstream); we just skip rendering
+  // nodes whose only edges have been filtered out, so they don't float
+  // around as orphans.
+  const visibleNodeIds = useMemo(() => {
+    if (!filteredIds) return null;
+    const ids = new Set();
+    events.forEach((e) => {
+      if (filteredIds.has(e.id)) {
+        ids.add(e.source);
+        ids.add(e.target);
+      }
+    });
+    return ids;
+  }, [events, filteredIds]);
+
   const inDeg = useMemo(() => {
     const d = {};
     events.forEach((e) => (d[e.target] = (d[e.target] || 0) + 1));
@@ -1759,6 +1775,25 @@ const NetworkGraph = ({
     events.forEach((e) => (d[e.source] = (d[e.source] || 0) + 1));
     return d;
   }, [events]);
+
+  // Node radius scales with total degree (in + out) so heavily connected
+  // samples pop visually. sqrt mapping keeps the dynamic range readable
+  // — a 100-event hub isn't 10× the size of a 1-event leaf.
+  const maxDeg = useMemo(() => {
+    let m = 0;
+    const ids = new Set([...Object.keys(inDeg), ...Object.keys(outDeg)]);
+    ids.forEach((id) => {
+      const t = (inDeg[id] || 0) + (outDeg[id] || 0);
+      if (t > m) m = t;
+    });
+    return m || 1;
+  }, [inDeg, outDeg]);
+  const NODE_R_MIN = 7;
+  const NODE_R_MAX = 18;
+  const nodeRadius = (id) => {
+    const d = (inDeg[id] || 0) + (outDeg[id] || 0);
+    return NODE_R_MIN + (NODE_R_MAX - NODE_R_MIN) * Math.sqrt(d / maxDeg);
+  };
 
   // Wire d3.zoom: drag to pan, wheel/pinch to zoom.
   // Bounds: 0.4× to 4× — enough to see overview and zoom into dense clusters.
@@ -2004,17 +2039,20 @@ const NetworkGraph = ({
             const accepted = e.verdict === "true_positive";
             const isHovered = hover?.kind === "edge" && hover.e.id === e.id;
 
-            // Trim endpoints back from the node circles (radius 14)
+            // Trim endpoints back from the node circles. Radii vary with
+            // degree, so back off by each node's actual radius (+5 leaves
+            // room for the arrowhead at the target).
             const dx = b.x - a.x;
             const dy = b.y - a.y;
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
             const ux = dx / dist;
             const uy = dy / dist;
-            const r = 16;
-            const x1 = a.x + ux * r;
-            const y1 = a.y + uy * r;
-            const x2 = b.x - ux * r;
-            const y2 = b.y - uy * r;
+            const rA = nodeRadius(a.id) + 2;
+            const rB = nodeRadius(b.id) + 5;
+            const x1 = a.x + ux * rA;
+            const y1 = a.y + uy * rA;
+            const x2 = b.x - ux * rB;
+            const y2 = b.y - uy * rB;
             const mx = (x1 + x2) / 2;
             const my = (y1 + y2) / 2;
 
@@ -2109,6 +2147,7 @@ const NetworkGraph = ({
 
         {/* Nodes — circle + external label below */}
         {allNodes.map((n) => {
+          if (visibleNodeIds && !visibleNodeIds.has(n.id)) return null;
           const isSource = (outDeg[n.id] || 0) > 0 && (inDeg[n.id] || 0) === 0;
           const isTarget = (inDeg[n.id] || 0) > 0 && (outDeg[n.id] || 0) === 0;
           const isBoth = (inDeg[n.id] || 0) > 0 && (outDeg[n.id] || 0) > 0;
@@ -2141,7 +2180,7 @@ const NetworkGraph = ({
               <circle
                 cx={n.x}
                 cy={n.y}
-                r={isNodeHover ? 13 : 11}
+                r={nodeRadius(n.id) * (isNodeHover ? 1.18 : 1)}
                 fill={fill}
                 stroke="#275662"
                 strokeWidth={isNodeHover ? 2.5 : 1.5}
@@ -2151,7 +2190,7 @@ const NetworkGraph = ({
               {showLabel && (
                 <text
                   x={n.x}
-                  y={n.y + 28}
+                  y={n.y + nodeRadius(n.id) + 14}
                   textAnchor="middle"
                   fontSize="12"
                   fontFamily="system-ui, sans-serif"
