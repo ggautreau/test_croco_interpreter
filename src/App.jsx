@@ -3207,9 +3207,19 @@ const Th = ({ children, right, onClick }) => (
 /* ---------- validation criteria ---------- */
 const Criterion = ({ n, title, wiki, pass, value }) => {
   const color = pass == null ? "#e6e8e8" : pass ? "#00a3a6" : "#ed6e6c";
+  // Per-criterion description is hidden by default — click the title row
+  // to expand the wiki blurb when needed.
+  const [showWiki, setShowWiki] = useState(false);
   return (
     <div className="pl-3 py-2 mb-2" style={{ borderLeft: `4px solid ${color}` }}>
-      <div className="flex items-baseline gap-2">
+      <button
+        type="button"
+        onClick={() => setShowWiki((v) => !v)}
+        className="flex items-baseline gap-2 w-full text-left"
+        style={{ background: "transparent", border: 0, padding: 0, cursor: "pointer" }}
+        title={showWiki ? "Hide description" : "Show description"}
+        aria-expanded={showWiki}
+      >
         <span
           className="text-[10px]"
           style={{
@@ -3230,10 +3240,17 @@ const Criterion = ({ n, title, wiki, pass, value }) => {
         >
           {title}
         </span>
-      </div>
-      <div className="text-[12px] italic mb-1" style={{ color: "#797870" }}>
-        {wiki}
-      </div>
+        {showWiki ? (
+          <ChevronUp className="w-3.5 h-3.5 ml-auto" style={{ color: "#797870" }} />
+        ) : (
+          <ChevronDown className="w-3.5 h-3.5 ml-auto" style={{ color: "#797870" }} />
+        )}
+      </button>
+      {showWiki && (
+        <div className="text-[12px] italic mt-1 mb-1" style={{ color: "#797870" }}>
+          {wiki}
+        </div>
+      )}
       <div
         className="text-[13px]"
         style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
@@ -6213,6 +6230,18 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
   const [plateId, setPlateId] = useState(
     plateMap ? Object.values(plateMap.bySample)[0]?.plate || "P1" : "P1",
   );
+  const [plateMenuOpen, setPlateMenuOpen] = useState(false);
+  const plateMenuRef = useRef(null);
+  useEffect(() => {
+    if (!plateMenuOpen) return;
+    const onDoc = (e) => {
+      if (plateMenuRef.current && !plateMenuRef.current.contains(e.target)) {
+        setPlateMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [plateMenuOpen]);
   const [selectedSample, setSelectedSample] = useState(null);
   const [sampleQuery, setSampleQuery] = useState("");
   const [showUnplacedOnly, setShowUnplacedOnly] = useState(false);
@@ -6224,6 +6253,20 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
     if (plateMap) Object.keys(plateMap.bySample).forEach((id) => s.add(id));
     return s;
   }, [plateMap]);
+
+  // All distinct plate IDs already in use, plus the next free `P<n>`.
+  // Used by the "+ Add plate" button to mint a fresh ID without colliding.
+  const existingPlateIds = useMemo(() => {
+    if (!plateMap) return [];
+    const set = new Set();
+    Object.values(plateMap.bySample).forEach((p) => set.add(p.plate));
+    return Array.from(set).sort();
+  }, [plateMap]);
+  const nextPlateId = useMemo(() => {
+    let n = 1;
+    while (existingPlateIds.includes(`P${n}`)) n++;
+    return `P${n}`;
+  }, [existingPlateIds]);
 
   const unplaced = useMemo(
     () => samples.filter((s) => !placed.has(s)),
@@ -6315,10 +6358,15 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
     const el = gridRef.current;
     if (!el) return;
     const onKey = (e) => {
-      // Only trap keys when the focus is within the editor container
-      if (!el.contains(document.activeElement) && document.activeElement !== document.body) {
-        // if focused in an <input>, don't interfere
-        if (document.activeElement && document.activeElement.tagName === "INPUT") return;
+      // Don't intercept while the user is typing in any text field —
+      // includes the inline "Plate:" name input, the sample search box,
+      // and any other input/textarea/contenteditable inside or outside
+      // the editor.
+      const a = document.activeElement;
+      if (a) {
+        const tag = a.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        if (a.isContentEditable) return;
       }
       let handled = true;
       if (e.key === "ArrowRight") {
@@ -6406,12 +6454,94 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
           >
             Plate:
           </label>
-          <input
-            value={plateId}
-            onChange={(e) => setPlateId(e.target.value)}
-            className="px-2 py-1 text-[11px] rounded-sm w-20"
-            style={{ border: "1px solid #c4c0b3" }}
-          />
+          <div className="relative" ref={plateMenuRef}>
+            <div className="flex items-center" style={{ border: "1px solid #c4c0b3", borderRadius: 2 }}>
+              <input
+                value={plateId}
+                onChange={(e) => setPlateId(e.target.value)}
+                onFocus={() => existingPlateIds.length > 0 && setPlateMenuOpen(true)}
+                className="px-2 py-1 text-[11px] w-24 outline-none"
+                style={{ border: 0, background: "transparent" }}
+              />
+              {existingPlateIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPlateMenuOpen((o) => !o)}
+                  className="px-1 py-1 flex items-center justify-center"
+                  style={{
+                    background: "transparent",
+                    border: 0,
+                    borderLeft: "1px solid #e6e8e8",
+                    cursor: "pointer",
+                    color: "#797870",
+                  }}
+                  title="Show all plates"
+                  aria-label="Show all plates"
+                  aria-expanded={plateMenuOpen}
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            {plateMenuOpen && existingPlateIds.length > 0 && (
+              <div
+                className="absolute left-0 top-full mt-1 z-20 rounded-sm overflow-hidden"
+                style={{
+                  background: "#fff",
+                  border: "1px solid #c4c0b3",
+                  boxShadow: "0 8px 24px rgba(39,86,98,0.12)",
+                  minWidth: "100%",
+                  maxHeight: 240,
+                  overflowY: "auto",
+                }}
+              >
+                {existingPlateIds.map((id) => (
+                  <button
+                    type="button"
+                    key={id}
+                    onClick={() => {
+                      setPlateId(id);
+                      setPlateMenuOpen(false);
+                    }}
+                    className="block w-full text-left px-2 py-1 text-[11px]"
+                    style={{
+                      background: id === plateId ? "#eef8f8" : "transparent",
+                      color: "#275662",
+                      fontWeight: id === plateId ? 700 : 500,
+                      border: 0,
+                      cursor: "pointer",
+                      fontFamily: '"Raleway", sans-serif',
+                    }}
+                    onMouseOver={(ev) => {
+                      if (id !== plateId) ev.currentTarget.style.background = "#f6f7f7";
+                    }}
+                    onMouseOut={(ev) => {
+                      if (id !== plateId) ev.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    {id}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setPlateId(nextPlateId)}
+            className="px-2 py-1 text-[11px] rounded-sm flex items-center gap-1"
+            style={{
+              background: "#fff",
+              color: "#275662",
+              border: "1px solid #275662",
+              fontWeight: 600,
+              fontFamily: '"Raleway", sans-serif',
+              cursor: "pointer",
+            }}
+            title={`Switch the editor to a fresh plate (${nextPlateId}). Place at least one sample to materialise it.`}
+          >
+            <span>+</span>
+            <span>Add plate ({nextPlateId})</span>
+          </button>
         </div>
 
         <PlateGrid
@@ -6933,7 +7063,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
     <div>
       <SectionTitle eyebrow="Plate map" title="Physical proximity on the plate">
         Cross-sample (well-to-well) contamination happens between neighboring
-        wells. Checking the geographic proximity of a source / target pair is
+        wells. Checking the physical proximity of a source / target pair is
         one of the strongest diagnostic signals.
       </SectionTitle>
 
@@ -8427,6 +8557,15 @@ const ValidateTab = ({
   // The 5 detailed criteria are hidden by default — the score card above
   // already conveys the headline. Click the toggle to expand.
   const [showCriteriaDetails, setShowCriteriaDetails] = useState(false);
+  // Other supporting panels are also collapsed by default to keep the
+  // validation column compact; the user can pop each open as needed.
+  const [showIntroduced, setShowIntroduced] = useState(false);
+  // Single toggle for the combined plate-position + sample-context box.
+  // Open by default — the plate map is the most useful at-a-glance signal
+  // when validating; users can collapse it if it's not informative for
+  // their dataset.
+  const [showSampleInfo, setShowSampleInfo] = useState(true);
+  const [showDiagBlurb, setShowDiagBlurb] = useState(false);
   useEffect(() => {
     const handler = (e) => {
       // Don't compete with the bulk-apply dialog's own input handling.
@@ -8703,12 +8842,7 @@ const ValidateTab = ({
         <SectionTitle
           eyebrow={`Event ${idx + 1} of ${events.length}`}
           title={`${sel.source} → ${sel.target}`}
-        >
-          The five criteria adapted from the CroCoDeEL wiki. Each is a hint —
-          read the plot, not the count. A high pass rate doesn't override
-          a visibly poor fit, and one critical failure (criterion 04)
-          usually points to false positive on its own.
-        </SectionTitle>
+        />
 
         <CascadeBanner
           cascade={sel.cascade}
@@ -8750,116 +8884,6 @@ const ValidateTab = ({
               />
             </div>
 
-            {plateMap && pd?.samePlate && (
-              <button
-                type="button"
-                onClick={() =>
-                  onOpenPlate &&
-                  onOpenPlate(plateMap.bySample[sel.source]?.plate)
-                }
-                className="mt-4 text-left w-full block rounded-sm transition-colors"
-                style={{
-                  cursor: onOpenPlate ? "pointer" : "default",
-                  padding: 4,
-                  margin: -4,
-                }}
-                title={
-                  onOpenPlate
-                    ? "Open this plate in the Plate inspection tab"
-                    : undefined
-                }
-              >
-                <div
-                  className="text-[10px] tracking-[0.15em] uppercase mb-2 flex items-center gap-1.5"
-                  style={{
-                    color: "#ed6e6c",
-                    fontWeight: 700,
-                    fontFamily: '"Raleway", sans-serif',
-                  }}
-                >
-                  <span>Position on {plateMap.bySample[sel.source]?.plate}</span>
-                  {onOpenPlate && (
-                    <ArrowRight className="w-3 h-3 opacity-60" />
-                  )}
-                </div>
-                <div style={{ pointerEvents: "none" }}>
-                  <PlateGrid
-                    format={plateMap.format}
-                    plateId={plateMap.bySample[sel.source]?.plate}
-                    plateMap={plateMap}
-                    highlightSamples={{
-                      [sel.source]: "#00a3a6",
-                      [sel.target]: "#ed6e6c",
-                    }}
-                    labelMode="none"
-                    size={18}
-                  />
-                </div>
-              </button>
-            )}
-
-            {metadata &&
-              (metadata.bySample[sel.source] || metadata.bySample[sel.target]) && (
-                <div
-                  className="mt-4 p-3 rounded-sm text-[12px]"
-                  style={{ background: "#f6f7f7", border: "1px solid #e6e8e8" }}
-                >
-                  <div
-                    className="text-[10px] tracking-[0.15em] uppercase mb-3"
-                    style={{
-                      color: "#ed6e6c",
-                      fontWeight: 700,
-                      fontFamily: '"Raleway", sans-serif',
-                    }}
-                  >
-                    Sample context
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span
-                          className="w-2 h-2 rounded-full"
-                          style={{ background: "#00a3a6" }}
-                        />
-                        <span style={{ color: "#797870", fontSize: 11 }}>
-                          source
-                        </span>
-                        <span
-                          style={{
-                            color: "#275662",
-                            fontWeight: 600,
-                            fontFamily: '"Raleway", sans-serif',
-                          }}
-                        >
-                          {sel.source}
-                        </span>
-                      </div>
-                      <SampleFlags flags={flagSample(sel.source, metadata)} />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span
-                          className="w-2 h-2 rounded-full"
-                          style={{ background: "#ed6e6c" }}
-                        />
-                        <span style={{ color: "#797870", fontSize: 11 }}>
-                          target
-                        </span>
-                        <span
-                          style={{
-                            color: "#275662",
-                            fontWeight: 600,
-                            fontFamily: '"Raleway", sans-serif',
-                          }}
-                        >
-                          {sel.target}
-                        </span>
-                      </div>
-                      <SampleFlags flags={flagSample(sel.target, metadata)} />
-                    </div>
-                  </div>
-                </div>
-              )}
           </div>
 
           <div>
@@ -8879,7 +8903,7 @@ const ValidateTab = ({
               <div className="flex items-center justify-between mb-2">
                 <div>
                   <div
-                    className="text-[10px] tracking-[0.15em] uppercase"
+                    className="text-[10px] tracking-[0.15em] uppercase flex items-center gap-1.5"
                     style={{
                       color:
                         autoScore.total > 0 && autoScore.good < autoScore.total
@@ -8889,7 +8913,27 @@ const ValidateTab = ({
                       fontFamily: '"Raleway", sans-serif',
                     }}
                   >
-                    Diagnostic checks
+                    <span>Diagnostic checks</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowDiagBlurb((v) => !v)}
+                      className="inline-flex items-center justify-center"
+                      title={
+                        showDiagBlurb
+                          ? "Hide guidance"
+                          : "Show how to read these checks"
+                      }
+                      aria-expanded={showDiagBlurb}
+                      style={{
+                        background: "transparent",
+                        border: 0,
+                        padding: 0,
+                        cursor: "pointer",
+                        color: "#797870",
+                      }}
+                    >
+                      <HelpCircle className="w-3 h-3" />
+                    </button>
                   </div>
                   {autoScore.total > 0 && (
                     <div
@@ -8937,19 +8981,21 @@ const ValidateTab = ({
                   </div>
                 )}
               </div>
-              <div
-                className="text-[11px] mb-3"
-                style={{ color: "#5a5550", lineHeight: 1.5, fontStyle: "italic" }}
-              >
-                Each check is a hint, not a verdict. The grade is informative
-                — failing criterion 04 (missing source species) alone is a
-                strong signal toward false positive, regardless of the
-                aggregate. Criterion 03 (line spread) and 05 (above-line
-                magnitude) are the second-tier red flags: a line concentrated
-                in 1-2 decades or even one point sitting far above the line
-                point toward biological similarity rather than mechanical
-                contamination.
-              </div>
+              {showDiagBlurb && (
+                <div
+                  className="text-[11px] mb-3"
+                  style={{ color: "#5a5550", lineHeight: 1.5, fontStyle: "italic" }}
+                >
+                  Each check is a hint, not a verdict. The grade is informative
+                  — failing criterion 04 (missing source species) alone is a
+                  strong signal toward false positive, regardless of the
+                  aggregate. Criterion 03 (line spread) and 05 (above-line
+                  magnitude) are the second-tier red flags: a line concentrated
+                  in 1-2 decades or even one point sitting far above the line
+                  point toward biological similarity rather than mechanical
+                  contamination.
+                </div>
+              )}
               <div className="space-y-1.5">
                 {autoScore.reasons.length === 0 && (
                   <div className="text-[12px]" style={{ color: "#797870" }}>
@@ -8973,32 +9019,30 @@ const ValidateTab = ({
                   </div>
                 ))}
               </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowCriteriaDetails((v) => !v)}
-              className="flex items-center gap-1 mb-2 text-[11px] tracking-[0.1em] uppercase"
-              style={{
-                background: "transparent",
-                border: 0,
-                padding: 0,
-                cursor: "pointer",
-                color: "#275662",
-                fontWeight: 700,
-                fontFamily: '"Raleway", sans-serif',
-              }}
-              aria-expanded={showCriteriaDetails}
-            >
-              {showCriteriaDetails ? (
-                <ChevronDown className="w-3.5 h-3.5" />
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5" />
-              )}
-              {showCriteriaDetails ? "Hide criteria details" : "Show criteria details"}
-            </button>
-            {showCriteriaDetails && (
-              <>
+              <button
+                type="button"
+                onClick={() => setShowCriteriaDetails((v) => !v)}
+                className="flex items-center gap-1 mt-3 text-[11px] tracking-[0.1em] uppercase"
+                style={{
+                  background: "transparent",
+                  border: 0,
+                  padding: 0,
+                  cursor: "pointer",
+                  color: "#275662",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+                aria-expanded={showCriteriaDetails}
+              >
+                {showCriteriaDetails ? (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5" />
+                )}
+                {showCriteriaDetails ? "Hide all criteria" : "Show all criteria"}
+              </button>
+              {showCriteriaDetails && (
+                <div className="mt-4">
                 <Criterion
                   n="01"
                   title="Shape of the contamination line"
@@ -9064,69 +9108,233 @@ const ValidateTab = ({
                       : "abundance table required"
                   }
                 />
-              </>
-            )}
 
-            {metadata && (
-              <ContextualCriterion
-                n="06"
-                title="Related samples"
-                hint="Longitudinal, same subject or same related group → false positive risk"
-                verdict={
-                  related?.related === true
-                    ? {
-                        tone: "bad",
-                        text:
-                          related.kind === "group"
-                            ? `same group (${related.value})`
-                            : `same subject (${related.value})`,
-                      }
-                    : related?.related === false
-                      ? { tone: "good", text: "different subjects" }
-                      : { tone: "neutral", text: "sample not referenced" }
-                }
-              />
-            )}
+                {metadata && (
+                  <ContextualCriterion
+                    n="06"
+                    title="Related samples"
+                    hint="Longitudinal, same subject or same related group → false positive risk"
+                    verdict={
+                      related?.related === true
+                        ? {
+                            tone: "bad",
+                            text:
+                              related.kind === "group"
+                                ? `same group (${related.value})`
+                                : `same subject (${related.value})`,
+                          }
+                        : related?.related === false
+                          ? { tone: "good", text: "different subjects" }
+                          : { tone: "neutral", text: "sample not referenced" }
+                    }
+                  />
+                )}
 
-            {plateMap && (
-              <ContextualCriterion
-                n="07"
-                title="Proximity on plate"
-                hint="Well-to-well leakage → immediate neighbors = strong suspicion"
-                verdict={
-                  pd == null
-                    ? { tone: "neutral", text: "position unknown" }
-                    : !pd.samePlate
-                      ? {
-                          tone: "warn",
-                          text: "different plates — well-to-well unlikely",
-                        }
-                      : pd.distance <= 1
-                        ? { tone: "bad", text: "adjacent wells" }
-                        : pd.distance === 2
-                          ? { tone: "warn", text: "Δ=2 (close)" }
-                          : {
-                              tone: "good",
-                              text: `Δ=${pd.distance} (distant)`,
+                {plateMap && (
+                  <ContextualCriterion
+                    n="07"
+                    title="Proximity on plate"
+                    hint="Well-to-well leakage → immediate neighbors = strong suspicion"
+                    verdict={
+                      pd == null
+                        ? { tone: "neutral", text: "position unknown" }
+                        : !pd.samePlate
+                          ? {
+                              tone: "warn",
+                              text: "different plates — well-to-well unlikely",
                             }
-                }
-              />
-            )}
-
-            {sel.introduced.length > 0 && (
-              <div className="mt-4">
-                <div
-                  className="text-[10px] tracking-[0.15em] uppercase mb-2"
-                  style={{
-                    color: "#ed6e6c",
-                    fontWeight: 700,
-                    fontFamily: '"Raleway", sans-serif',
-                  }}
-                >
-                  Introduced species ({sel.introduced.length})
+                          : pd.distance <= 1
+                            ? { tone: "bad", text: "adjacent wells" }
+                            : pd.distance === 2
+                              ? { tone: "warn", text: "Δ=2 (close)" }
+                              : {
+                                  tone: "good",
+                                  text: `Δ=${pd.distance} (distant)`,
+                                }
+                    }
+                  />
+                )}
                 </div>
+              )}
+            </div>
+
+          {/* Combined sample-info box — plate position + metadata.
+              Single outer toggle controls both sub-sections. */}
+          {((plateMap && pd?.samePlate) ||
+            (metadata && (metadata.bySample[sel.source] || metadata.bySample[sel.target]))) && (
+            <div
+              className="mt-4 p-3 rounded-sm text-[12px]"
+              style={{ background: "#f6f7f7", border: "1px solid #e6e8e8" }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowSampleInfo((v) => !v)}
+                className="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase w-full text-left"
+                style={{
+                  background: "transparent",
+                  border: 0,
+                  padding: 0,
+                  cursor: "pointer",
+                  color: "#ed6e6c",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+                aria-expanded={showSampleInfo}
+              >
+                {showSampleInfo ? (
+                  <ChevronDown className="w-3 h-3" />
+                ) : (
+                  <ChevronRight className="w-3 h-3" />
+                )}
+                Plate position & sample context
+              </button>
+              {showSampleInfo && (() => {
+                const hasPlate = !!(plateMap && pd?.samePlate);
+                const hasMeta = !!(
+                  metadata &&
+                  (metadata.bySample[sel.source] || metadata.bySample[sel.target])
+                );
+                const cols = hasPlate && hasMeta ? "sm:grid-cols-2" : "grid-cols-1";
+                return (
+                <div className={`grid ${cols} gap-4 items-start mt-3`}>
+                  {plateMap && pd?.samePlate && (
+                    <div
+                      onClick={() =>
+                        onOpenPlate &&
+                        onOpenPlate(plateMap.bySample[sel.source]?.plate)
+                      }
+                      className="rounded-sm transition-colors flex flex-col items-center"
+                      style={{
+                        cursor: onOpenPlate ? "pointer" : "default",
+                      }}
+                      title={
+                        onOpenPlate
+                          ? "Open this plate in the Plate inspection tab"
+                          : undefined
+                      }
+                    >
+                      <div
+                        className="text-[10px] uppercase mb-2 self-start"
+                        style={{ color: "#797870", fontWeight: 600 }}
+                      >
+                        Position on {plateMap.bySample[sel.source]?.plate}
+                      </div>
+                      <div style={{ pointerEvents: "none" }}>
+                        <PlateGrid
+                          format={plateMap.format}
+                          plateId={plateMap.bySample[sel.source]?.plate}
+                          plateMap={plateMap}
+                          highlightSamples={{
+                            [sel.source]: "#00a3a6",
+                            [sel.target]: "#ed6e6c",
+                          }}
+                          labelMode="none"
+                          size={14}
+                        />
+                      </div>
+                      {onOpenPlate && (
+                        <div
+                          className="text-[10px] mt-2 flex items-center gap-1"
+                          style={{ color: "#797870", fontStyle: "italic" }}
+                        >
+                          <span>open in Plate inspection</span>
+                          <ArrowRight className="w-3 h-3 opacity-60" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {metadata &&
+                    (metadata.bySample[sel.source] || metadata.bySample[sel.target]) && (
+                      <div>
+                        <div
+                          className="text-[10px] uppercase mb-2"
+                          style={{ color: "#797870", fontWeight: 600 }}
+                        >
+                          Sample context
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span
+                                className="w-2 h-2 rounded-full"
+                                style={{ background: "#00a3a6" }}
+                              />
+                              <span style={{ color: "#797870", fontSize: 11 }}>
+                                source
+                              </span>
+                              <span
+                                style={{
+                                  color: "#275662",
+                                  fontWeight: 600,
+                                  fontFamily: '"Raleway", sans-serif',
+                                }}
+                              >
+                                {sel.source}
+                              </span>
+                            </div>
+                            <SampleFlags flags={flagSample(sel.source, metadata)} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span
+                                className="w-2 h-2 rounded-full"
+                                style={{ background: "#ed6e6c" }}
+                              />
+                              <span style={{ color: "#797870", fontSize: 11 }}>
+                                target
+                              </span>
+                              <span
+                                style={{
+                                  color: "#275662",
+                                  fontWeight: 600,
+                                  fontFamily: '"Raleway", sans-serif',
+                                }}
+                              >
+                                {sel.target}
+                              </span>
+                            </div>
+                            <SampleFlags flags={flagSample(sel.target, metadata)} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {sel.introduced.length > 0 && (
+            <div
+              className="mt-4 p-3 rounded-sm text-[12px]"
+              style={{ background: "#f6f7f7", border: "1px solid #e6e8e8" }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowIntroduced((v) => !v)}
+                className="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase w-full text-left"
+                style={{
+                  background: "transparent",
+                  border: 0,
+                  padding: 0,
+                  cursor: "pointer",
+                  color: "#ed6e6c",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+                aria-expanded={showIntroduced}
+              >
+                {showIntroduced ? (
+                  <ChevronDown className="w-3 h-3" />
+                ) : (
+                  <ChevronRight className="w-3 h-3" />
+                )}
+                Introduced species ({sel.introduced.length})
+              </button>
+              {showIntroduced && (
                 <div
-                  className="flex flex-wrap gap-1 max-h-28 overflow-auto p-2 rounded-sm"
+                  className="flex flex-wrap gap-1 max-h-28 overflow-auto p-2 rounded-sm mt-3"
                   style={{ background: "#fff", border: "1px solid #e6e8e8" }}
                 >
                   {sel.introduced.slice(0, 80).map((s, i) => (
@@ -9151,8 +9359,9 @@ const ValidateTab = ({
                     </span>
                   )}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          )}
           </div>
         </div>
 
