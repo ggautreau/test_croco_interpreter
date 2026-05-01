@@ -8424,6 +8424,9 @@ const ValidateTab = ({
   // normally). We attach the listener to window and check the focused
   // element on each keypress.
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  // The 5 detailed criteria are hidden by default — the score card above
+  // already conveys the headline. Click the toggle to expand.
+  const [showCriteriaDetails, setShowCriteriaDetails] = useState(false);
   useEffect(() => {
     const handler = (e) => {
       // Don't compete with the bulk-apply dialog's own input handling.
@@ -8972,71 +8975,97 @@ const ValidateTab = ({
               </div>
             </div>
 
-            <Criterion
-              n="01"
-              title="Shape of the contamination line"
-              wiki="Must be an actual straight line, not a scatter of points."
-              pass={diag?.r2 != null ? diag.r2 > 0.8 : null}
-              value={
-                diag?.r2 != null
-                  ? `R² = ${diag.r2.toFixed(3)}`
-                  : "abundance table required"
-              }
-            />
-            <Criterion
-              n="02"
-              title="Number of points on the line"
-              wiki="More than 10 species expected. Below this threshold the alignment may be statistical noise."
-              pass={diag?.n != null ? diag.n > 10 : null}
-              value={
-                diag?.n != null ? `${diag.n} species` : "abundance table required"
-              }
-            />
-            <Criterion
-              n="03"
-              title="Spread of the contamination line"
-              wiki="A real contamination transfers ALL species proportionally, so the line spans many decades of abundance. Biological similarity tends to share only abundant species — line concentrated in 1-1.5 decades."
-              pass={diag?.decadeRange != null ? diag.decadeRange >= 1.5 : null}
-              value={
-                diag?.decadeRange != null
-                  ? `${diag.decadeRange.toFixed(1)} decades`
-                  : "abundance table required"
-              }
-            />
-            <Criterion
-              n="04"
-              title="Abundant source species present in target"
-              wiki="Source 'core' species (those whose cumulative abundance reaches 80% of the source) should appear in the target if the contamination is real. Each species is checked against the target's own empirical limit of detection (smallest observed value), and only species whose expected target abundance (rate × source) exceeds that LOD are evaluated — so the threshold adapts to sequencing depth and contamination rate."
-              pass={
-                missing != null
-                  ? missing.evaluated === 0 || missing.count <= 2
-                  : null
-              }
-              value={
-                missing != null
-                  ? missing.evaluated === 0
-                    ? "no species testable"
-                    : `${missing.count} / ${missing.evaluated} missing`
-                  : "abundance table required"
-              }
-            />
-            <Criterion
-              n="05"
-              title="Points above the contamination line"
-              wiki="Pure mechanical contamination cannot put more of a species in the target than in the source. A few points slightly above (within 0.5 decade) can be tolerable biological noise, but ANY point sitting 0.5+ decade above means the target has ≥ 3× more of that species than the contamination could deliver — strong evidence the species belongs to the target's own biology."
-              pass={above != null ? above.count === 0 || above.maxDist < 0.5 : null}
-              value={
-                above != null
-                  ? above.count === 0
-                    ? "0 above"
-                    : above.maxDist < 0.5
-                      ? `${above.count} above (max ${above.maxDist.toFixed(1)} decade — tolerable)`
-                      : sel?.cascade
-                        ? `${above.farAbove}/${above.count} ≥ 0.5 decade above (max ${above.maxDist.toFixed(1)} — cascade explains)`
-                        : `${above.farAbove}/${above.count} ≥ 0.5 decade above (max ${above.maxDist.toFixed(1)})`
-                  : "abundance table required"
-              }
-            />
+            <button
+              type="button"
+              onClick={() => setShowCriteriaDetails((v) => !v)}
+              className="flex items-center gap-1 mb-2 text-[11px] tracking-[0.1em] uppercase"
+              style={{
+                background: "transparent",
+                border: 0,
+                padding: 0,
+                cursor: "pointer",
+                color: "#275662",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+              aria-expanded={showCriteriaDetails}
+            >
+              {showCriteriaDetails ? (
+                <ChevronDown className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5" />
+              )}
+              {showCriteriaDetails ? "Hide criteria details" : "Show criteria details"}
+            </button>
+            {showCriteriaDetails && (
+              <>
+                <Criterion
+                  n="01"
+                  title="Shape of the contamination line"
+                  wiki="Must be an actual straight line, not a scatter of points."
+                  pass={diag?.r2 != null ? diag.r2 > 0.8 : null}
+                  value={
+                    diag?.r2 != null
+                      ? `R² = ${diag.r2.toFixed(3)}`
+                      : "abundance table required"
+                  }
+                />
+                <Criterion
+                  n="02"
+                  title="Number of points on the line"
+                  wiki="More than 10 species expected. Below this threshold the alignment may be statistical noise."
+                  pass={diag?.n != null ? diag.n > 10 : null}
+                  value={
+                    diag?.n != null ? `${diag.n} species` : "abundance table required"
+                  }
+                />
+                <Criterion
+                  n="03"
+                  title="Spread of the contamination line"
+                  wiki="A real contamination transfers ALL species proportionally, so the line spans many decades of abundance. Biological similarity tends to share only abundant species — line concentrated in 1-1.5 decades."
+                  pass={diag?.decadeRange != null ? diag.decadeRange >= 1.5 : null}
+                  value={
+                    diag?.decadeRange != null
+                      ? `${diag.decadeRange.toFixed(1)} decades`
+                      : "abundance table required"
+                  }
+                />
+                <Criterion
+                  n="04"
+                  title="Abundant source species present in target"
+                  wiki="Source 'core' species (those whose cumulative abundance reaches 80% of the source) should appear in the target if the contamination is real. Each species is checked against the target's own empirical limit of detection (smallest observed value), and only species whose expected target abundance (rate × source) exceeds that LOD are evaluated — so the threshold adapts to sequencing depth and contamination rate."
+                  pass={
+                    missing != null
+                      ? missing.evaluated === 0 || missing.count <= 2
+                      : null
+                  }
+                  value={
+                    missing != null
+                      ? missing.evaluated === 0
+                        ? "no species testable"
+                        : `${missing.count} / ${missing.evaluated} missing`
+                      : "abundance table required"
+                  }
+                />
+                <Criterion
+                  n="05"
+                  title="Points above the contamination line"
+                  wiki="Pure mechanical contamination cannot put more of a species in the target than in the source. A few points slightly above (within 0.5 decade) can be tolerable biological noise, but ANY point sitting 0.5+ decade above means the target has ≥ 3× more of that species than the contamination could deliver — strong evidence the species belongs to the target's own biology."
+                  pass={above != null ? above.count === 0 || above.maxDist < 0.5 : null}
+                  value={
+                    above != null
+                      ? above.count === 0
+                        ? "0 above"
+                        : above.maxDist < 0.5
+                          ? `${above.count} above (max ${above.maxDist.toFixed(1)} decade — tolerable)`
+                          : sel?.cascade
+                            ? `${above.farAbove}/${above.count} ≥ 0.5 decade above (max ${above.maxDist.toFixed(1)} — cascade explains)`
+                            : `${above.farAbove}/${above.count} ≥ 0.5 decade above (max ${above.maxDist.toFixed(1)})`
+                      : "abundance table required"
+                  }
+                />
+              </>
+            )}
 
             {metadata && (
               <ContextualCriterion
