@@ -1731,7 +1731,15 @@ const NetworkGraph = ({
       layout.nodes.forEach((n) => {
         positioned[n.id] = { id: n.id, x: ox + n.x, y: oy + n.y, componentSize };
       });
-      return { nodes: positioned, edges: layout.edges, componentSize };
+      return {
+        nodes: positioned,
+        edges: layout.edges,
+        componentSize,
+        ox,
+        oy,
+        cw: cellWidth,
+        ch: cellHeight,
+      };
     });
   }, [visibleComponents, grid, cellWidth, cellHeight]);
 
@@ -2208,6 +2216,45 @@ const NetworkGraph = ({
             </g>
           );
         })}
+
+        {/* Empty-state per component — shown when filters hide every node
+            in a component. Positioned at the centre of that component's
+            grid cell. */}
+        {visibleNodeIds &&
+          laidOut.map((c, i) => {
+            const visibleHere = Object.keys(c.nodes).some((id) =>
+              visibleNodeIds.has(id),
+            );
+            if (visibleHere) return null;
+            const cx = c.ox + c.cw / 2;
+            const cy = c.oy + c.ch / 2;
+            return (
+              <g key={`empty-${i}`} pointerEvents="none">
+                <text
+                  x={cx}
+                  y={cy - 6}
+                  textAnchor="middle"
+                  fontSize="13"
+                  fontFamily="system-ui, sans-serif"
+                  fontWeight="600"
+                  fill="#797870"
+                >
+                  No events under current filters
+                </text>
+                <text
+                  x={cx}
+                  y={cy + 12}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fontFamily="system-ui, sans-serif"
+                  fill="#9aaab0"
+                >
+                  Relax the rate, probability or introduced thresholds to bring
+                  events back.
+                </text>
+              </g>
+            );
+          })}
         </g>
       </svg>
 
