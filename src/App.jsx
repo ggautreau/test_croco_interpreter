@@ -1908,6 +1908,7 @@ const NetworkGraph = ({
             runMetadata={runMetadata}
             onBulkApply={onBulkApply}
             hasAb={hasAb}
+            events={events}
           >
             <div className="ml-auto flex items-center gap-2.5">
               <VerdictDistribution
@@ -4023,12 +4024,36 @@ const EventFilterBar = ({
   runMetadata,
   onBulkApply,
   hasAb,
+  events,
   children,
 }) => {
   const cutoff = parseFloat(runMetadata?.probability_cutoff);
   const hasCutoff = Number.isFinite(cutoff) && cutoff > 0;
   const rc = parseFloat(runMetadata?.rate_cutoff);
   const hasRateCutoff = Number.isFinite(rc) && rc > 0;
+
+  // Floor the probability slider at whichever is lower: the crocodeel
+  // probability_cutoff (events below were never written), or the actual
+  // minimum score among the loaded events (the user may have added a
+  // manual event with a lower score via Explore pairs). Falls back to 0
+  // when neither signal is available.
+  const datasetScoreMin = useMemo(() => {
+    if (!Array.isArray(events) || events.length === 0) return null;
+    let m = Infinity;
+    for (const e of events) {
+      const s = e?.score;
+      if (typeof s === "number" && s < m) m = s;
+    }
+    return Number.isFinite(m) ? m : null;
+  }, [events]);
+  const scoreMin = useMemo(() => {
+    const candidates = [];
+    if (hasCutoff) candidates.push(cutoff);
+    if (datasetScoreMin != null) candidates.push(datasetScoreMin);
+    if (candidates.length === 0) return 0;
+    return Math.max(0, Math.floor(Math.min(...candidates) * 100) / 100);
+  }, [hasCutoff, cutoff, datasetScoreMin]);
+  const effectiveMinScore = Math.max(filter.minScore || 0, scoreMin);
 
   const showSubject = !!metadata;
   const showGroup = !!metadata?.hasGroupIdCol;
@@ -4164,8 +4189,8 @@ const EventFilterBar = ({
 
       <SliderChip
         label="probability"
-        value={filter.minScore.toFixed(2)}
-        title="CroCoDeEL Random-Forest probability that the contamination event is real (0–1). Higher = more confident. Drag to hide events below the threshold."
+        value={effectiveMinScore.toFixed(2)}
+        title="CroCoDeEL Random-Forest probability that the contamination event is real (0–1). Higher = more confident. Slider starts at the dataset's lowest score (events below the run cutoff were never written)."
         cutoffBadge={
           hasCutoff &&
           cutoffBadge(
@@ -4176,10 +4201,10 @@ const EventFilterBar = ({
       >
         <input
           type="range"
-          min={0}
+          min={scoreMin}
           max={1}
-          step={0.05}
-          value={filter.minScore}
+          step={0.01}
+          value={effectiveMinScore}
           onChange={(e) =>
             setFilter({ ...filter, minScore: parseFloat(e.target.value) })
           }
@@ -4548,6 +4573,7 @@ const EventsTable = ({
         runMetadata={runMetadata}
         onBulkApply={onBulkApply}
         hasAb={hasAb}
+        events={events}
       >
         <div className="ml-auto flex items-center gap-2.5">
           <VerdictDistribution events={events} />
@@ -6063,6 +6089,7 @@ const ScatterTab = ({
         runMetadata={runMetadata}
         onBulkApply={onBulkApply}
         hasAb={!!ab}
+        events={events}
       >
         <div className="ml-auto flex items-center gap-2.5">
           <VerdictDistribution events={sorted} />
@@ -8638,6 +8665,7 @@ const ValidateTab = ({
           onBulkApply={
             bulkApplyToEvents && onOpenBulkApply ? onOpenBulkApply : undefined
           }
+          events={events}
           hasAb={hasAb}
         >
           <div className="ml-auto flex items-center gap-2.5">
@@ -11466,8 +11494,15 @@ const HelpTab = ({ onStartTour }) => {
               ).
             </li>
             <li>
-              Optionally add the abundance table, sample metadata and plate
-              map. Each one unlocks new diagnostic features.
+              Add the abundance table — <strong>essential</strong> for
+              validating events; without it you only see the verdict-free
+              metadata and cannot inspect the source-vs-target abundance
+              profile of each pair.
+            </li>
+            <li>
+              Optionally add sample metadata and the plate map — each one
+              unlocks extra context (related-sample warnings, plate-proximity
+              criteria).
             </li>
             <li>
               Browse the tabs to get an overview, scan the events table,
@@ -11593,20 +11628,24 @@ const HelpTab = ({ onStartTour }) => {
         {/* ---------- species_abundance.tsv ---------- */}
         <HelpSection
           id="h-abundance"
-          eyebrow="Optional input"
+          eyebrow="Essential input"
           title="species_abundance.tsv"
         >
           <p>
-            Species × sample abundance matrix. Loading it activates:
+            <strong>
+              The abundance table is essential for any meaningful curation.
+            </strong>{" "}
+            The interpreter technically runs without it (events table,
+            network, plate proximity), but you cannot validate a contamination
+            event without inspecting the per-species abundances of source vs
+            target. Always load it.
           </p>
-          <ul className="list-disc pl-5">
-            <li>The Scatterplots tab (each event plotted as source vs target).</li>
-            <li>
-              Diagnostic checks (e.g. the "above-line points"
-              count, the dominance check).
-            </li>
-            <li>Inline mini-scatterplots in the Guided validation tab.</li>
-          </ul>
+          <p>
+            Loading it activates the Scatterplots tab (each event plotted as
+            source vs target), the diagnostic checks (line shape, spread,
+            above-line points, missing source species, dominance), and the
+            inline mini-scatterplots in the Guided validation workflow.
+          </p>
           <p>
             Format: first column lists species names, every other column is a
             sample. The parser normalizes each sample column to relative
@@ -12466,8 +12505,8 @@ const HelpTab = ({ onStartTour }) => {
           >
             Goulet L. et al.,{" "}
             <em>
-              CroCoDeEL: Cross-sample Contamination Detection in
-              metagenomics
+              CroCoDeEL: CROss-sample COntamination DEtection and Estimation
+              of its Level
             </em>
             , bioRxiv 2025.{" "}
             <a
