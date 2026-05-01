@@ -1,4 +1,4 @@
-# crocodeel version: 1.0.8 | rf_model: crocodeel_rf_Feb2026_2.joblib | hostname: ggautreau | username: ggautreau | datetime: 2026-04-27T19:47:56 | species_ab_table: /home/ggautreau/papier_CroCODeEL/crocodeel-interpreter/public/datasets/PRJNA698986_P2/species_abundance.tsv | filtering_ab_thr_factor: None | probability_cutoff: 0.5 | rate_cutoff: 0.0
+# crocodeel version: 1.2.1 | rf_model: crocodeel_rf_Feb2026_2.joblib | hostname: ggautreau | username: ggautreau | datetime: 2026-05-01T12:42:26 | species_ab_table: species_abundance.tsv | filtering_ab_thr_factor: None | probability_cutoff: 0.5 | rate_cutoff: 0.0
 source	target	rate	probability	contamination_specific_species
 57D14	57D17	8.29e-01	0.55	msp_0157,msp_0174,msp_0241,msp_0341,msp_1543,msp_0030,msp_2555,msp_2680
 59D37	59D43	8.18e-01	0.53	msp_0157,msp_0174,msp_0241,msp_0341,msp_1418c,msp_1432,msp_1754,msp_0030

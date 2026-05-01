@@ -1,4 +1,4 @@
-# crocodeel version: 1.0.8 | rf_model: crocodeel_rf_Feb2026_2.joblib | hostname: ggautreau | username: ggautreau | datetime: 2026-04-25T23:19:28 | species_ab_table: contamination_events.tsv | filtering_ab_thr_factor: None | probability_cutoff: 0.5 | rate_cutoff: 0.0
+# crocodeel version: 1.2.1 | rf_model: crocodeel_rf_Feb2026_2.joblib | hostname: ggautreau | username: ggautreau | datetime: 2026-05-01T12:16:16 | species_ab_table: species_abundance.tsv | filtering_ab_thr_factor: None | probability_cutoff: 0.5 | rate_cutoff: 0.0
 source	target	rate	probability	contamination_specific_species
 63D250	63D9	7.04e-01	0.97	msp_0003,msp_0007,msp_0010,msp_0012,msp_0017,msp_0023,msp_0046,msp_0069,msp_0071,msp_0076,msp_0089,msp_0090,msp_0092,msp_0100,msp_0103,msp_0111,msp_0115c,msp_0126,msp_0142,msp_0147,msp_0193,msp_0200,msp_0208,msp_0249,msp_0340,msp_0347,msp_0356,msp_0362,msp_0478,msp_0563,msp_0621,msp_0794,msp_0881,msp_0908,msp_0946,msp_0983,msp_1046,msp_1078,msp_1279,msp_1418c,msp_1436,msp_1519,msp_1543,msp_1682c,msp_0166
 63D29	63D40	6.75e-01	0.74	msp_0108,msp_0140,msp_0148c,msp_0157,msp_0174,msp_0241,msp_1554c,msp_1754,msp_1815,msp_0030,msp_0313,msp_2555,msp_2680
