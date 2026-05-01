@@ -1614,6 +1614,7 @@ const NetworkGraph = ({
   totalEvents,
   onPick,
   onBulkApply,
+  hasAb,
 }) => {
   const [hover, setHover] = useState(null);
   const [zoom, setZoom] = useState({ k: 1, x: 0, y: 0 });
@@ -1860,6 +1861,7 @@ const NetworkGraph = ({
             plateMap={plateMap}
             runMetadata={runMetadata}
             onBulkApply={onBulkApply}
+            hasAb={hasAb}
           >
             <div className="ml-auto flex items-center gap-2.5">
               <VerdictDistribution
@@ -3879,6 +3881,7 @@ const EventFilterBar = ({
   plateMap,
   runMetadata,
   onBulkApply,
+  hasAb,
   children,
 }) => {
   const cutoff = parseFloat(runMetadata?.probability_cutoff);
@@ -4043,27 +4046,29 @@ const EventFilterBar = ({
         />
       </SliderChip>
 
-      <SliderChip
-        label="introduced"
-        value={`${(filter.minIntroduced || 0).toFixed(1)}%`}
-        title="Percentage of the target sample's species that are likely introduced by the contamination event (vs. native to the target). Higher = more of the target's biodiversity is explained by the source."
-      >
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={0.5}
-          value={filter.minIntroduced || 0}
-          onChange={(e) =>
-            setFilter({
-              ...filter,
-              minIntroduced: parseFloat(e.target.value),
-            })
-          }
-          style={{ accentColor: "#00a3a6", width: 72 }}
-          title="% of target species introduced by the contamination"
-        />
-      </SliderChip>
+      {hasAb && (
+        <SliderChip
+          label="introduced"
+          value={`${(filter.minIntroduced || 0).toFixed(1)}%`}
+          title="Percentage of the target sample's species that are likely introduced by the contamination event (vs. native to the target). Higher = more of the target's biodiversity is explained by the source."
+        >
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={0.5}
+            value={filter.minIntroduced || 0}
+            onChange={(e) =>
+              setFilter({
+                ...filter,
+                minIntroduced: parseFloat(e.target.value),
+              })
+            }
+            style={{ accentColor: "#00a3a6", width: 72 }}
+            title="% of target species introduced by the contamination"
+          />
+        </SliderChip>
+      )}
 
       <FilterDivider />
 
@@ -4360,6 +4365,7 @@ const EventsTable = ({
   plateMap,
   runMetadata,
   onBulkApply,
+  hasAb,
 }) => {
   const PAGE_SIZE = 500;
   const [page, setPage] = useState(1);
@@ -4400,6 +4406,7 @@ const EventsTable = ({
         plateMap={plateMap}
         runMetadata={runMetadata}
         onBulkApply={onBulkApply}
+        hasAb={hasAb}
       >
         <div className="ml-auto flex items-center gap-2.5">
           <VerdictDistribution events={events} />
@@ -5914,6 +5921,7 @@ const ScatterTab = ({
         plateMap={plateMap}
         runMetadata={runMetadata}
         onBulkApply={onBulkApply}
+        hasAb={!!ab}
       >
         <div className="ml-auto flex items-center gap-2.5">
           <VerdictDistribution events={sorted} />
@@ -6023,6 +6031,7 @@ const NetworkTab = ({
   runMetadata,
   onPick,
   onBulkApply,
+  hasAb,
 }) => {
   const filteredIds = useMemo(
     () => new Set(filtered.map((e) => e.id)),
@@ -6048,6 +6057,7 @@ const NetworkTab = ({
       totalEvents={events.length}
       onPick={onPick}
       onBulkApply={onBulkApply}
+      hasAb={hasAb}
     />
     <p
       className="text-[11px] mt-3 flex items-center gap-1.5"
@@ -8362,6 +8372,7 @@ const ValidateTab = ({
           onBulkApply={
             bulkApplyToEvents && onOpenBulkApply ? onOpenBulkApply : undefined
           }
+          hasAb={hasAb}
         >
           <div className="ml-auto flex items-center gap-2.5">
             <VerdictDistribution events={queue} />
@@ -13529,7 +13540,10 @@ export default function App() {
 
   const filtered = useMemo(() => {
     const q = filter.q.trim().toLowerCase();
-    const minIntro = filter.minIntroduced || 0;
+    // Skip the introduced-fraction filter when no abundance is loaded —
+    // every event has introducedPct == null in that case, so applying it
+    // would silently hide everything.
+    const minIntro = ab ? filter.minIntroduced || 0 : 0;
     let res = events.filter((e) => {
       if (e.score < filter.minScore) return false;
       if (e.rate < filter.minRate) return false;
@@ -13583,7 +13597,7 @@ export default function App() {
       return sort.dir === "asc" ? av - bv : bv - av;
     });
     return res;
-  }, [events, filter, sort, metadata, plateMap]);
+  }, [events, filter, sort, metadata, plateMap, ab]);
 
   const counts = useMemo(() => {
     const c = {
@@ -15133,6 +15147,7 @@ export default function App() {
               onBulkApply={
                 bulkApplyToEvents ? () => setBulkApplyOpen(true) : undefined
               }
+              hasAb={!!ab}
             />
           )}
           {tab === "scatter" && (
@@ -15172,6 +15187,7 @@ export default function App() {
               onBulkApply={
                 bulkApplyToEvents ? () => setBulkApplyOpen(true) : undefined
               }
+              hasAb={!!ab}
             />
           )}
           {tab === "plate" && (
