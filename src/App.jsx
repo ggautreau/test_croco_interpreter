@@ -14433,43 +14433,147 @@ const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
   );
 };
 
-const ExportTab = ({ counts, onExportTSV, onExportHTML }) => (
-  <div>
-    <SectionTitle eyebrow="Export" title="Save your curated report">
-      Download a TSV with every event (verdict, action, notes) or a printable
-      HTML report. To back up the full session — including loaded files and UI
-      state — use <strong style={{ color: "var(--ink)" }}>Download session</strong>{" "}
-      on the files bar.
-    </SectionTitle>
-    <div className="grid md:grid-cols-2 gap-4 mt-8">
-      <ExportCard
-        title="TSV — every event"
-        desc="Every event with its verdict, action and notes. Filter downstream using the verdict / action columns if you want to drop FPs or keep TPs only."
-        action="Download TSV"
-        onClick={() => onExportTSV()}
-      />
-      <ExportCard
-        title="HTML report — printable / Save as PDF"
-        desc="Self-contained HTML with summary, run parameters and curation table. Open it and use Ctrl+P (Cmd+P) to save as PDF — no extra software needed."
-        action="Download HTML"
-        onClick={onExportHTML}
-      />
+const ExportTab = ({
+  events,
+  filteredEvents,
+  filter,
+  setFilter,
+  metadata,
+  plateMap,
+  runMetadata,
+  hasAb,
+  actionEnabled,
+  onExportTSV,
+  onExportHTML,
+}) => {
+  // Compute counts from the filtered subset so the stat row reflects what
+  // will actually go into the export. When the suppress/keep feature is
+  // on, we also tally effective actions — defaulting TP→suppress and
+  // FP→keep so the cards match the bulk-apply rules.
+  const counts = useMemo(() => {
+    const c = {
+      total: filteredEvents.length,
+      tp: 0,
+      fp: 0,
+      uncertain: 0,
+      pending: 0,
+      suppress: 0,
+      keep: 0,
+    };
+    filteredEvents.forEach((e) => {
+      if (e.verdict === "true_positive") c.tp++;
+      else if (e.verdict === "false_positive") c.fp++;
+      else if (e.verdict === "uncertain") c.uncertain++;
+      else c.pending++;
+      const defaultAction =
+        e.verdict === "true_positive"
+          ? "suppress"
+          : e.verdict === "false_positive"
+            ? "keep"
+            : null;
+      const effective = e.action || defaultAction;
+      if (effective === "suppress") c.suppress++;
+      else if (effective === "keep") c.keep++;
+    });
+    return c;
+  }, [filteredEvents]);
+
+  const totalLoaded = events.length;
+  const isFiltered = filteredEvents.length !== totalLoaded;
+
+  return (
+    <div>
+      <SectionTitle eyebrow="Export" title="Save your curated report">
+        Download a TSV with every event (verdict, action, notes) or a printable
+        HTML report. The filter bar below scopes the export — to back up the
+        full session including loaded files and UI state, use{" "}
+        <strong style={{ color: "var(--ink)" }}>Download session</strong> on the
+        files bar.
+      </SectionTitle>
+
+      {filter && setFilter && (
+        <div className="mt-6">
+          <EventFilterBar
+            filter={filter}
+            setFilter={setFilter}
+            metadata={metadata}
+            plateMap={plateMap}
+            runMetadata={runMetadata}
+            events={events}
+            actionEnabled={actionEnabled}
+            hasAb={hasAb}
+          >
+            <div className="ml-auto flex items-center gap-2.5">
+              <VerdictDistribution events={filteredEvents} />
+              <span className="text-[12px]" style={{ color: "var(--ink-muted)" }}>
+                {filteredEvents.length} / {totalLoaded}
+              </span>
+            </div>
+          </EventFilterBar>
+        </div>
+      )}
+
+      <div className="grid md:grid-cols-2 gap-4 mt-6">
+        <ExportCard
+          title={`TSV — ${counts.total} event${counts.total === 1 ? "" : "s"}`}
+          desc={
+            isFiltered
+              ? `Exports the ${counts.total} event${counts.total === 1 ? "" : "s"} matching the current filter (out of ${totalLoaded}). Verdict, action and notes columns are included.`
+              : "Every event with its verdict, action and notes. Filter downstream using the verdict / action columns if you want to drop FPs or keep TPs only."
+          }
+          action="Download TSV"
+          onClick={() => onExportTSV(filteredEvents)}
+        />
+        <ExportCard
+          title={`HTML report — ${counts.total} event${counts.total === 1 ? "" : "s"}`}
+          desc={
+            isFiltered
+              ? `Self-contained HTML covering the ${counts.total} filtered event${counts.total === 1 ? "" : "s"}. Open it and use Ctrl+P (Cmd+P) to save as PDF.`
+              : "Self-contained HTML with summary, run parameters and curation table. Open it and use Ctrl+P (Cmd+P) to save as PDF — no extra software needed."
+          }
+          action="Download HTML"
+          onClick={() =>
+            onExportHTML(filteredEvents, { filter, actionEnabled })
+          }
+        />
+      </div>
+
+      <div
+        className={`mt-10 pt-6 grid grid-cols-2 md:grid-cols-3 gap-4 ${
+          actionEnabled ? "lg:grid-cols-7" : "lg:grid-cols-5"
+        }`}
+        style={{ borderTop: "1px solid var(--border)" }}
+      >
+        <Stat
+          label={isFiltered ? `In export (of ${totalLoaded})` : "Total"}
+          value={counts.total}
+        />
+        <Stat label="True positives" value={counts.tp} tone="good" />
+        <Stat label="False positives" value={counts.fp} tone="bad" />
+        <Stat label="Uncertain" value={counts.uncertain} tone="warn" />
+        <Stat label="Pending" value={counts.pending} />
+        {actionEnabled && (
+          <Stat
+            label="To suppress"
+            value={counts.suppress}
+            tone={counts.suppress > 0 ? "bad" : "neutral"}
+          />
+        )}
+        {actionEnabled && (
+          <Stat
+            label="To keep"
+            value={counts.keep}
+            tone={counts.keep > 0 ? "good" : "neutral"}
+          />
+        )}
+      </div>
+      <p className="text-[12px] mt-6" style={{ color: "var(--ink-muted)" }}>
+        Need to retrieve the files you opened? Each file card at the top of
+        the page has a small Download button when the file is loaded.
+      </p>
     </div>
-    <div
-      className="mt-10 pt-6 grid grid-cols-2 md:grid-cols-4 gap-4"
-      style={{ borderTop: "1px solid var(--border)" }}
-    >
-      <Stat label="Total" value={counts.total} />
-      <Stat label="True positives" value={counts.tp} tone="good" />
-      <Stat label="False positives" value={counts.fp} tone="bad" />
-      <Stat label="Pending" value={counts.pending + counts.uncertain} />
-    </div>
-    <p className="text-[12px] mt-6" style={{ color: "var(--ink-muted)" }}>
-      Need to retrieve the files you opened? Each file card at the top of
-      the page has a small Download button when the file is loaded.
-    </p>
-  </div>
-);
+  );
+};
 /* ============================================================================
    8. MAIN APP
    ============================================================================ */
@@ -16156,28 +16260,31 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const exportReport = () => {
-    // Export every event regardless of verdict so the TSV reflects the
-    // full curation state. Downstream filtering (e.g. drop FPs) is left
-    // to the consumer using the verdict + action columns.
+  const exportReport = (eventsList) => {
+    // Caller can pass a filtered subset (e.g. from the Export tab's
+    // filter bar). When omitted we dump every loaded event so downstream
+    // tools can do their own filtering on the verdict/action columns.
+    const list = Array.isArray(eventsList) ? eventsList : events;
     const header = [
       "source",
       "target",
       "contamination_rate",
       "probability",
+      "introduced_pct",
       "introduced_species",
       "verdict",
       "action",
       "notes",
     ];
     const lines = [header.join("\t")];
-    events.forEach((e) => {
+    list.forEach((e) => {
       lines.push(
         [
           e.source,
           e.target,
           e.rate,
           e.score,
+          e.introducedPct == null ? "" : (e.introducedPct / 100).toFixed(4),
           e.introduced.join(","),
           e.verdict,
           e.action || "",
@@ -16291,7 +16398,35 @@ export default function App() {
       list, and the cascade chain when relevant. The user opens the
       file and uses their browser's "Save as PDF" (Ctrl+P or Cmd+P) to
       get a PDF without any external dependency. */
-  const exportHTMLReport = () => {
+  const exportHTMLReport = (eventsList, opts) => {
+    const list = Array.isArray(eventsList) ? eventsList : events;
+    const reportFilter = opts && opts.filter ? opts.filter : null;
+    const reportActionEnabled = !!(opts && opts.actionEnabled);
+    // Recompute the verdict tally over the filtered subset so the
+    // header in the report matches what's actually rendered below.
+    // Also tally suppress/keep using the same defaulting rule as the UI
+    // (TP→suppress, FP→keep) so the report's headline numbers match the
+    // Export tab's stat row.
+    const counts = list.reduce(
+      (acc, e) => {
+        acc.total++;
+        if (e.verdict === "true_positive") acc.tp++;
+        else if (e.verdict === "false_positive") acc.fp++;
+        else if (e.verdict === "uncertain") acc.uncertain++;
+        else acc.pending++;
+        const defaultAction =
+          e.verdict === "true_positive"
+            ? "suppress"
+            : e.verdict === "false_positive"
+              ? "keep"
+              : null;
+        const eff = e.action || defaultAction;
+        if (eff === "suppress") acc.suppress++;
+        else if (eff === "keep") acc.keep++;
+        return acc;
+      },
+      { total: 0, tp: 0, fp: 0, uncertain: 0, pending: 0, suppress: 0, keep: 0 },
+    );
     const escapeHTML = (s) =>
       String(s == null ? "" : s)
         .replace(/&/g, "&amp;")
@@ -16299,17 +16434,92 @@ export default function App() {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
 
+    // Verdicts arrive as snake_case ("true_positive"); accept both the
+    // canonical form and a couple of upper-case shorthands so the pill
+    // never silently falls back to "Pending".
     const verdictPill = (v) => {
+      const norm = String(v || "").toLowerCase();
       const tone =
-        v === "TP"
+        norm === "true_positive" || norm === "tp"
           ? { bg: "#00a3a6", label: "True positive" }
-          : v === "FP"
+          : norm === "false_positive" || norm === "fp"
             ? { bg: "#ed6e6c", label: "False positive" }
-            : v === "UNCERTAIN"
-              ? { bg: "var(--border-strong)", label: "Uncertain" }
-              : { bg: "var(--border)", label: "Pending", textColor: "#5a5550" };
+            : norm === "uncertain"
+              ? { bg: "#c4c0b3", label: "Uncertain" }
+              : { bg: "#e6e8e8", label: "Pending", textColor: "#5a5550" };
       return `<span style="background:${tone.bg};color:${tone.textColor || "#fff"};padding:2px 8px;border-radius:2px;font-size:10px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;">${tone.label}</span>`;
     };
+
+    // Action chip — the curator's "what to do with the contaminated
+    // sample" choice. Defaults follow the verdict (TP→suppress, FP→keep)
+    // but the pill renders the explicit value when set, with an italic
+    // "(default)" suffix when we're inheriting from the verdict.
+    const actionPill = (e) => {
+      const defaultAction =
+        e.verdict === "true_positive"
+          ? "suppress"
+          : e.verdict === "false_positive"
+            ? "keep"
+            : null;
+      const eff = e.action || defaultAction;
+      if (!eff) return "";
+      const tone =
+        eff === "suppress"
+          ? { bg: "#ed6e6c", label: "Suppress" }
+          : { bg: "#00a3a6", label: "Keep" };
+      const isDefault = !e.action && !!defaultAction;
+      return `<span style="background:${tone.bg};color:#fff;padding:2px 8px;border-radius:2px;font-size:10px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;">${tone.label}</span>${isDefault ? ' <em style="color:#797870;font-size:9px;">(default)</em>' : ""}`;
+    };
+
+    // Build a one-paragraph summary of the active filter so the reader
+    // knows what subset they're looking at. Only mentions fields that
+    // diverge from the defaults; returns null when nothing is active.
+    const filterSummary = (() => {
+      if (!reportFilter) return null;
+      const parts = [];
+      if (reportFilter.q && reportFilter.q.trim()) {
+        parts.push(`search: "${escapeHTML(reportFilter.q.trim())}"`);
+      }
+      if (reportFilter.minScore && reportFilter.minScore > 0) {
+        parts.push(`probability ≥ ${reportFilter.minScore.toFixed(2)}`);
+      }
+      if (reportFilter.minRate && reportFilter.minRate > 0) {
+        parts.push(
+          `rate ≥ ${(reportFilter.minRate * 100).toFixed(2)}%`,
+        );
+      }
+      if (reportFilter.minIntroduced && reportFilter.minIntroduced > 0) {
+        parts.push(`introduced ≥ ${reportFilter.minIntroduced.toFixed(0)}%`);
+      }
+      if (
+        Array.isArray(reportFilter.verdicts) &&
+        reportFilter.verdicts.length > 0 &&
+        reportFilter.verdicts.length < 4
+      ) {
+        const labels = {
+          true_positive: "true positive",
+          false_positive: "false positive",
+          uncertain: "uncertain",
+          pending: "pending",
+        };
+        parts.push(
+          `verdict: ${reportFilter.verdicts.map((v) => labels[v] || v).join(", ")}`,
+        );
+      }
+      if (reportFilter.action) {
+        parts.push(`action: ${reportFilter.action}`);
+      }
+      if (reportFilter.subject && reportFilter.subject !== "any") {
+        parts.push(`subject: ${reportFilter.subject}`);
+      }
+      if (reportFilter.group && reportFilter.group !== "any") {
+        parts.push(`group: ${reportFilter.group}`);
+      }
+      if (reportFilter.adjacent && reportFilter.adjacent !== "any") {
+        parts.push(`plate: ${reportFilter.adjacent}`);
+      }
+      return parts.length ? parts.join(" · ") : null;
+    })();
 
     /** Build a small SVG scatterplot for an event. Mirrors the visual
         language of the main Scatterplot component (deep teal points
@@ -16383,7 +16593,8 @@ export default function App() {
       return svg;
     };
 
-    /** Render the 5 diagnostic checks for an event as a small list. */
+    /** Render the diagnostic checks for an event as a small list, plus
+        a side table with the underlying numerical values. */
     const renderDiagChecks = (event) => {
       const sc = buildScatter(ab, event);
       if (!sc || sc.error) return "<em style='color:#797870'>abundance table required</em>";
@@ -16392,30 +16603,112 @@ export default function App() {
       const mi = missingAbundantFromSource(ab, event.source, event.target, event.rate);
       const rel = areRelated(metadata, event.source, event.target);
       const score = automaticScore(di, ab2, mi, event.cascade, rel);
-      return `
-        <ul class="checklist">
-          ${score.reasons
+      const valueRows = [];
+      if (di?.r2 != null) valueRows.push(["R² of line fit", di.r2.toFixed(3)]);
+      if (di?.n != null) valueRows.push(["Species on line", di.n]);
+      if (di?.decadeRange != null)
+        valueRows.push(["Line decade span", `${di.decadeRange.toFixed(2)} dec`]);
+      if (di?.spearman != null)
+        valueRows.push(["Spearman ρ (full profiles)", di.spearman.toFixed(3)]);
+      if (mi?.evaluated != null)
+        valueRows.push([
+          "Missing abundant species",
+          `${mi.count}/${mi.evaluated}`,
+        ]);
+      if (ab2?.count != null) {
+        valueRows.push([
+          "Above-line points",
+          `${ab2.count} total · ${ab2.farAbove ?? 0} ≥ 0.5 dec · max ${(ab2.maxDist ?? 0).toFixed(2)} dec`,
+        ]);
+      }
+      if (rel) {
+        valueRows.push([
+          "Same individual",
+          rel.related
+            ? `Yes — ${rel.kind === "subject" ? `subject ${escapeHTML(rel.value)}` : rel.kind === "group" ? `group ${escapeHTML(rel.value)}` : "related"}`
+            : "No",
+        ]);
+      }
+      const valueTable = valueRows.length
+        ? `<table class="kv diag-values"><tbody>${valueRows
             .map(
-              (r) =>
-                `<li><span class="${r.ok ? "ok" : "bad"}">${r.ok ? "✓" : "✗"}</span> ${escapeHTML(r.label)}</li>`,
+              ([k, v]) =>
+                `<tr><th>${escapeHTML(k)}</th><td>${typeof v === "string" ? v : escapeHTML(String(v))}</td></tr>`,
             )
-            .join("")}
-        </ul>
-        <div class="aggregate ${score.good === score.total ? "all-pass" : score.good >= Math.ceil(score.total * 0.6) ? "warn" : "fail"}">
-          ${score.good} / ${score.total} —
-          ${score.good === score.total
-            ? "CONTAMINATED — CroCoDeEL is probably right"
-            : score.good >= Math.ceil(score.total * 0.6)
-              ? "POSSIBLY NOT CONTAMINATED — use CroCoDeEL's call with prudence"
-              : "PROBABLY NOT CONTAMINATED — review carefully"}
+            .join("")}</tbody></table>`
+        : "";
+      return `
+        <div class="diag-grid">
+          <div>
+            <ul class="checklist">
+              ${score.reasons
+                .map(
+                  (r) =>
+                    `<li><span class="${r.ok ? "ok" : "bad"}">${r.ok ? "✓" : "✗"}</span> ${escapeHTML(r.label)}</li>`,
+                )
+                .join("")}
+            </ul>
+            <div class="aggregate ${score.good === score.total ? "all-pass" : score.good >= Math.ceil(score.total * 0.6) ? "warn" : "fail"}">
+              ${score.good} / ${score.total} —
+              ${score.good === score.total
+                ? "CONTAMINATED — CroCoDeEL is probably right"
+                : score.good >= Math.ceil(score.total * 0.6)
+                  ? "POSSIBLY NOT CONTAMINATED — use CroCoDeEL's call with prudence"
+                  : "PROBABLY NOT CONTAMINATED — review carefully"}
+            </div>
+          </div>
+          ${valueTable ? `<div>${valueTable}</div>` : ""}
         </div>
       `;
     };
 
-    const overviewRows = events
+    // Pretty-print a sample's metadata (subject / timepoint / biome /
+    // group + control / low-biomass flags). Returns "" when nothing is
+    // known about the sample.
+    const sampleMetaInline = (sid) => {
+      if (!metadata) return "";
+      const m = metadata.bySample[sid];
+      if (!m) return "";
+      const bits = [];
+      if (m.subject) bits.push(`subject ${escapeHTML(m.subject)}`);
+      if (m.timepoint) bits.push(`timepoint ${escapeHTML(m.timepoint)}`);
+      if (m.biome) bits.push(escapeHTML(m.biome));
+      if (m.groupId) bits.push(`group ${escapeHTML(m.groupId)}`);
+      if (m.isControl) bits.push("<strong style='color:#ed6e6c;'>control</strong>");
+      if (m.lowBiomassExplicit) bits.push("low biomass");
+      if (m.lowSequencingDepthExplicit) bits.push("low sequencing depth");
+      return bits.join(" · ");
+    };
+
+    // Pretty-print a sample's plate position as "P3 · A07" (plate ·
+    // well). Returns "" when no plate map is loaded or the sample isn't
+    // mapped.
+    const samplePlateInline = (sid) => {
+      if (!plateMap) return "";
+      const p = plateMap.bySample[sid];
+      if (!p) return "";
+      return `${escapeHTML(p.plate)} · ${escapeHTML(wellLabel(p.row, p.col))}`;
+    };
+
+    const overviewRows = list
       .map((e, i) => {
         const rel = areRelated(metadata, e.source, e.target);
         const pd = plateDistance(plateMap, e.source, e.target);
+        const relCell = rel
+          ? rel.related
+            ? rel.kind === "subject"
+              ? `<em>same subject ${escapeHTML(rel.value)}</em>`
+              : rel.kind === "group"
+                ? `<em>same group ${escapeHTML(rel.value)}</em>`
+                : "<em>related</em>"
+            : "<em style='color:#797870;'>different</em>"
+          : "";
+        const plateCell =
+          pd == null
+            ? ""
+            : !pd.samePlate
+              ? "<em style='color:#797870;'>different plates</em>"
+              : `Δ ${pd.distance} well${pd.distance > 1 ? "s" : ""}`;
         return `
         <tr>
           <td class="num">${i + 1}</td>
@@ -16424,25 +16717,31 @@ export default function App() {
           <td class="num">${(e.rate * 100).toFixed(2)}%</td>
           <td class="num">${e.score.toFixed(3)}</td>
           <td class="num">${e.introducedPct == null ? "—" : `${e.introducedPct.toFixed(1)}%`}</td>
+          <td class="num">${e.introduced?.length ?? 0}</td>
           <td>${verdictPill(e.verdict)}</td>
-          <td>${rel?.related ? `<em>${escapeHTML(rel.reason)}</em>` : ""}</td>
-          <td>${pd != null ? `Δ ${pd}` : ""}</td>
+          ${reportActionEnabled ? `<td>${actionPill(e)}</td>` : ""}
+          <td>${relCell}</td>
+          <td>${plateCell}</td>
           <td>${e.cascade ? "yes" : ""}</td>
+          <td style="font-size:9px;color:#5a5550;">${e.notes ? escapeHTML(e.notes) : ""}</td>
         </tr>`;
       })
       .join("");
 
-    const detailPages = events
+    const detailPages = list
       .map((e, i) => {
         const rel = areRelated(metadata, e.source, e.target);
         const pd = plateDistance(plateMap, e.source, e.target);
+        // Print up to 80 introduced species in the per-event detail —
+        // covers nearly every real event without exploding the page.
+        const INTRO_LIMIT = 80;
         const introducedList = (e.introduced || [])
-          .slice(0, 30)
+          .slice(0, INTRO_LIMIT)
           .map((sp) => `<code>${escapeHTML(sp)}</code>`)
           .join(", ");
         const introducedExtra =
-          e.introduced && e.introduced.length > 30
-            ? ` <em>(+${e.introduced.length - 30} more)</em>`
+          e.introduced && e.introduced.length > INTRO_LIMIT
+            ? ` <em>(+${e.introduced.length - INTRO_LIMIT} more)</em>`
             : "";
 
         const cascadeBlock = e.cascade
@@ -16459,6 +16758,22 @@ export default function App() {
           </ul>`
           : "";
 
+        const sourceMeta = sampleMetaInline(e.source);
+        const targetMeta = sampleMetaInline(e.target);
+        const sourcePos = samplePlateInline(e.source);
+        const targetPos = samplePlateInline(e.target);
+        const platePosRow =
+          sourcePos || targetPos
+            ? `<tr><th>Plate position</th><td>${sourcePos ? `Source <code>${escapeHTML(e.source)}</code> at ${sourcePos}` : ""}${sourcePos && targetPos ? "<br/>" : ""}${targetPos ? `Target <code>${escapeHTML(e.target)}</code> at ${targetPos}` : ""}${pd != null ? ` <em>(Δ ${pd.samePlate ? `${pd.distance} well${pd.distance > 1 ? "s" : ""}` : "different plates"})</em>` : ""}</td></tr>`
+            : pd != null
+              ? `<tr><th>Plate distance</th><td>${pd.samePlate ? `Δ ${pd.distance} well${pd.distance > 1 ? "s" : ""}` : "Different plates"}</td></tr>`
+              : "";
+        const subjectRow = sourceMeta || targetMeta
+          ? `<tr><th>Sample metadata</th><td>${sourceMeta ? `Source <code>${escapeHTML(e.source)}</code>: ${sourceMeta}` : ""}${sourceMeta && targetMeta ? "<br/>" : ""}${targetMeta ? `Target <code>${escapeHTML(e.target)}</code>: ${targetMeta}` : ""}${rel ? `<br/>Relatedness: <em>${rel.related ? (rel.kind === "subject" ? `same subject (${escapeHTML(rel.value)})` : rel.kind === "group" ? `same group (${escapeHTML(rel.value)})` : "related") : "different"}</em>` : ""}</td></tr>`
+          : rel?.related
+            ? `<tr><th>Sample relatedness</th><td><em>${rel.kind === "subject" ? `same subject (${escapeHTML(rel.value)})` : rel.kind === "group" ? `same group (${escapeHTML(rel.value)})` : "related"}</em></td></tr>`
+            : "";
+
         const contextBlock = `
           <table class="kv">
             <tbody>
@@ -16468,8 +16783,9 @@ export default function App() {
               <tr><th>RF probability</th><td>${e.score.toFixed(3)}</td></tr>
               ${e.introducedPct == null ? "" : `<tr><th>Introduced (% of target species)</th><td>${e.introducedPct.toFixed(1)}%</td></tr>`}
               <tr><th>Verdict</th><td>${verdictPill(e.verdict)}</td></tr>
-              ${rel?.related ? `<tr><th>Sample relatedness</th><td><em>${escapeHTML(rel.reason)}</em></td></tr>` : ""}
-              ${pd != null ? `<tr><th>Plate distance</th><td>Δ ${pd} well${pd > 1 ? "s" : ""}</td></tr>` : ""}
+              ${reportActionEnabled ? `<tr><th>Action</th><td>${actionPill(e) || "<em style='color:#797870;'>none</em>"}</td></tr>` : ""}
+              ${subjectRow}
+              ${platePosRow}
               <tr><th>Introduced species</th><td>${e.introduced?.length || 0} total. ${introducedList}${introducedExtra}</td></tr>
               ${e.notes ? `<tr><th>Curator notes</th><td>${escapeHTML(e.notes)}</td></tr>` : ""}
             </tbody>
@@ -16477,7 +16793,7 @@ export default function App() {
 
         return `
         <div class="event-page">
-          <h3>Event ${i + 1} of ${events.length} · ${escapeHTML(e.source)} → ${escapeHTML(e.target)}</h3>
+          <h3>Event ${i + 1} of ${list.length} · ${escapeHTML(e.source)} → ${escapeHTML(e.target)}</h3>
           <div class="event-grid">
             <div class="event-plot">
               ${renderScatterSVG(e)}
@@ -16564,7 +16880,7 @@ export default function App() {
   }
   .summary {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(${reportActionEnabled ? 7 : 5}, 1fr);
     gap: 12px;
     margin: 16px 0;
   }
@@ -16588,6 +16904,48 @@ export default function App() {
   .stat.tp .value { color: #00a3a6; }
   .stat.fp .value { color: #ed6e6c; }
   .stat.unc .value { color: #797870; }
+  .stat.suppress .value { color: #ed6e6c; }
+  .stat.keep .value { color: #00a3a6; }
+  .filter-banner {
+    background: #fff7e6;
+    border: 1px solid #f0c674;
+    border-left: 3px solid #d97a3c;
+    border-radius: 3px;
+    padding: 8px 12px;
+    font-size: 11px;
+    color: #5a5550;
+    margin: 12px 0 0;
+  }
+  .filter-banner strong { color: #b46028; font-weight: 700; }
+  .diag-grid {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 16px;
+    align-items: start;
+  }
+  .diag-values th { width: 60%; font-weight: 600; }
+  .diag-values td { font-variant-numeric: tabular-nums; }
+  .dataset-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin: 12px 0;
+    font-size: 11px;
+  }
+  .dataset-grid .item {
+    border: 1px solid #e6e8e8;
+    border-radius: 3px;
+    padding: 8px 10px;
+  }
+  .dataset-grid .item .k {
+    font-size: 9px;
+    color: #797870;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .dataset-grid .item .v { font-weight: 600; color: #275662; }
   table {
     width: 100%;
     border-collapse: collapse;
@@ -16690,7 +17048,11 @@ export default function App() {
   <h1>CroCoDeEL curation report</h1>
   <div class="meta">
     Generated ${new Date().toLocaleString()} ·
-    ${counts.total} event${counts.total > 1 ? "s" : ""} curated
+    ${counts.total} event${counts.total > 1 ? "s" : ""} ${
+      list.length === events.length
+        ? "curated"
+        : `in this report (out of ${events.length} loaded)`
+    }
   </div>
 
   <h2>Summary</h2>
@@ -16700,6 +17062,27 @@ export default function App() {
     <div class="stat fp"><div class="label">False positive</div><div class="value">${counts.fp}</div></div>
     <div class="stat unc"><div class="label">Uncertain</div><div class="value">${counts.uncertain}</div></div>
     <div class="stat"><div class="label">Pending</div><div class="value">${counts.pending}</div></div>
+    ${reportActionEnabled ? `<div class="stat suppress"><div class="label">To suppress</div><div class="value">${counts.suppress}</div></div>` : ""}
+    ${reportActionEnabled ? `<div class="stat keep"><div class="label">To keep</div><div class="value">${counts.keep}</div></div>` : ""}
+  </div>
+  ${
+    filterSummary
+      ? `<div class="filter-banner"><strong>Filter applied:</strong> ${filterSummary}. Counts above and the per-event detail below cover only the matching subset.</div>`
+      : ""
+  }
+
+  <h2>Dataset context</h2>
+  <div class="dataset-grid">
+    <div class="item"><div class="k">Total events loaded</div><div class="v">${events.length}</div></div>
+    <div class="item"><div class="k">Events in report</div><div class="v">${list.length}</div></div>
+    <div class="item"><div class="k">Abundance table</div><div class="v">${ab ? `${ab.species?.length || 0} species · ${ab.samples?.length || 0} samples` : "<em style='font-weight:400;color:#797870;'>not loaded</em>"}</div></div>
+    <div class="item"><div class="k">Sample metadata</div><div class="v">${
+      metadata
+        ? `${metadata.nSamples} samples${metadata.hasGroupIdCol ? " · group_id" : ""}${metadata.hasBiomeCol ? " · biome" : ""}${metadata.hasLowBiomassCol ? " · low_biomass" : ""}`
+        : "<em style='font-weight:400;color:#797870;'>not loaded</em>"
+    }</div></div>
+    <div class="item"><div class="k">Plate map</div><div class="v">${plateMap ? `${Object.keys(plateMap.bySample).length} samples · ${plateMap.format.rows}×${plateMap.format.cols}` : "<em style='font-weight:400;color:#797870;'>not loaded</em>"}</div></div>
+    <div class="item"><div class="k">Suppress / keep</div><div class="v">${reportActionEnabled ? "enabled" : "<em style='font-weight:400;color:#797870;'>disabled</em>"}</div></div>
   </div>
 
   ${runMetaSection}
@@ -16714,9 +17097,12 @@ export default function App() {
       <li><span class="legend-swatch" style="background:transparent;border-top:1px dashed #000;height:2px;width:16px;border-radius:0;"></span> y = x diagonal (equal abundance reference)</li>
       <li><span class="legend-swatch" style="background:transparent;border-top:1.5px dashed #ed6e6c;height:2px;width:16px;border-radius:0;"></span> Contamination line (where transferred species sit, at offset log10(rate))</li>
     </ul>
-    The 5 <strong>diagnostic checks</strong> below each plot test the line's shape, density,
-    spread, abundant-species coverage, and absence of points above the line. Failing
-    criterion 04 (missing core source species in target) is the strongest red flag.
+    The <strong>diagnostic checks</strong> next to each plot test the line's shape, density,
+    spread, Spearman correlation across full profiles, abundant-species coverage,
+    absence of points above the line, and same-individual relatedness when subject
+    metadata is loaded. Failing the missing-core-species check is the strongest red
+    flag for a false positive; failing Spearman / same-subject often indicates a
+    longitudinal pair rather than a true contamination.
   </div>
 
   <h2>Curation overview</h2>
@@ -16729,10 +17115,13 @@ export default function App() {
         <th>Rate</th>
         <th>Probability</th>
         <th>Introduced %</th>
+        <th>Sp.</th>
         <th>Verdict</th>
+        ${reportActionEnabled ? "<th>Action</th>" : ""}
         <th>Related</th>
         <th>Plate</th>
         <th>Cascade</th>
+        <th>Notes</th>
       </tr>
     </thead>
     <tbody>
@@ -16882,13 +17271,36 @@ export default function App() {
                 CroCoDeEL
               </div>
               <div
-                className="text-[10px] uppercase tracking-[0.15em]"
+                className="text-[10px] uppercase tracking-[0.15em] flex items-center gap-2"
                 style={{
                   color: "var(--ink-muted)",
                   fontFamily: '"Raleway", sans-serif',
                 }}
               >
-                Interpretation console
+                <span>Interpretation console</span>
+                <a
+                  href={
+                    __APP_VERSION__.hash === "dev"
+                      ? "https://github.com/metagenopolis/CroCoDeEL_interpreter"
+                      : `https://github.com/metagenopolis/CroCoDeEL_interpreter/commit/${__APP_VERSION__.hash}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`Build ${__APP_VERSION__.hash} · ${__APP_VERSION__.date} — click to view this commit on GitHub`}
+                  className="px-1.5 py-0.5 rounded-sm tabular"
+                  style={{
+                    background: "var(--bg-soft)",
+                    border: "1px solid var(--border)",
+                    color: "var(--ink-muted)",
+                    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+                    fontSize: 9,
+                    letterSpacing: 0,
+                    textTransform: "none",
+                    textDecoration: "none",
+                  }}
+                >
+                  {__APP_VERSION__.hash}
+                </a>
               </div>
             </div>
             <a
@@ -17547,7 +17959,15 @@ export default function App() {
           )}
           {tab === "export" && (
             <ExportTab
-              counts={counts}
+              events={events}
+              filteredEvents={filtered}
+              filter={filter}
+              setFilter={setFilter}
+              metadata={metadata}
+              plateMap={plateMap}
+              runMetadata={runMetadata}
+              hasAb={!!ab}
+              actionEnabled={actionEnabled}
               onExportTSV={exportReport}
               onExportHTML={exportHTMLReport}
             />
