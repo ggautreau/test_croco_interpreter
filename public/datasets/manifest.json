@@ -55,7 +55,7 @@
       "id": "PRJEB33500",
       "short_title": "PRJEB33500",
       "title": "Mediterranean diet intervention in overweight and obese subjects (Meslier et al. 2020)",
-      "description": "Shotgun metagenomics of stool samples from a Mediterranean-diet intervention in overweight/obese adults \u2014 looks at how an 8-week dietary shift reshapes the gut microbiome and metabolome independently of energy intake. 244 metagenomes, longitudinal sampling per subject.",
+      "description": "Shotgun metagenomics of stool samples from a Mediterranean-diet intervention in overweight/obese adults \u2014 looks at how an 8-week dietary shift reshapes the gut microbiome and metabolome independently of energy intake. 244 samples across 82 subjects, sampled at baseline, 4 weeks and 8 weeks.",
       "biome": "Human gut",
       "samples_count": 244,
       "events_count": 59,
@@ -65,7 +65,8 @@
       "dataverse_url": "",
       "files": {
         "events": "PRJEB33500/contamination_events.tsv",
-        "abundance": "PRJEB33500/species_abundance.tsv"
+        "abundance": "PRJEB33500/species_abundance.tsv",
+        "metadata": "PRJEB33500/metadata.tsv"
       }
     },
     {

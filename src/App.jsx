@@ -3229,18 +3229,23 @@ const CascadeBanner = ({ cascade, onJumpToUpstream }) => {
     <div
       className="p-3 mb-4 rounded-sm"
       style={{
-        background: "#f2eeff",
-        border: "1px solid #423089",
-        borderLeft: "4px solid #423089",
+        // Semi-transparent violet overlay tints whatever surface sits
+        // underneath, so the banner reads on both light and dark themes.
+        background: "rgba(132,107,212,0.18)",
+        border: "1px solid #9c8be8",
+        borderLeft: "4px solid #9c8be8",
       }}
     >
       <div className="flex items-start gap-2">
-        <GitBranch className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "#423089" }} />
+        <GitBranch
+          className="w-4 h-4 shrink-0 mt-0.5"
+          style={{ color: "#9c8be8" }}
+        />
         <div className="flex-1">
           <div
             className="text-[12px] tracking-[0.1em] uppercase mb-1"
             style={{
-              color: "#423089",
+              color: "#9c8be8",
               fontWeight: 800,
               fontFamily: '"Raleway", sans-serif',
             }}
@@ -3255,7 +3260,7 @@ const CascadeBanner = ({ cascade, onJumpToUpstream }) => {
                 onJumpToUpstream && onJumpToUpstream(upstream.upstream_event_id)
               }
               className="font-semibold underline"
-              style={{ color: "#423089" }}
+              style={{ color: "#9c8be8", background: "transparent", border: 0, cursor: "pointer", padding: 0 }}
             >
               {upstream.upstream_source}
             </button>
