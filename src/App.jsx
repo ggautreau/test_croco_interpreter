@@ -659,11 +659,62 @@ function buildScatter(ab, event) {
   return { points, logC, source, target, logRange: ab.logRange || null };
 }
 
+/** Average-rank ranking — handles ties by giving each tied entry the
+    mean of the rank positions they would have taken. Returns ranks in
+    the original input order. */
+function rankArray(arr) {
+  const indexed = arr.map((v, i) => ({ v, i }));
+  indexed.sort((a, b) => a.v - b.v);
+  const ranks = new Array(arr.length);
+  let i = 0;
+  while (i < indexed.length) {
+    let j = i;
+    while (j + 1 < indexed.length && indexed[j + 1].v === indexed[i].v) j++;
+    const avg = (i + j) / 2 + 1; // 1-based average rank
+    for (let k = i; k <= j; k++) ranks[indexed[k].i] = avg;
+    i = j + 1;
+  }
+  return ranks;
+}
+
+/** Spearman's rank correlation between source and target abundances
+    across every species present in at least one of the two samples.
+    A high ρ (≥ 0.7) means the two overall profiles are similar — typical
+    of longitudinal / same-subject pairs where the apparent contamination
+    line is biological persistence rather than mechanical transfer. */
+function spearmanRho(scatter) {
+  if (!scatter || !Array.isArray(scatter.points)) return null;
+  const xs = [];
+  const ys = [];
+  scatter.points.forEach((p) => {
+    if (p.x > 0 || p.y > 0) {
+      xs.push(p.x);
+      ys.push(p.y);
+    }
+  });
+  const n = xs.length;
+  if (n < 3) return null;
+  const rx = rankArray(xs);
+  const ry = rankArray(ys);
+  const mx = rx.reduce((s, v) => s + v, 0) / n;
+  const my = ry.reduce((s, v) => s + v, 0) / n;
+  let sxy = 0,
+    sxx = 0,
+    syy = 0;
+  for (let i = 0; i < n; i++) {
+    sxy += (rx[i] - mx) * (ry[i] - my);
+    sxx += (rx[i] - mx) ** 2;
+    syy += (ry[i] - my) ** 2;
+  }
+  return sxx * syy > 0 ? sxy / Math.sqrt(sxx * syy) : 0;
+}
+
 function lineDiagnostics(scatter) {
   if (!scatter) return null;
+  const spearman = spearmanRho(scatter);
   const pts = scatter.points.filter((p) => p.onLine && p.x > 0 && p.y > 0);
   const n = pts.length;
-  if (n < 2) return { n, r2: null, slope: null, decadeRange: null };
+  if (n < 2) return { n, r2: null, slope: null, decadeRange: null, spearman };
   const logs = pts.map((p) => ({ x: Math.log10(p.x), y: Math.log10(p.y) }));
   const mx = logs.reduce((s, p) => s + p.x, 0) / n;
   const my = logs.reduce((s, p) => s + p.y, 0) / n;
@@ -688,7 +739,7 @@ function lineDiagnostics(scatter) {
   const xMin = Math.min(...logs.map((p) => p.x));
   const xMax = Math.max(...logs.map((p) => p.x));
   const decadeRange = xMax - xMin;
-  return { n, r2, slope, decadeRange };
+  return { n, r2, slope, decadeRange, spearman };
 }
 
 function pointsAboveLine(scatter) {
@@ -883,7 +934,27 @@ function automaticScore(diag, aboveInfo, nMissing, cascade) {
       });
     }
   }
-  return { good, total: 5, reasons };
+  // Spearman rank correlation between source and target across all
+  // species — high ρ means the overall profiles are similar (typical of
+  // longitudinal / same-subject pairs where the apparent contamination
+  // line is actually biological persistence). Threshold ρ ≥ 0.7 flags
+  // the warning, < 0.7 considered distinct enough.
+  if (diag && diag.spearman != null) {
+    const rho = diag.spearman;
+    if (rho < 0.7) {
+      good++;
+      reasons.push({
+        ok: true,
+        label: `Source / target profiles distinct (Spearman ρ = ${rho.toFixed(2)})`,
+      });
+    } else {
+      reasons.push({
+        ok: false,
+        label: `Source / target profiles too correlated (Spearman ρ = ${rho.toFixed(2)} ≥ 0.7) — possible longitudinal / same-subject persistence`,
+      });
+    }
+  }
+  return { good, total: 6, reasons };
 }
 
 /** A cascade is suspected when event A→B has many points above the line AND
@@ -2540,19 +2611,26 @@ const PlateGrid = ({
         }}
       >
         <div />
-        {Array.from({ length: cols }, (_, c) => (
-          <div
-            key={`ch-${c}`}
-            className="flex items-center justify-center text-[10px]"
-            style={{
-              color: "var(--ink-muted)",
-              fontWeight: 700,
-              fontFamily: '"Raleway", sans-serif',
-            }}
-          >
-            {c + 1}
-          </div>
-        ))}
+        {Array.from({ length: cols }, (_, c) => {
+          // For dense plates (384-well: 24 cols) the labels collide,
+          // so only show anchors — first, last, and every 5th column.
+          const dense = cols > 12;
+          const showLabel =
+            !dense || c === 0 || c === cols - 1 || (c + 1) % 5 === 0;
+          return (
+            <div
+              key={`ch-${c}`}
+              className="flex items-center justify-center text-[10px]"
+              style={{
+                color: "var(--ink-muted)",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              {showLabel ? c + 1 : ""}
+            </div>
+          );
+        })}
         {Array.from({ length: rows }, (_, r) => (
           <React.Fragment key={`row-${r}`}>
             <div
@@ -3295,9 +3373,10 @@ const QuickBtn = ({ children, onClick, active, tone, title }) => {
   );
 };
 
-const Th = ({ children, right, onClick }) => (
+const Th = ({ children, right, onClick, title }) => (
   <th
     onClick={onClick}
+    title={title}
     className={`px-3 py-3 text-[10px] tracking-[0.1em] uppercase ${
       right ? "text-right" : "text-left"
     } ${onClick ? "cursor-pointer select-none" : ""}`}
@@ -3833,7 +3912,7 @@ const RunMetadataBlock = ({ meta }) => {
   );
 };
 
-const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOpen, onLoadDemo, demoLoading }) => {
+const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOpen, onLoadDemo, demoLoading, actionEnabled }) => {
   const topByScore = [...events].sort((a, b) => b.score - a.score).slice(0, 5);
   const topByRate = [...events].sort((a, b) => b.rate - a.rate).slice(0, 5);
   const bottomByScore = [...events].sort((a, b) => a.score - b.score).slice(0, 5);
@@ -3861,6 +3940,28 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
   }, [events, plateMap]);
 
   const cascadeCount = events.filter((e) => e.cascade).length;
+
+  // Suppress / keep counts. Use the same default-resolution rules as
+  // the rest of the app: TP -> suppress, FP -> keep, others -> none.
+  // Only meaningful when the feature is enabled.
+  const { keepCount, suppressCount } = useMemo(() => {
+    let keep = 0;
+    let supp = 0;
+    if (actionEnabled) {
+      events.forEach((e) => {
+        const a =
+          e.action ||
+          (e.verdict === "true_positive"
+            ? "suppress"
+            : e.verdict === "false_positive"
+              ? "keep"
+              : null);
+        if (a === "keep") keep++;
+        else if (a === "suppress") supp++;
+      });
+    }
+    return { keepCount: keep, suppressCount: supp };
+  }, [events, actionEnabled]);
 
   // Number of connected components in the contamination network — gives
   // a sense of how clustered the events are.
@@ -3976,7 +4077,21 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
       </div>
 
       {(events.length > 0 || metadata || plateMap || cascadeCount > 0) && (
-        <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-3 mb-10">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 xl:grid-cols-7 gap-3 mb-10">
+          {actionEnabled && (
+            <Stat
+              label="To keep"
+              value={keepCount}
+              tone={keepCount > 0 ? "good" : "neutral"}
+            />
+          )}
+          {actionEnabled && (
+            <Stat
+              label="To suppress"
+              value={suppressCount}
+              tone={suppressCount > 0 ? "bad" : "neutral"}
+            />
+          )}
           {events.length > 0 && (
             <Stat
               label="Connected components"
@@ -4803,8 +4918,9 @@ const EventsTable = ({
   hasAb,
   actionEnabled,
   setAction,
+  pageSize,
 }) => {
-  const PAGE_SIZE = 500;
+  const PAGE_SIZE = pageSize || 500;
   const [page, setPage] = useState(1);
   // Reset to page 1 when filter or sort changes. Don't include `events` —
   // the parent re-derives that array on every verdict toggle, which would
@@ -4866,26 +4982,66 @@ const EventsTable = ({
         <table className="w-full text-[13px]">
           <thead>
             <tr style={{ background: "var(--bg-soft)", borderBottom: "2px solid #00a3a6" }}>
-              <Th onClick={() => toggleSort("source")}>
+              <Th
+                onClick={() => toggleSort("source")}
+                title="Source sample — the contaminant. Click to sort alphabetically."
+              >
                 Source <SortIcon col="source" />
               </Th>
-              <Th>→</Th>
-              <Th onClick={() => toggleSort("target")}>
+              <Th title="Direction: source contaminates target.">→</Th>
+              <Th
+                onClick={() => toggleSort("target")}
+                title="Target sample — the one that received the contamination. Click to sort alphabetically."
+              >
                 Target <SortIcon col="target" />
               </Th>
-              <Th onClick={() => toggleSort("rate")} right>
+              <Th
+                onClick={() => toggleSort("rate")}
+                right
+                title="Estimated proportion of the target sample that originates from the source. Click to sort numerically."
+              >
                 Rate <SortIcon col="rate" />
               </Th>
-              <Th onClick={() => toggleSort("score")} right>
+              <Th
+                onClick={() => toggleSort("score")}
+                right
+                title="CroCoDeEL Random-Forest probability that this contamination event is real (0–1). Higher = more confident. Click to sort."
+              >
                 Probability <SortIcon col="score" />
               </Th>
-              <Th onClick={() => toggleSort("introducedPct")} right>
+              <Th
+                onClick={() => toggleSort("introducedPct")}
+                right
+                title="Percentage of the target sample's species likely introduced by this contamination event. Click to sort."
+              >
                 Introduced <SortIcon col="introducedPct" />
               </Th>
-              <Th right>Species</Th>
-              {hasContext && <Th>Context</Th>}
-              <Th>Verdict</Th>
-              {actionEnabled && <Th>Action</Th>}
+              <Th
+                onClick={() => toggleSort("speciesCount")}
+                right
+                title="Number of species CroCoDeEL identified as introduced by this contamination event. Click to sort."
+              >
+                Species <SortIcon col="speciesCount" />
+              </Th>
+              {hasContext && (
+                <Th title="Sample context derived from metadata + plate map: relatedness, plate proximity, cascade flag.">
+                  Context
+                </Th>
+              )}
+              <Th
+                onClick={() => toggleSort("verdict")}
+                title="Your curation decision — TP (true positive), FP (false positive), Uncertain or Pending. Click to sort by verdict."
+              >
+                Verdict <SortIcon col="verdict" />
+              </Th>
+              {actionEnabled && (
+                <Th
+                  onClick={() => toggleSort("action")}
+                  title="Suppress / keep — what to do with this sample in downstream analyses. Click to sort."
+                >
+                  Action <SortIcon col="action" />
+                </Th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -6642,12 +6798,13 @@ const ScatterTab = ({
   onBulkApply,
   actionEnabled,
   setAction,
+  pageSize,
 }) => {
   const [mode, setMode] = useState("flagged"); // "flagged" or "explore"
   const [sortBy, setSortBy] = useState("score");
   // Direction per sort key — defaults match what most users expect
   // (descending for numeric severity, ascending for alphabetical).
-  const SORT_DEFAULT_DIR = { score: "desc", rate: "desc", introducedPct: "desc", source: "asc", pending: "asc" };
+  const SORT_DEFAULT_DIR = { score: "desc", rate: "desc", introducedPct: "desc", source: "asc", pending: "asc", action: "asc" };
   const [sortDir, setSortDir] = useState(SORT_DEFAULT_DIR.score);
   const handleSortClick = (id) => {
     if (sortBy === id) {
@@ -6657,7 +6814,7 @@ const ScatterTab = ({
       setSortDir(SORT_DEFAULT_DIR[id] || "desc");
     }
   };
-  const PAGE_SIZE = 100;
+  const PAGE_SIZE = pageSize || 100;
   const [page, setPage] = useState(1);
   useEffect(() => {
     setPage(1);
@@ -6712,6 +6869,16 @@ const ScatterTab = ({
       );
     } else if (sortBy === "source") {
       copy.sort((a, b) => a.source.localeCompare(b.source) * flip);
+    } else if (sortBy === "action") {
+      // Group by action — keep / suppress / none — and break ties by
+      // descending probability so the most-confident calls bubble up
+      // inside each action bucket.
+      const rank = (v) => (v === "keep" ? 0 : v === "suppress" ? 1 : 2);
+      copy.sort(
+        (a, b) =>
+          (rank(a.action) - rank(b.action)) * flip ||
+          (b.score - a.score) * flip,
+      );
     }
     return copy;
   }, [filtered, sortBy, sortDir]);
@@ -6803,7 +6970,8 @@ const ScatterTab = ({
           { id: "score", label: "probability" },
           { id: "rate", label: "rate" },
           { id: "introducedPct", label: "introduced" },
-          { id: "pending", label: "pending first" },
+          { id: "pending", label: "verdict" },
+          ...(actionEnabled ? [{ id: "action", label: "action" }] : []),
           { id: "source", label: "source" },
         ].map((opt) => {
           const active = sortBy === opt.id;
@@ -7160,7 +7328,11 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
                 setPlateMap({ ...plateMap, format: { rows: r, cols: c } });
             }}
             className="px-2 py-1 text-[11px] rounded-sm"
-            style={{ border: "1px solid var(--border-strong)" }}
+            style={{
+              border: "1px solid var(--border-strong)",
+              background: "var(--bg-card)",
+              color: "var(--ink)",
+            }}
           >
             <option value="8x12">96-well (8×12)</option>
             <option value="16x24">384-well (16×24)</option>
@@ -7176,13 +7348,24 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
             Plate:
           </label>
           <div className="relative" ref={plateMenuRef}>
-            <div className="flex items-center" style={{ border: "1px solid var(--border-strong)", borderRadius: 2 }}>
+            <div
+              className="flex items-center"
+              style={{
+                border: "1px solid var(--border-strong)",
+                background: "var(--bg-card)",
+                borderRadius: 2,
+              }}
+            >
               <input
                 value={plateId}
                 onChange={(e) => setPlateId(e.target.value)}
                 onFocus={() => existingPlateIds.length > 0 && setPlateMenuOpen(true)}
                 className="px-2 py-1 text-[11px] w-24 outline-none"
-                style={{ border: 0, background: "transparent" }}
+                style={{
+                  border: 0,
+                  background: "transparent",
+                  color: "var(--ink)",
+                }}
               />
               {existingPlateIds.length > 0 && (
                 <button
@@ -7192,7 +7375,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
                   style={{
                     background: "transparent",
                     border: 0,
-                    borderLeft: "1px solid #e6e8e8",
+                    borderLeft: "1px solid var(--border)",
                     cursor: "pointer",
                     color: "var(--ink-muted)",
                   }}
@@ -7375,7 +7558,11 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
               onChange={(e) => setSampleQuery(e.target.value)}
               placeholder="search sample…"
               className="pl-7 pr-3 py-1.5 text-[12px] rounded-sm w-full outline-none"
-              style={{ border: "1px solid var(--border-strong)" }}
+              style={{
+                border: "1px solid var(--border-strong)",
+                background: "var(--bg-card)",
+                color: "var(--ink)",
+              }}
             />
           </div>
           <label
@@ -8342,6 +8529,7 @@ const BULK_CRIT = [
   { id: "decade", label: "Decade range — line spans ≥ 1.5 decades" },
   { id: "missing", label: "Missing source species — ≤ 2 missing from target" },
   { id: "above", label: "Above-line points — none, or all within 0.5 decade" },
+  { id: "spearman", label: "Profile dissimilarity — Spearman ρ < 0.7" },
 ];
 
 /** Two-thumb (low / high) slider built on react-range. The track lights
@@ -8518,6 +8706,7 @@ const BulkApplyByCriteriaDialog = ({
     decade: "any",
     missing: "any",
     above: "any",
+    spearman: "any",
   });
   const [verdict, setVerdict] = useState("true_positive");
   const [comment, setComment] = useState("");
@@ -8546,6 +8735,7 @@ const BulkApplyByCriteriaDialog = ({
             mi != null ? mi.evaluated === 0 || mi.count <= 2 : null,
           above:
             ab2 != null ? ab2.count === 0 || ab2.maxDist < 0.5 : null,
+          spearman: di?.spearman != null ? di.spearman < 0.7 : null,
         };
       } catch {
         return null;
@@ -10043,10 +10233,21 @@ const ValidateTab = ({
                       : "abundance table required"
                   }
                 />
+                <Criterion
+                  n="06"
+                  title="Overall profile dissimilarity (Spearman ρ)"
+                  wiki="Spearman rank correlation between the source and target abundances across every species present in either sample. A high ρ (≥ 0.7) means the two profiles are similar overall — typical of longitudinal / same-subject pairs where the apparent contamination line is biological persistence rather than a mechanical transfer event. Pass when the two profiles are distinct enough (ρ < 0.7)."
+                  pass={diag?.spearman != null ? diag.spearman < 0.7 : null}
+                  value={
+                    diag?.spearman != null
+                      ? `ρ = ${diag.spearman.toFixed(2)}`
+                      : "abundance table required"
+                  }
+                />
 
                 {metadata && (
                   <ContextualCriterion
-                    n="06"
+                    n="07"
                     title="Related samples"
                     hint="Longitudinal, same subject or same related group → false positive risk"
                     verdict={
@@ -10067,23 +10268,23 @@ const ValidateTab = ({
 
                 {plateMap && (
                   <ContextualCriterion
-                    n="07"
+                    n="08"
                     title="Proximity on plate"
-                    hint="Well-to-well leakage → immediate neighbors = strong suspicion"
+                    hint="Well-to-well leakage → immediate neighbors support a contamination call (TP)"
                     verdict={
                       pd == null
                         ? { tone: "neutral", text: "position unknown" }
                         : !pd.samePlate
                           ? {
-                              tone: "warn",
+                              tone: "bad",
                               text: "different plates — well-to-well unlikely",
                             }
                           : pd.distance <= 1
-                            ? { tone: "bad", text: "adjacent wells" }
+                            ? { tone: "good", text: "adjacent wells" }
                             : pd.distance === 2
                               ? { tone: "warn", text: "Δ=2 (close)" }
                               : {
-                                  tone: "good",
+                                  tone: "bad",
                                   text: `Δ=${pd.distance} (distant)`,
                                 }
                     }
@@ -10164,7 +10365,9 @@ const ValidateTab = ({
                             [sel.target]: "#ed6e6c",
                           }}
                           labelMode="none"
-                          size={14}
+                          size={
+                            (plateMap.format?.cols || 12) > 12 ? 7 : 14
+                          }
                         />
                       </div>
                       {onOpenPlate && (
@@ -10874,20 +11077,6 @@ const PatternCard = ({
         }}
       >
         <span>{tone.text}</span>
-        {caseLabel && (
-          <span
-            style={{
-              background: "rgba(255,255,255,0.25)",
-              padding: "1px 6px",
-              borderRadius: 2,
-              fontSize: 10,
-              whiteSpace: "nowrap",
-              flexShrink: 0,
-            }}
-          >
-            Case {caseLabel}
-          </span>
-        )}
       </div>
       <div className="p-4" style={{ flex: 1 }}>
         <h3
@@ -11810,6 +11999,55 @@ const SHAPE_FN_LOW_2 = CASE_J;
 const SHAPE_FN_CASCADE = CASE_K;
 const SHAPE_FN_CLEAR_MISSED = CASE_L;
 
+/* Synthetic correlated cloud — for the Same-subject longitudinal FP card.
+   Mirrors what two timepoints from one subject typically look like:
+   tight diagonal trend (rho ≈ 0.93) with mild scatter, plus a sprinkling
+   of axis points where one of the two samples has zero abundance. */
+const SHAPE_FP_LONGITUDINAL = [
+  [0.657,0.705], [0.262,0.27], [0.75,0.693], [0.133,0.019], [0.451,0.492],
+  [0.53,0.538], [0.075,0.103], [0.568,0.65], [0.259,0.167], [0.056,0],
+  [0.816,0.798], [0.198,0.146], [0.959,0.946], [0.142,0.165], [0.855,0.769],
+  [0.743,0.677], [0.559,0.617], [0.574,0.565], [0.838,0.75], [0.598,0.518],
+  [0.719,0.761], [0.325,0.337], [0.126,0.129], [0.314,0.342], [0.654,0.616],
+  [0.249,0.292], [0.304,0.384], [0.629,0.595], [0.213,0.208], [0.41,0.375],
+  [0.99,0.941], [0.7,0.641], [0.851,0.858], [0.08,0.038], [0.35,0.345],
+  [0.946,0.987], [0.883,0.848], [0.426,0.506], [0.919,0.873], [0.284,0.296],
+  [0.583,0.577], [0.903,0.982], [0.429,0.469], [0.534,0.738], [0.136,0.164],
+  [0.646,0.655], [0.802,0.783], [0.413,0.423], [0.996,0.839], [0.868,0.839],
+  [0.061,0.044], [0.56,0.471], [0.303,0.285], [0.463,0.44], [0.481,0.598],
+  [0.3,0.265], [0.526,0.583], [0.877,0.996], [0.334,0.281], [0.195,0.132],
+  [0.774,0.673], [0.554,0.528], [0.051,0.045], [0.933,0.943], [0.885,0.91],
+  [0.105,0.06], [0.884,0.908], [0.512,0.503], [0.116,0.123], [0.172,0.07],
+  [0.502,0.457], [0.879,0.864], [0.452,0.47], [0.743,0.816], [0.241,0.167],
+  [0.667,0.849], [0.466,0.436], [0.263,0.26], [0.371,0.334], [0.259,0.236],
+  [0.117,0.088], [0.91,0.878], [0.867,0.907], [0.686,0.705], [0.254,0.348],
+  [0.592,0.696], [0.499,0.523], [0.231,0.125], [0.142,0.085], [0.494,0.52],
+  [0.743,0.663], [0.143,0], [0.432,0.369], [0.286,0.387], [0.231,0.171],
+  [0.315,0.335], [0.287,0.345], [0.868,0.838], [0.573,0.79], [0.844,0.916],
+  [0.971,1], [0.208,0.156], [0.511,0.525], [0.106,0.165], [0.41,0.457],
+  [0.795,0.791], [0.482,0.349], [0.996,1], [0.578,0.571], [0.332,0.298],
+  [0.97,0.904], [0.761,0.725], [0.104,0.043], [0.86,0.824], [0.2,0.223],
+  [0.227,0.221], [0.615,0.595], [0.164,0.125], [0.896,0.898], [0.638,0.719],
+  [0.448,0.385], [0.938,0.901], [0.244,0.235], [0.426,0.383], [0.688,0.672],
+  [0.764,0.814], [0.119,0], [0.996,1], [0.12,0.13], [0.937,0.982],
+  [0.887,0.929], [0.2,0.16], [0.842,0.818], [0.988,0.909], [0.671,0.782],
+  [0.334,0.34], [0.68,0.71], [0.16,0.148], [0.152,0.106], [0.625,0.609],
+  [0.732,0.756], [0.301,0.382], [0.514,0.61], [0.138,0.073], [0.452,0.452],
+  [0.783,0.788], [0.655,0.648], [0.574,0.672], [0.456,0.48], [0.889,0.89],
+  [0.909,0.8], [0.603,0.571], [0.191,0.227], [0.904,0.941], [0.806,0.889],
+  [0.25,0.151], [0.287,0.37], [0.89,0.953], [0.436,0.411], [0.933,0.909],
+  [0.871,0.98], [0.887,0.871], [0.074,0.069], [0.934,0.881], [0.812,0.884],
+  [0.303,0.221], [0.798,0.893], [0.866,0.942], [0.261,0.288], [0.34,0.279],
+  [0.806,0.807], [0.233,0.246], [0.362,0.465], [0.315,0.197], [0.659,0.523],
+  [0.559,0.659], [0.942,1], [0.22,0.325], [0.964,0.962], [0.463,0.491],
+  [0,0.364], [0,0.157], [0,0.303], [0,0.256], [0,0.193], [0,0.288],
+  [0,0.127], [0,0.354], [0,0.001], [0,0.463], [0,0.269], [0,0.36], [0,0.371],
+  [0,0.335], [0,0.182], [0,0.035], [0,0.332], [0,0.165], [0,0.157],
+  [0,0.424], [0.36,0], [0.15,0], [0.155,0], [0.204,0], [0.201,0], [0.148,0],
+  [0.064,0], [0.21,0], [0.47,0], [0.339,0], [0.451,0], [0.308,0], [0.15,0],
+  [0.274,0], [0,0], [0.143,0], [0.215,0], [0.29,0], [0.327,0], [0.232,0],
+];
+
 
 const LearnTab = () => {
   return (
@@ -12057,9 +12295,9 @@ const LearnTab = () => {
           <strong style={{ color: "var(--ink)" }}>
             Verdict depends on your stringency.
           </strong>{" "}
-          The original Goulet et al. paper classified these four as false
+          The original Goulet et al. paper classified these as false
           positives (i.e. real biological similarity, no actual
-          contamination). But cases F, G and H are visually borderline —
+          contamination). But two of them are visually borderline —
           a stricter curator could legitimately tag them as{" "}
           <strong>Uncertain</strong> rather than FP, and even <strong>TP</strong>,
           especially when the metadata context is itself ambiguous. Pick a
@@ -12090,6 +12328,31 @@ const LearnTab = () => {
               "Source and target often share a biome or subject_id",
             ]}
             watchOut="A borderline probability is not by itself evidence of FP — it just means you, the human, must make the call."
+          />
+
+          <PatternCard
+            title="Same-subject longitudinal samples — correlated cloud"
+            verdict="FP"
+            rate="46.9%"
+            probability="0.78"
+            introduced="42.1%"
+            plot={<PatternMiniPlot points={SHAPE_FP_LONGITUDINAL} rate={0.469} lineSide="above" />}
+            description={
+              <>
+                Two timepoints from the <strong>same subject</strong>:
+                many species track loosely along a diagonal because the
+                subject's microbiota persists between visits. The model
+                is fully confident and the introduced % is high, yet
+                the broad noisy cloud reflects biological persistence,
+                not a mechanical contamination event — flag as FP.
+              </>
+            }
+            signals={[
+              "Source / target share the same subject_id (longitudinal sampling)",
+              "Apparent diagonal trend, but visibly noisy / wide",
+              "Elevated introduced %",
+            ]}
+            watchOut="High introduced % + high probability is not enough on its own. When the metadata shows same-subject longitudinal sampling, mark as FP — the correlated cloud is biological persistence."
           />
 
           <PatternCard
@@ -12142,32 +12405,6 @@ const LearnTab = () => {
             watchOut="Don't confuse this with case I (false negative): the difference is whether ANY narrow line is visible. Here, no — but the limit-of-detection issue alone justifies Uncertain in some workflows."
           />
 
-          <PatternCard
-            caseLabel="H"
-            title="High probability but biological"
-            verdict="FP_OR_UNCERTAIN"
-            rate="0.19%"
-            probability="1.00"
-            plot={<PatternMiniPlot points={SHAPE_FP_FAKE_LINE} rate={0.0019} lineSide="above" />}
-            description={
-              <>
-                The trickiest case. Points form something that resembles a
-                diagonal and the model is fully confident — yet the
-                metadata, plate position, or biome may suggest shared
-                microbiota rather than contamination. Even with
-                probability = 1, this is borderline: depending on
-                stringency, a curator may tag Uncertain when the
-                contextual case isn't airtight, or keep TP if the line
-                is visually convincing on its own.
-              </>
-            }
-            signals={[
-              "Apparent line but width too broad to be a clean transfer",
-              "High probability (≥ 0.95) — model fooled by the visual structure",
-              "Strong contextual reasons against contamination (same subject, distant plates, etc.)",
-            ]}
-            watchOut="This is the case where probability alone will mislead you. Always cross-check with metadata: a single 'related' relationship in the cohort is enough to tip toward FP — but if metadata is silent or ambiguous, Uncertain is the honest call."
-          />
         </div>
       </div>
 
@@ -12213,27 +12450,6 @@ const LearnTab = () => {
           className="grid gap-5"
           style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}
         >
-          <PatternCard
-            caseLabel="I"
-            title="Very few species on the line"
-            verdict="FN"
-            plot={<PatternMiniPlot points={SHAPE_FN_VERY_LOW} />}
-            description={
-              <>
-                Three or four species form a faint line; everything else
-                is noise. The signal is real but too thin for the model
-                to lock onto. Human experts also hesitate on cases like
-                this.
-              </>
-            }
-            signals={[
-              "Only a handful of points along the diagonal",
-              "Off-line scatter is louder than the signal",
-              "Often very low overall rate",
-            ]}
-            watchOut="Even humans had limited confidence on these in the original paper. If the data matters, consider re-running CroCoDeEL with a lower probability cutoff to surface them — at the cost of more false positives to triage."
-          />
-
           <PatternCard
             caseLabel="J"
             title="Sparse signal, low confidence"
@@ -13542,7 +13758,7 @@ const HelpTab = ({ onStartTour }) => {
    button. Loading replaces the current session (after confirmation if
    the user already has data loaded).
    ============================================================================ */
-const DatasetsTab = ({ onLoadDataset, hasCurrentData }) => {
+const DatasetsTab = ({ onLoadDataset, hasCurrentData, pageSize }) => {
   const [manifest, setManifest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -13552,7 +13768,7 @@ const DatasetsTab = ({ onLoadDataset, hasCurrentData }) => {
   const [profilerFilter, setProfilerFilter] = useState(null); // null | string
   const [requirePlate, setRequirePlate] = useState(false);
   const [requireMetadata, setRequireMetadata] = useState(false);
-  const PAGE_SIZE = 50;
+  const PAGE_SIZE = pageSize || 50;
   const [page, setPage] = useState(1);
   // Snap back to page 1 whenever the filtered set changes shape.
   useEffect(() => {
@@ -14746,6 +14962,32 @@ export default function App() {
       actionEnabled ? "1" : "0",
     );
   }, [actionEnabled]);
+  // Per-table pagination preferences. Persisted so the user's choice
+  // sticks across sessions. Defaults match the historical PAGE_SIZE
+  // constants for each table.
+  const readPageSize = (key, fallback) => {
+    if (typeof window === "undefined") return fallback;
+    const v = parseInt(
+      window.localStorage.getItem(`crocodeel-page-size-${key}`) || "",
+      10,
+    );
+    return Number.isFinite(v) && v > 0 ? v : fallback;
+  };
+  const [eventsPageSize, setEventsPageSize] = useState(() =>
+    readPageSize("events", 500),
+  );
+  const [galleryPageSize, setGalleryPageSize] = useState(() =>
+    readPageSize("gallery", 100),
+  );
+  const [datasetsPageSize, setDatasetsPageSize] = useState(() =>
+    readPageSize("datasets", 50),
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("crocodeel-page-size-events", String(eventsPageSize));
+    window.localStorage.setItem("crocodeel-page-size-gallery", String(galleryPageSize));
+    window.localStorage.setItem("crocodeel-page-size-datasets", String(datasetsPageSize));
+  }, [eventsPageSize, galleryPageSize, datasetsPageSize]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("crocodeel-theme", theme);
@@ -14972,7 +15214,7 @@ export default function App() {
         title: "False negatives — what CroCoDeEL misses",
         body:
           "Events humans identified but CroCoDeEL didn't flag. These won't appear in your events table by definition — knowing the patterns helps you decide whether to lower the probability cutoff at the CroCoDeEL stage to widen the search.\n\n" +
-          "Case K (cascade contamination) is especially worth knowing: when two samples share a third common contamination source, the line is blurred and CroCoDeEL learned to reject it.",
+          "Cascade contamination is especially worth knowing: when two samples share a third common contamination source, the line is blurred and CroCoDeEL learned to reject it.",
         action: "tabLearn",
         highlight: '[data-tutorial="learn-fn"]',
       },
@@ -15226,8 +15468,24 @@ export default function App() {
       return true;
     });
     res.sort((a, b) => {
-      const av = a[sort.by];
-      const bv = b[sort.by];
+      // Map UI sort keys to event-level values. Generic case reads
+      // a[sort.by] directly. Special cases compute derived values
+      // (species count) or normalize null-ish strings (action defaults
+      // to empty so blanks land at one end).
+      const pluck = (e) => {
+        switch (sort.by) {
+          case "speciesCount":
+            return e.introduced?.length ?? 0;
+          case "verdict":
+            return e.verdict || "pending";
+          case "action":
+            return e.action || "";
+          default:
+            return e[sort.by];
+        }
+      };
+      const av = pluck(a);
+      const bv = pluck(b);
       if (typeof av === "string") {
         return sort.dir === "asc"
           ? av.localeCompare(bv)
@@ -16976,6 +17234,7 @@ export default function App() {
               }}
               onLoadDemo={loadDemo}
               demoLoading={demoLoading}
+              actionEnabled={actionEnabled}
             />
           )}
           {tab === "table" && (
@@ -17000,6 +17259,7 @@ export default function App() {
               hasAb={!!ab}
               actionEnabled={actionEnabled}
               setAction={setAction}
+              pageSize={eventsPageSize}
             />
           )}
           {tab === "scatter" && (
@@ -17023,6 +17283,7 @@ export default function App() {
               }
               actionEnabled={actionEnabled}
               setAction={setAction}
+              pageSize={galleryPageSize}
             />
           )}
           {tab === "network" && (
@@ -17104,6 +17365,7 @@ export default function App() {
               hasCurrentData={
                 rawEvents.length > 0 || !!ab || !!metadata || !!plateMap
               }
+              pageSize={datasetsPageSize}
             />
           )}
           {tab === "learn" && <LearnTab />}
@@ -17572,6 +17834,78 @@ export default function App() {
                   </div>
                 </div>
               </label>
+
+              <div
+                className="text-[10px] tracking-[0.15em] uppercase mt-5 mb-2"
+                style={{
+                  color: "#ed6e6c",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                Items per page
+              </div>
+              <div className="flex flex-col gap-2">
+                {[
+                  {
+                    label: "Events table",
+                    value: eventsPageSize,
+                    setter: setEventsPageSize,
+                  },
+                  {
+                    label: "Scatterplot gallery",
+                    value: galleryPageSize,
+                    setter: setGalleryPageSize,
+                  },
+                  {
+                    label: "Datasets",
+                    value: datasetsPageSize,
+                    setter: setDatasetsPageSize,
+                  },
+                ].map((row) => (
+                  <label
+                    key={row.label}
+                    className="flex items-center gap-3 px-3 py-2 rounded-sm"
+                    style={{
+                      background: "var(--bg-softer)",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    <span
+                      className="text-[12px]"
+                      style={{
+                        color: "var(--ink)",
+                        fontWeight: 600,
+                        fontFamily: '"Raleway", sans-serif',
+                        flex: 1,
+                      }}
+                    >
+                      {row.label}
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={5000}
+                      step={10}
+                      value={row.value}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        if (Number.isFinite(v) && v > 0)
+                          row.setter(Math.min(5000, v));
+                      }}
+                      style={{
+                        width: 90,
+                        padding: "4px 6px",
+                        fontSize: 12,
+                        border: "1px solid var(--border-strong)",
+                        background: "var(--bg-card)",
+                        color: "var(--ink)",
+                        borderRadius: 2,
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
             </div>
             <div
               className="flex justify-end px-5 py-3"
