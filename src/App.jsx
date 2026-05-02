@@ -12514,19 +12514,6 @@ const LearnTab = () => {
         </div>
       </div>
 
-      <div
-        className="rounded-sm p-4 mt-8"
-        style={{
-          background: "var(--bg-soft)",
-          border: "1px solid var(--border)",
-          fontSize: 12,
-          color: "var(--ink-muted)",
-          lineHeight: 1.6,
-        }}
-      >
-        Cases A-L mirror the categorisation in Goulet et al. 2025, figure
-        3 (bioRxiv DOI 10.1101/2025.01.15.633153).
-      </div>
     </div>
   );
 };
@@ -12547,6 +12534,7 @@ const HelpTab = ({ onStartTour }) => {
     { id: "h-flags", label: "Sample flags reference" },
     { id: "h-shortcuts", label: "Keyboard shortcuts" },
     { id: "h-bulk", label: "Bulk actions" },
+    { id: "h-config", label: "Configuration" },
     { id: "h-privacy", label: "Privacy & data flow" },
     { id: "h-faq", label: "FAQ" },
     { id: "h-cite", label: "Citing & references" },
@@ -12703,8 +12691,10 @@ const HelpTab = ({ onStartTour }) => {
               / false positive / uncertain).
             </li>
             <li>
-              Export your curated report (TSV or JSON with full audit
-              trail) from the Export tab.
+              Export your curated TSV (or printable HTML report) from
+              the Export tab. For a full session backup that round-trips
+              with every loaded file and your UI state, use{" "}
+              <strong>Download session</strong> on the files bar.
             </li>
           </ol>
         </HelpSection>
@@ -13094,15 +13084,17 @@ const HelpTab = ({ onStartTour }) => {
                 Events table
               </h4>
               <p>
-                Sortable, filterable list of every event. Each row shows
-                source / target sample names with their metadata flags
-                (control, low biomass, biome) and pills for context
-                (related samples, plate proximity, cascade). Probability
-                and rate are rendered as coloured bars (rate uses a log10
-                scale 0.01% – 100%). The list paginates at 500 rows so big
-                datasets stay responsive — sort/filter changes reset the
-                page; toggling a verdict does not. Click a row to jump
-                into Guided validation.
+                Filterable list of every event. Each row shows source /
+                target sample names with their metadata flags (control,
+                low biomass, biome) and pills for context (related
+                samples, plate proximity, cascade). Probability, rate
+                and introduced % are rendered as coloured bars (rate
+                uses a log10 scale, probability uses a continuous
+                gradient). Every column is click-sortable except Context
+                — including Verdict, Action and Species count. Pagination
+                size is configurable (default 500) under the gear icon
+                → Items per page. Click a row to jump into Guided
+                validation.
               </p>
             </div>
             <div>
@@ -13110,16 +13102,21 @@ const HelpTab = ({ onStartTour }) => {
                 Scatterplots
               </h4>
               <p>
-                Gallery of source-vs-target thumbnails (100 per page). Each
-                species is a point. The log10 axes are computed once per
-                dataset from the abundance matrix so all thumbnails are on
-                identical bounds and visually comparable. Sort by
-                probability, rate, "pending first" or source name; click
-                an active sort button again to flip ascending/descending.
-                Two sliders (min probability, min rate) hide low-confidence
-                events. Toggle to "Explore new pairs" to inspect pairs
-                that CroCoDeEL did not flag (potential false negatives)
-                and add them as manually-curated events.
+                Gallery of source-vs-target thumbnails (default 100 per
+                page; configurable). Each species is a point. The log10
+                axes are computed once per dataset from the abundance
+                matrix so all thumbnails are on identical bounds and
+                visually comparable. Sort by probability, rate,
+                introduced %, verdict, action (when enabled) or source
+                name; click an active sort button again to flip
+                ascending/descending. The shared filter bar above the
+                grid hides events below your probability / rate /
+                introduced thresholds. Toggle to "Explore new pairs" to
+                inspect pairs that CroCoDeEL did not flag (potential
+                false negatives) and add them as manually-curated events
+                — the form sits side-by-side with a live preview that
+                recomputes the introduced-species count as you move the
+                rate / probability sliders.
               </p>
             </div>
             <div>
@@ -13155,8 +13152,13 @@ const HelpTab = ({ onStartTour }) => {
               <p>
                 Three sub-views: Overview (thumbnails of all plates),
                 Inspect (single plate with optional contamination arrows),
-                and Edit (drag samples between wells if you need to fix
-                the map manually).
+                and Edit (combobox + "+ Add plate" button to mint or
+                switch plates, drag samples between wells with arrow
+                keys + Enter or with the mouse). Both 96-well (8×12) and
+                384-well (16×24) plates are auto-detected; dense plates
+                shrink their cell size in the Validation panel and thin
+                their column-number labels (every 5th + first + last)
+                to stay readable.
               </p>
             </div>
             <div>
@@ -13165,13 +13167,17 @@ const HelpTab = ({ onStartTour }) => {
               </h4>
               <p>
                 One event at a time, with the scatterplot, six diagnostic
-                criteria (see below), the plate position when relevant,
+                criteria (see below) plus two contextual checks
+                (related samples, plate proximity), the plate position
                 and a sample-context panel showing every metadata flag
-                for both source and target. Assign a verdict in three
-                clicks. The event queue in the sidebar auto-scrolls to
-                keep the active row in view as you navigate. See the
-                Keyboard shortcuts and Bulk actions sections for faster
-                workflows.
+                for both source and target. Assign a verdict (T / F / U
+                / P) in a single click; when the suppress/keep feature
+                is enabled in Configuration, a Keep / Suppress chip
+                pair appears inline next to the verdict row. The event
+                queue in the sidebar is sortable (prob / rate / intro /
+                pending / source) and auto-scrolls to keep the active
+                row in view as you navigate. See the Keyboard shortcuts
+                and Bulk actions sections for faster workflows.
               </p>
             </div>
             <div>
@@ -13184,10 +13190,15 @@ const HelpTab = ({ onStartTour }) => {
             <div>
               <h4 style={{ color: "var(--ink)", fontWeight: 700 }}>Export</h4>
               <p>
-                A single TSV with every event (verdict, action and notes
-                included), plus a JSON audit trail with metadata context
-                and cascade flags. Filter downstream using the verdict /
-                action columns if you only want TPs or want to drop FPs.
+                A single TSV with every event (verdict, action and
+                notes included) plus a printable HTML report you can
+                save as PDF from the browser. Filter downstream using
+                the verdict / action columns if you only want TPs or
+                want to drop FPs. For a full reproducibility-grade
+                backup of the entire session (events + every loaded
+                file + UI state), use <strong>Download session</strong>{" "}
+                on the files bar — and re-import it later with
+                <strong> Import session</strong>.
               </p>
             </div>
           </div>
@@ -13200,74 +13211,113 @@ const HelpTab = ({ onStartTour }) => {
           title="Validation criteria"
         >
           <p>
-            Each event is evaluated on six criteria — four data-driven
-            (computed from the abundance table) and two context-driven (from
-            metadata + plate map). Criteria can pass (good), fail (bad) or
-            be inconclusive (neutral). The Guided validation tab summarizes
-            them visually.
+            Each event is scored against eight criteria — six data-driven
+            (computed from the abundance table) shown as the headline 6/6
+            score, plus two context-driven (metadata + plate map) shown
+            below as informative checks. Each criterion passes (cyan),
+            fails (salmon) or is inconclusive (neutral). The Guided
+            validation panel summarizes the score and lists the
+            individual reasons.
           </p>
           <table className="w-full text-left mt-3">
             <thead>
               <tr style={{ borderBottom: "2px solid #275662" }}>
                 <th className="py-2 pr-3 text-[11px] uppercase">#</th>
                 <th className="py-2 pr-4 text-[11px] uppercase">Criterion</th>
-                <th className="py-2 text-[11px] uppercase">What it checks</th>
+                <th className="py-2 text-[11px] uppercase">What it checks (passes when…)</th>
               </tr>
             </thead>
             <tbody>
               <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
                 <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>01</td>
-                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>RF probability</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Line shape (R²)</td>
                 <td className="py-2.5 align-top text-[13px]">
-                  CroCoDeEL's own probability for this event. Higher is more
-                  confident.
+                  Linear fit on the points classified as "on the line" by
+                  CroCoDeEL. Real mechanical contamination produces a
+                  straight line. Passes when R² &gt; 0.8.
                 </td>
               </tr>
               <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
                 <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>02</td>
-                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Contamination rate</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Number of points on the line</td>
                 <td className="py-2.5 align-top text-[13px]">
-                  Magnitude of the contamination. Very small rates (&lt; 0.1%)
-                  are noisy; very high rates (&gt; 30%) are striking and often
-                  correspond to identical or near-identical samples.
+                  Below ~10 species the alignment may be statistical
+                  noise. Passes when more than 10 species sit on the
+                  contamination line.
                 </td>
               </tr>
               <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
                 <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>03</td>
-                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Missing-from-source species</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Spread of the line</td>
                 <td className="py-2.5 align-top text-[13px]">
-                  Number of species detected in the contaminated sample but
-                  absent from the alleged source. A real contamination should
-                  not introduce species that the source itself does not have.
+                  A real contamination transfers all species
+                  proportionally, so the line spans many decades of
+                  abundance. Biological similarity tends to share only
+                  abundant species, concentrating the apparent line in
+                  1–1.5 decades. Passes when the line spans ≥ 1.5
+                  decades.
                 </td>
               </tr>
               <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
                 <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>04</td>
-                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Above-line species</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Missing source species</td>
                 <td className="py-2.5 align-top text-[13px]">
-                  Number of species more abundant in the contaminated sample
-                  than in the source (above the y=x diagonal in the
-                  scatterplot). A clean contamination should have very few
-                  such species.
+                  Source "core" species (cumulative abundance reaching
+                  80%) should appear in the target if the contamination
+                  is real. Each species is checked against the target's
+                  empirical limit-of-detection adjusted for the rate, so
+                  the threshold adapts to sequencing depth. Passes when
+                  ≤ 2 expected species are missing.
                 </td>
               </tr>
               <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
                 <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>05</td>
-                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Related samples</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Points above the contamination line</td>
                 <td className="py-2.5 align-top text-[13px]">
-                  Are source and target the same subject (longitudinal) or in
-                  the same group (sibling, cage, site)? Both situations are
-                  classic false-positive triggers because the samples
-                  legitimately share microbes.
+                  Pure mechanical contamination cannot put more of a
+                  species in the target than in the source. A few
+                  points within 0.5 decade above the line are tolerable
+                  noise; anything 0.5+ decade above means the target
+                  has ≥ 3× more of that species than the contamination
+                  could deliver — strong evidence the species belongs
+                  to the target's own biology. Passes when no point is
+                  ≥ 0.5 decade above (cascade events soften the
+                  failure label).
+                </td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>06</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Profile dissimilarity (Spearman ρ)</td>
+                <td className="py-2.5 align-top text-[13px]">
+                  Spearman rank correlation between source and target
+                  abundances across every species present in either
+                  sample. A high ρ (≥ 0.7) means the two profiles are
+                  similar overall — typical of longitudinal /
+                  same-subject pairs where the apparent line is
+                  biological persistence rather than mechanical
+                  transfer. Passes when ρ &lt; 0.7.
+                </td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>07</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Related samples (contextual)</td>
+                <td className="py-2.5 align-top text-[13px]">
+                  Source and target sharing a <code style={{ fontFamily: "ui-monospace, monospace" }}>subject_id</code> (longitudinal pair)
+                  or <code style={{ fontFamily: "ui-monospace, monospace" }}>group_id</code> (siblings, cage, household) is a classic
+                  false-positive trigger because the samples legitimately
+                  share microbes. Informational — not counted in the 6/6
+                  score. Requires <code style={{ fontFamily: "ui-monospace, monospace" }}>metadata.tsv</code>.
                 </td>
               </tr>
               <tr>
-                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>06</td>
-                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Proximity on plate</td>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>08</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Proximity on plate (contextual)</td>
                 <td className="py-2.5 align-top text-[13px]">
-                  Chebyshev distance between the two wells. Adjacent (Δ ≤ 1)
-                  is a strong well-to-well leakage signal; Δ = 2 is suspicious;
-                  different plates makes well-to-well unlikely.
+                  Chebyshev distance between the two wells. Adjacent
+                  (Δ ≤ 1) supports a real well-to-well leakage call;
+                  Δ = 2 is suspicious; distant on the same plate or
+                  different plates weakens the contamination
+                  hypothesis. Informational — requires <code style={{ fontFamily: "ui-monospace, monospace" }}>plate_map.tsv</code>.
                 </td>
               </tr>
             </tbody>
@@ -13495,14 +13545,61 @@ const HelpTab = ({ onStartTour }) => {
             <li>
               <strong>Bulk apply by criteria…</strong> — opens a dialog
               that lets you compose an arbitrary filter (probability
-              range, rate range in %, and pass / fail / any per
-              criterion: shape, n on line, decade range, missing source
-              species, above-line points), then apply one verdict
-              (TP / FP / Uncertain / Reset) and an optional shared
-              comment to every matched event. The comment, if non-empty,
-              is prepended to each event's existing notes with a
-              <code style={{ fontFamily: "ui-monospace, monospace", marginLeft: 4 }}>[bulk YYYY-MM-DD]</code>{" "}
+              range, rate range in %, introduced % range, and pass /
+              fail / any per criterion: shape, n on line, decade range,
+              missing source species, above-line points, Spearman
+              profile dissimilarity), then apply one verdict (TP / FP
+              / Uncertain / Reset) and an optional shared comment to
+              every matched event. When the suppress/keep feature is
+              enabled, an extra Action row lets you force the matched
+              events to Keep or Suppress (or leave each event's existing
+              action untouched). The comment, if non-empty, is prepended
+              to each event's existing notes with a{" "}
+              <code style={{ fontFamily: "ui-monospace, monospace" }}>[bulk YYYY-MM-DD]</code>{" "}
               tag.
+            </li>
+          </ul>
+        </HelpSection>
+
+        {/* ---------- Configuration ---------- */}
+        <HelpSection
+          id="h-config"
+          eyebrow="Tune the interface"
+          title="Configuration"
+        >
+          <p>
+            The gear icon in the sub-banner (top-right, just above the
+            green privacy chip) opens a Configuration dialog with three
+            settings, each persisted to localStorage so the choice
+            survives session resets.
+          </p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li>
+              <strong>Theme</strong> — Light, Dark, Auto (follow OS via{" "}
+              <code style={{ fontFamily: "ui-monospace, monospace" }}>
+                prefers-color-scheme
+              </code>
+              , flips live with the OS toggle), or Auto (schedule) where
+              you pick the dark window with two time inputs (default
+              19:00 → 07:00 local time, wraps past midnight).
+            </li>
+            <li>
+              <strong>Suppress / keep action</strong> — opt-in. Adds a
+              "suppress" / "keep" action choice to each event so you can
+              decide which samples stay in your downstream analyses.
+              Defaults follow the verdict (TP → suppress, FP → keep) and
+              the value lands in the exported TSV. When enabled you also
+              get an <em>Action</em> column in the events table, an
+              action filter on the filter bar, an action override in the
+              Bulk apply dialog, an inline Keep / Suppress chip pair on
+              the verdict row in Guided validation, and an action popover
+              on the Scatterplot gallery cards.
+            </li>
+            <li>
+              <strong>Items per page</strong> — three numeric inputs to
+              tune pagination on the events table (default 500), the
+              Scatterplot gallery (100) and the Datasets list (50).
+              Clamped to [1, 5000].
             </li>
           </ul>
         </HelpSection>
@@ -13663,13 +13760,16 @@ const HelpTab = ({ onStartTour }) => {
               </p>
               <p>
                 No — the app auto-saves your full session (events,
-                verdicts, notes, all loaded files, plus your active tab
-                and filters) to your browser's localStorage every time
-                something changes. After a refresh you land exactly where
-                you left off. See the Privacy & how it works section for
-                details, including limits and how to clear it. For
-                belt-and-braces backups before a long break, also use the
-                Export tab.
+                verdicts, actions, notes, all loaded files, plus your
+                active tab and filters) to your browser's localStorage
+                every time something changes. After a refresh you land
+                exactly where you left off. See the Privacy & how it
+                works section for details, including limits and how to
+                clear it. For belt-and-braces backups before a long
+                break or to move sessions between machines, hit{" "}
+                <strong>Download session</strong> on the files bar to
+                grab a JSON, then <strong>Import session</strong> to
+                restore it later.
               </p>
             </div>
           </div>
@@ -15105,7 +15205,7 @@ export default function App() {
         title: "Events table — sort and filter",
         body:
           "The Events table lists every flagged contamination event.\n\n" +
-          "Filter by minimum probability, minimum rate, or hide longitudinal pairs (same subject). Sort any column. Click a row to inspect that event in Guided validation.",
+          "Filter by probability / rate / introduced %, by verdict, by action, or by sample context (related, adjacent). Every column except Context is sortable — including Verdict and Action. Click a row to inspect that event in Guided validation.",
         action: "tabTable",
         highlight: '[data-tutorial="tab-table"]',
       },
@@ -15158,8 +15258,8 @@ export default function App() {
       {
         title: "Guided validation — make verdicts",
         body:
-          "This is where you decide for each event: True positive (real contamination), False positive (biological signal), or Uncertain.\n\n" +
-          "You see the scatterplot, six diagnostic criteria, plate position, and full sample context — everything in one screen.",
+          "This is where you decide each event: True positive (real contamination), False positive (biological signal), or Uncertain.\n\n" +
+          "Six diagnostic criteria summarise the evidence (line shape, spread, missing source species, above-line points, Spearman ρ between source and target). Plate position and sample context sit alongside, plus the introduced-species list — everything you need on one screen.",
         action: "tabValidate",
         highlight: '[data-tutorial="tab-validate"]',
       },
@@ -15167,17 +15267,14 @@ export default function App() {
         title: "Keyboard shortcuts speed up curation",
         body:
           "Press T (True positive), F (False positive) or U (Uncertain) to validate the current event.\n\n" +
-          "Then ← / → jump to the previous/next pending event automatically.\n\n" +
+          "Then ← / → jump to the previous/next pending event automatically; ↑ / ↓ step through the queue regardless of verdict.\n\n" +
           "Press ? in the app to see all shortcuts.",
         highlight: '[data-tutorial="verdict-buttons"]',
       },
       {
-        title: "Bulk actions for obvious cases",
+        title: "Suppress / keep — optional action layer",
         body:
-          "On longitudinal datasets, two heuristics handle most events automatically:\n\n" +
-          "• Same-subject pairs (longitudinal) → almost always false positives. One click classifies them all with explanatory notes.\n\n" +
-          "• Contamination flowing into a negative control → almost always real well-to-well leakage. One click classifies them as true positives.",
-        highlight: '[data-tutorial="bulk-actions"]',
+          "Enable the suppress/keep feature in Configuration (gear icon, top right) to add a small Save / Trash chip next to each TP and FP verdict. Useful when a small contamination shouldn't cost you a whole study — flip individual TPs from \"suppress\" to \"keep\" to retain them. Default actions follow the verdict (TP → suppress, FP → keep) and the action lands in the exported TSV.",
       },
       {
         title: "Export your curated report",
@@ -15189,7 +15286,7 @@ export default function App() {
       {
         title: "Learn the patterns",
         body:
-          "One last stop: the Learn tab is a reference for reading scatterplots, built around the 12 canonical cases from the Goulet et al. 2025 paper.\n\n" +
+          "One last stop: the Learn tab is a reference for reading scatterplots, organised around the canonical patterns adapted from Goulet et al. 2025.\n\n" +
           "Curation isn't just about clicking buttons — it's about training your eye. We'll walk through the three categories you'll encounter.",
         action: "tabLearn",
         highlight: '[data-tutorial="tab-learn"]',
@@ -15197,16 +15294,16 @@ export default function App() {
       {
         title: "True positives — real contamination",
         body:
-          "Four examples (A-D) of contamination CroCoDeEL flags AND humans confirm.\n\n" +
-          "The shared signature: a clear linear cluster parallel to y = x, with the dashed salmon line marking exactly where the contamination signal sits. Rate is independent of how obvious the line is — even 0.49% (case B) can be unambiguous when the pattern is clean.",
+          "Examples of contamination CroCoDeEL flags AND humans confirm.\n\n" +
+          "The shared signature: a clear linear cluster parallel to y = x, with the dashed salmon line marking exactly where the contamination signal sits. Rate is independent of how obvious the line is — even sub-percent rates can be unambiguous when the pattern is clean.",
         action: "tabLearn",
         highlight: '[data-tutorial="learn-tp"]',
       },
       {
         title: "False positives — flagged but biological",
         body:
-          "CroCoDeEL flagged these but a curator decided they're biological similarity.\n\n" +
-          "Cases F, G and H are stringency-dependent — strict curators might tag them Uncertain instead. The visual key: do the points actually hug the dashed salmon line? On a true positive yes, on a false positive no.",
+          "CroCoDeEL flagged these but a curator decided they're biological similarity (e.g. longitudinal pairs from the same subject — see the dedicated card).\n\n" +
+          "The visual key: do the points actually hug the dashed salmon line? On a true positive yes, on a false positive no — the cloud may correlate but it's broader and noisier.",
         action: "tabLearn",
         highlight: '[data-tutorial="learn-fp"]',
       },
@@ -15221,7 +15318,7 @@ export default function App() {
       {
         title: "You're ready!",
         body:
-          "Your work is auto-saved to your browser as you go — close the tab and come back anytime.\n\n" +
+          "Your session is auto-saved to your browser as you go — close the tab and come back anytime. For longer-term backup, hit Download session on the files bar to grab a JSON you can re-import later.\n\n" +
           "The Learn tab is always there if you want to revisit the patterns. Need this whole tour again? Help tab → 'Restart guided tour'.\n\n" +
           "Click 'Got it!' to start exploring on your own.",
         action: "tabOverview",
