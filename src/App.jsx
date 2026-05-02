@@ -17427,10 +17427,8 @@ export default function App() {
                     className="text-[11px] mt-0.5"
                     style={{ color: "var(--ink-muted)" }}
                   >
-                    Useful when a small contamination shouldn't cost you a
-                    whole study — flip individual TPs from "suppress" to
-                    "keep" to preserve them in downstream analyses.
-                    Disabled by default.
+                    Adds a "suppress" / "keep" action choice to each event,
+                    to decide which samples stay in your downstream analyses.
                   </div>
                 </div>
               </label>
