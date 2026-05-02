@@ -751,7 +751,10 @@ function pointsAboveLine(scatter) {
     if (p.x <= 0 || p.y <= 0 || p.onLine) return;
     const threshold = Math.log10(p.x) - scatter.logC;
     const dist = Math.log10(p.y) - threshold;
-    if (dist > 0.3) {
+    // Threshold 0.1 decade (~1.26× the predicted target abundance) —
+    // matches what's visibly above the line by eye while still
+    // excluding the tight noise cluster sitting almost exactly on it.
+    if (dist > 0.1) {
       above++;
       if (dist > maxDist) maxDist = dist;
       if (dist >= 0.5) farAbove++;
@@ -831,7 +834,7 @@ function missingAbundantFromSource(ab, source, target, rate) {
   return { count: missing, evaluated, targetLOD, coreSize: coreSet.size };
 }
 
-function automaticScore(diag, aboveInfo, nMissing, cascade) {
+function automaticScore(diag, aboveInfo, nMissing, cascade, relatedness) {
   let good = 0;
   const reasons = [];
   if (diag && diag.r2 != null) {
@@ -925,12 +928,12 @@ function automaticScore(diag, aboveInfo, nMissing, cascade) {
     } else if (cascade) {
       reasons.push({
         ok: false,
-        label: `${farAbove} points ≥ 0.5 decade above (max ${maxDist.toFixed(1)}) — explained by detected cascade`,
+        label: `${nAbove} points above the line (${farAbove} ≥ 0.5 decade, max ${maxDist.toFixed(1)}) — explained by detected cascade`,
       });
     } else {
       reasons.push({
         ok: false,
-        label: `${farAbove} points ≥ 0.5 decade above (max ${maxDist.toFixed(1)}) — strong biological signal, no cascade detected`,
+        label: `${nAbove} points above the line (${farAbove} ≥ 0.5 decade, max ${maxDist.toFixed(1)}) — strong biological signal, no cascade detected`,
       });
     }
   }
@@ -954,7 +957,32 @@ function automaticScore(diag, aboveInfo, nMissing, cascade) {
       });
     }
   }
-  return { good, total: 6, reasons };
+  // Same-individual check — only counts when metadata with subject_id
+  // (or group_id) is loaded AND both samples can be looked up. A
+  // longitudinal pair from the same subject is the most common
+  // false-positive trigger, so making this a scored criterion keeps it
+  // visible alongside the data-driven checks.
+  let total = 6;
+  if (relatedness && relatedness.related != null) {
+    total = 7;
+    if (relatedness.related === false) {
+      good++;
+      reasons.push({
+        ok: true,
+        label: `Source and target are different subjects`,
+      });
+    } else {
+      const baseText =
+        relatedness.kind === "group"
+          ? `same group (${relatedness.value})`
+          : `same subject (${relatedness.value})`;
+      reasons.push({
+        ok: false,
+        label: `Source and target share the ${baseText} — biological similarity is likely`,
+      });
+    }
+  }
+  return { good, total, reasons };
 }
 
 /** A cascade is suspected when event A→B has many points above the line AND
@@ -10144,6 +10172,56 @@ const ValidateTab = ({
                   </div>
                 ))}
               </div>
+              {(() => {
+                // Aggregate signal: when same-subject (or same group) +
+                // correlated profiles (Spearman ρ ≥ 0.7) + at least one
+                // above-line point + no cascade detected, the most
+                // parsimonious explanation is biological similarity, not
+                // mechanical contamination → likely FP. Shown as a
+                // dedicated banner so the user catches the combination
+                // without having to mentally cross-reference 4 reasons.
+                if (
+                  !related?.related ||
+                  diag?.spearman == null ||
+                  diag.spearman < 0.7 ||
+                  !above ||
+                  above.count === 0 ||
+                  sel?.cascade
+                ) {
+                  return null;
+                }
+                const reason =
+                  related.kind === "group"
+                    ? `same group (${related.value})`
+                    : `same subject (${related.value})`;
+                return (
+                  <div
+                    className="mt-3 p-2.5 rounded-sm flex items-start gap-2"
+                    style={{
+                      background: "rgba(237,110,108,0.10)",
+                      border: "1px solid #ed6e6c",
+                    }}
+                  >
+                    <AlertCircle
+                      className="w-4 h-4 shrink-0 mt-0.5"
+                      style={{ color: "#ed6e6c" }}
+                    />
+                    <div
+                      className="text-[12px]"
+                      style={{ color: "var(--ink)", lineHeight: 1.45 }}
+                    >
+                      <div style={{ fontWeight: 700, marginBottom: 2 }}>
+                        Multiple signals point to biological similarity → likely False Positive
+                      </div>
+                      <div style={{ color: "var(--ink-soft)" }}>
+                        {reason} · profiles correlate (Spearman ρ ={" "}
+                        {diag.spearman.toFixed(2)}) ·{" "}
+                        {above.count} point{above.count !== 1 ? "s" : ""} above the line · no cascade detected.
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
               <button
                 type="button"
                 onClick={() => setShowCriteriaDetails((v) => !v)}
@@ -10226,10 +10304,10 @@ const ValidateTab = ({
                       ? above.count === 0
                         ? "0 above"
                         : above.maxDist < 0.5
-                          ? `${above.count} above (max ${above.maxDist.toFixed(1)} decade — tolerable)`
+                          ? `${above.count} above the line (max ${above.maxDist.toFixed(1)} decade — tolerable)`
                           : sel?.cascade
-                            ? `${above.farAbove}/${above.count} ≥ 0.5 decade above (max ${above.maxDist.toFixed(1)} — cascade explains)`
-                            : `${above.farAbove}/${above.count} ≥ 0.5 decade above (max ${above.maxDist.toFixed(1)})`
+                            ? `${above.count} above the line — ${above.farAbove} of them ≥ 0.5 decade (max ${above.maxDist.toFixed(1)} — cascade explains)`
+                            : `${above.count} above the line — ${above.farAbove} of them ≥ 0.5 decade (max ${above.maxDist.toFixed(1)})`
                       : "abundance table required"
                   }
                 />
@@ -16307,7 +16385,8 @@ export default function App() {
       const di = lineDiagnostics(sc);
       const ab2 = pointsAboveLine(sc);
       const mi = missingAbundantFromSource(ab, event.source, event.target, event.rate);
-      const score = automaticScore(di, ab2, mi, event.cascade);
+      const rel = areRelated(metadata, event.source, event.target);
+      const score = automaticScore(di, ab2, mi, event.cascade, rel);
       return `
         <ul class="checklist">
           ${score.reasons
@@ -16683,9 +16762,21 @@ export default function App() {
         : null,
     [ab, selected],
   );
+  const selectedRelatedness = useMemo(
+    () =>
+      selected ? areRelated(metadata, selected.source, selected.target) : null,
+    [metadata, selected],
+  );
   const autoScore = useMemo(
-    () => automaticScore(diag, above, missing, selected?.cascade),
-    [diag, above, missing, selected],
+    () =>
+      automaticScore(
+        diag,
+        above,
+        missing,
+        selected?.cascade,
+        selectedRelatedness,
+      ),
+    [diag, above, missing, selected, selectedRelatedness],
   );
 
   /* ============================================================

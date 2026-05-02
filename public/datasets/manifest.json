@@ -52,6 +52,23 @@
       }
     },
     {
+      "id": "PRJEB33500",
+      "short_title": "PRJEB33500",
+      "title": "Mediterranean diet intervention in overweight and obese subjects (Meslier et al. 2020)",
+      "description": "Shotgun metagenomics of stool samples from a Mediterranean-diet intervention in overweight/obese adults \u2014 looks at how an 8-week dietary shift reshapes the gut microbiome and metabolome independently of energy intake. 244 metagenomes, longitudinal sampling per subject.",
+      "biome": "Human gut",
+      "samples_count": 244,
+      "events_count": 59,
+      "profiler": "Meteor",
+      "citation": "Meslier et al. 2020, Gut",
+      "paper_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7306983/",
+      "dataverse_url": "",
+      "files": {
+        "events": "PRJEB33500/contamination_events.tsv",
+        "abundance": "PRJEB33500/species_abundance.tsv"
+      }
+    },
+    {
       "id": "PRJEB6337",
       "short_title": "PRJEB6337",
       "title": "Liver cirrhosis metagenome-wide association study",
@@ -89,7 +106,7 @@
       "id": "PRJNA352475",
       "short_title": "PRJNA352475",
       "title": "Mother-to-infant microbial transmission from different body sites shapes the developing infant gut microbiome",
-      "description": "Shotgun metagenomics of 25 mother–infant pairs across multiple body sites (stool, tongue dorsum, vagina, skin) to track vertical strain transmission.",
+      "description": "Shotgun metagenomics of 25 mother\u2013infant pairs across multiple body sites (stool, tongue dorsum, vagina, skin) to track vertical strain transmission.",
       "biome": "Human (multi-site: gut, oral, vaginal, skin)",
       "samples_count": 182,
       "events_count": 96,
@@ -104,7 +121,7 @@
     },
     {
       "id": "PRJNA698986_P2",
-      "short_title": "PRJNA698986 — Plate 2",
+      "short_title": "PRJNA698986 \u2014 Plate 2",
       "title": "Early-life metagenomes from infant fecal samples with matched maternal samples (Plate 2)",
       "description": "Plate 2 sub-cohort of the genome-resolved shotgun metagenomics dataset Lou et al. used to demonstrate well-to-well contamination in shotgun sequencing.",
       "biome": "Human gut",
@@ -122,9 +139,9 @@
     },
     {
       "id": "PRJNA698986_P3",
-      "short_title": "PRJNA698986 — Plate 3",
+      "short_title": "PRJNA698986 \u2014 Plate 3",
       "title": "Early-life metagenomes from infant fecal samples with matched maternal samples (Plate 3)",
-      "description": "Plate 3 sub-cohort of the genome-resolved shotgun metagenomics dataset Lou et al. used to demonstrate well-to-well contamination — same data as the bundled tutorial demo.",
+      "description": "Plate 3 sub-cohort of the genome-resolved shotgun metagenomics dataset Lou et al. used to demonstrate well-to-well contamination \u2014 same data as the bundled tutorial demo.",
       "biome": "Human gut",
       "samples_count": 91,
       "events_count": 24,
@@ -141,13 +158,13 @@
     },
     {
       "id": "PRJNA763023_PRJDB4176_meteor",
-      "short_title": "PRJNA763023+PRJDB4176 — Meteor",
+      "short_title": "PRJNA763023+PRJDB4176 \u2014 Meteor",
       "title": "Simulated cross-sample contamination benchmark on two CRC cohorts (Meteor profiling)",
       "description": "In-silico contamination benchmark built on top of two human-gut CRC cohorts (young-onset CRC, Yang et al. 2021; Japanese colonoscopy, Yachida et al. 2019), profiled with Meteor.",
       "biome": "Human gut",
       "samples_count": 900,
       "events_count": 16555,
-      "citation": "Yang et al. 2021, Nat Commun · Yachida et al. 2019, Nat Med",
+      "citation": "Yang et al. 2021, Nat Commun \u00b7 Yachida et al. 2019, Nat Med",
       "paper_url": "https://doi.org/10.1038/s41467-021-27112-y",
       "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
       "files": {
@@ -157,13 +174,13 @@
     },
     {
       "id": "PRJNA763023_PRJDB4176_metaphlan4_nofilter",
-      "short_title": "PRJNA763023+PRJDB4176 — MetaPhlAn4 (raw)",
+      "short_title": "PRJNA763023+PRJDB4176 \u2014 MetaPhlAn4 (raw)",
       "title": "Simulated cross-sample contamination benchmark on two CRC cohorts (MetaPhlAn4, raw profiles)",
       "description": "Same in-silico contamination benchmark, profiled with MetaPhlAn4. Raw profiles, CroCoDeEL run without --filter-low-ab.",
       "biome": "Human gut",
       "samples_count": 900,
       "events_count": 10336,
-      "citation": "Yang et al. 2021, Nat Commun · Yachida et al. 2019, Nat Med",
+      "citation": "Yang et al. 2021, Nat Commun \u00b7 Yachida et al. 2019, Nat Med",
       "paper_url": "https://doi.org/10.1038/s41467-021-27112-y",
       "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
       "files": {
@@ -173,13 +190,13 @@
     },
     {
       "id": "PRJNA763023_PRJDB4176_metaphlan4",
-      "short_title": "PRJNA763023+PRJDB4176 — MetaPhlAn4 (raw + filter 20×)",
+      "short_title": "PRJNA763023+PRJDB4176 \u2014 MetaPhlAn4 (raw + filter 20\u00d7)",
       "title": "Simulated cross-sample contamination benchmark on two CRC cohorts (MetaPhlAn4 + filter-low-ab 20)",
       "description": "Same in-silico contamination benchmark, profiled with MetaPhlAn4. Raw profiles, CroCoDeEL run with --filter-low-ab 20 (recommended for MetaPhlAn4).",
       "biome": "Human gut",
       "samples_count": 900,
       "events_count": 14329,
-      "citation": "Yang et al. 2021, Nat Commun · Yachida et al. 2019, Nat Med",
+      "citation": "Yang et al. 2021, Nat Commun \u00b7 Yachida et al. 2019, Nat Med",
       "paper_url": "https://doi.org/10.1038/s41467-021-27112-y",
       "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
       "files": {
@@ -189,13 +206,13 @@
     },
     {
       "id": "PRJNA763023_PRJDB4176_sylph",
-      "short_title": "PRJNA763023+PRJDB4176 — Sylph",
+      "short_title": "PRJNA763023+PRJDB4176 \u2014 Sylph",
       "title": "Simulated cross-sample contamination benchmark on two CRC cohorts (Sylph profiling)",
       "description": "Same in-silico contamination benchmark, profiled with Sylph against GTDB r214.",
       "biome": "Human gut",
       "samples_count": 900,
       "events_count": 15382,
-      "citation": "Yang et al. 2021, Nat Commun · Yachida et al. 2019, Nat Med",
+      "citation": "Yang et al. 2021, Nat Commun \u00b7 Yachida et al. 2019, Nat Med",
       "paper_url": "https://doi.org/10.1038/s41467-021-27112-y",
       "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
       "files": {
