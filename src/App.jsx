@@ -3030,6 +3030,31 @@ const EventQueue = ({ events, currentId, onSelect, compact }) => {
       className="rounded-sm max-h-[640px] overflow-auto"
       style={{ border: "1px solid var(--border)" }}
     >
+      {/* Column legend so the bare numbers below have a context.
+          Mirrors the per-row value layout so each label sits above its
+          column. */}
+      <div
+        className="px-3 py-1.5 text-[10px] tabular flex items-start gap-2 sticky top-0"
+        style={{
+          color: "var(--ink-muted)",
+          background: "var(--bg-soft)",
+          borderBottom: "1px solid var(--border-soft)",
+          fontFamily: '"Raleway", sans-serif',
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          zIndex: 1,
+        }}
+      >
+        {!compact && <span className="mt-0.5 w-2 h-2 shrink-0" />}
+        <div className="flex-1 min-w-0">
+          <div className="flex justify-between gap-2" style={{ textAlign: "center" }}>
+            <span className="flex-1" title="probability">prob</span>
+            <span className="flex-1" title="rate">rate</span>
+            <span className="flex-1" title="introduced">intro</span>
+          </div>
+        </div>
+      </div>
       {events.map((e) => {
         const active = e.id === currentId;
         const dotColor =
@@ -3061,11 +3086,24 @@ const EventQueue = ({ events, currentId, onSelect, compact }) => {
                 {e.source} → {e.target}
               </div>
               <div
-                className="flex justify-between mt-0.5 tabular"
-                style={{ opacity: 0.7, fontFamily: "system-ui, sans-serif" }}
+                className="flex mt-0.5 tabular gap-2"
+                style={{
+                  opacity: 0.85,
+                  fontFamily: "system-ui, sans-serif",
+                  textAlign: "center",
+                }}
               >
-                <span>{(e.rate * 100).toFixed(1)}%</span>
-                <span>{e.score.toFixed(2)}</span>
+                <span className="flex-1" title="probability">
+                  {e.score.toFixed(2)}
+                </span>
+                <span className="flex-1" title="rate">
+                  {(e.rate * 100).toFixed(1)}%
+                </span>
+                <span className="flex-1" title="introduced">
+                  {e.introducedPct == null
+                    ? "—"
+                    : `${e.introducedPct.toFixed(1)}%`}
+                </span>
               </div>
             </div>
             {e.cascade && <Pill tone="violet">cascade</Pill>}
@@ -9285,7 +9323,62 @@ const ValidateTab = ({
   // user navigated here from another tab and that event was excluded by
   // the filter, fall back to the full set for the lookup so the event
   // still renders.
-  const queue = filteredEvents && filteredEvents.length > 0 ? filteredEvents : events;
+  // Queue + sort. Mirrors the gallery's sort affordance so the user
+  // can step through events in the most useful order with the same
+  // ↑/↓/←/→ shortcuts.
+  const [queueSortBy, setQueueSortBy] = useState("score");
+  const QUEUE_SORT_DIR_DEFAULTS = {
+    score: "desc",
+    rate: "desc",
+    introducedPct: "desc",
+    pending: "asc",
+    source: "asc",
+  };
+  const [queueSortDir, setQueueSortDir] = useState(
+    QUEUE_SORT_DIR_DEFAULTS.score,
+  );
+  const handleQueueSortClick = (id) => {
+    if (queueSortBy === id) {
+      setQueueSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setQueueSortBy(id);
+      setQueueSortDir(QUEUE_SORT_DIR_DEFAULTS[id] || "desc");
+    }
+  };
+  const queue = useMemo(() => {
+    const base =
+      filteredEvents && filteredEvents.length > 0 ? filteredEvents : events;
+    const copy = base.slice();
+    const flip = queueSortDir === "asc" ? -1 : 1;
+    if (queueSortBy === "score")
+      copy.sort((a, b) => (b.score - a.score) * flip);
+    else if (queueSortBy === "rate")
+      copy.sort((a, b) => (b.rate - a.rate) * flip);
+    else if (queueSortBy === "introducedPct") {
+      copy.sort(
+        (a, b) =>
+          ((b.introducedPct ?? -Infinity) - (a.introducedPct ?? -Infinity)) *
+          flip,
+      );
+    } else if (queueSortBy === "pending") {
+      const rank = (v) =>
+        v === "pending"
+          ? 0
+          : v === "uncertain"
+            ? 1
+            : v === "true_positive"
+              ? 2
+              : 3;
+      copy.sort(
+        (a, b) =>
+          (rank(a.verdict) - rank(b.verdict)) * flip ||
+          (b.score - a.score) * flip,
+      );
+    } else if (queueSortBy === "source") {
+      copy.sort((a, b) => a.source.localeCompare(b.source) * flip);
+    }
+    return copy;
+  }, [filteredEvents, events, queueSortBy, queueSortDir]);
   const sel = selected
     ? queue.find((e) => e.id === selected.id) ||
       events.find((e) => e.id === selected.id) ||
@@ -9487,6 +9580,55 @@ const ValidateTab = ({
             <span>Reset all verdicts ({decidedCount})</span>
           </button>
         )}
+        </div>
+        <div
+          className="text-[10px] tracking-[0.1em] uppercase mb-1.5"
+          style={{
+            color: "var(--ink-muted)",
+            fontWeight: 700,
+            fontFamily: '"Raleway", sans-serif',
+          }}
+        >
+          Sort by
+        </div>
+        <div className="flex flex-wrap gap-1 mb-2">
+          {[
+            { id: "score", label: "prob" },
+            { id: "rate", label: "rate" },
+            { id: "introducedPct", label: "intro" },
+            { id: "pending", label: "pending" },
+            { id: "source", label: "source" },
+          ].map((opt) => {
+            const active = queueSortBy === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => handleQueueSortClick(opt.id)}
+                title={
+                  active
+                    ? `Click to switch to ${queueSortDir === "desc" ? "ascending" : "descending"} order`
+                    : `Sort by ${opt.label}`
+                }
+                className="px-2 py-0.5 text-[10px] rounded-sm"
+                style={{
+                  background: active ? "#275662" : "var(--bg-card)",
+                  color: active ? "#fff" : "var(--ink)",
+                  border: "1px solid #275662",
+                  fontWeight: 600,
+                  fontFamily: '"Raleway", sans-serif',
+                  cursor: "pointer",
+                }}
+              >
+                {opt.label}
+                {active && (
+                  <span style={{ marginLeft: 3, fontWeight: 700 }}>
+                    {queueSortDir === "desc" ? "↓" : "↑"}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
         <EventQueue events={queue} currentId={sel.id} onSelect={onSelect} />
       </aside>
@@ -10169,7 +10311,10 @@ const ValidateTab = ({
           >
             Your verdict
           </div>
-          <div className="flex flex-wrap gap-2 mb-4" data-tutorial="verdict-buttons">
+          <div
+            className="flex flex-wrap gap-2 items-center mb-4"
+            data-tutorial="verdict-buttons"
+          >
             <VerdictBtn
               active={sel.verdict === "true_positive"}
               onClick={() => setVerdict(sel.id, "true_positive")}
@@ -10210,70 +10355,65 @@ const ValidateTab = ({
             >
               Reset
             </VerdictBtn>
-          </div>
-          {actionEnabled &&
-            (sel.verdict === "true_positive" ||
-              sel.verdict === "false_positive") && (
-            <div
-              className="flex items-center gap-2 mb-4 p-2 rounded-sm"
-              style={{
-                background: "var(--bg-soft)",
-                border: "1px solid var(--border)",
-              }}
-            >
-              <span
-                className="text-[10px] tracking-[0.15em] uppercase"
-                style={{
-                  color: "var(--ink-muted)",
-                  fontWeight: 700,
-                  fontFamily: '"Raleway", sans-serif',
-                }}
-              >
-                Action
-              </span>
-              {[
-                {
-                  id: "keep",
-                  label: "Keep",
-                  hint: "Acknowledge the contamination but keep the sample in the study.",
-                },
-                {
-                  id: "suppress",
-                  label: "Suppress",
-                  hint: "Drop this contaminated sample from downstream analyses.",
-                },
-              ].map((opt) => {
-                const defaultAction =
-                  sel.verdict === "false_positive" ? "keep" : "suppress";
-                const active = (sel.action || defaultAction) === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setAction(sel.id, opt.id)}
-                    title={opt.hint}
-                    className="px-3 py-1 text-[11px] rounded-sm"
+            {actionEnabled &&
+              (sel.verdict === "true_positive" ||
+                sel.verdict === "false_positive") && (
+                <>
+                  <span
+                    aria-hidden="true"
                     style={{
-                      background: active
-                        ? opt.id === "suppress"
-                          ? "#ed6e6c"
-                          : "#00a3a6"
-                        : "var(--bg-card)",
-                      color: active ? "#fff" : "var(--ink)",
-                      border: active
-                        ? "1px solid transparent"
-                        : "1px solid var(--border-strong)",
-                      fontWeight: 700,
-                      fontFamily: '"Raleway", sans-serif',
-                      cursor: "pointer",
+                      width: 1,
+                      alignSelf: "stretch",
+                      background: "var(--border)",
+                      margin: "0 4px",
                     }}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+                  />
+                  {[
+                    {
+                      id: "keep",
+                      Icon: Save,
+                      label: "Keep",
+                      color: "#00a3a6",
+                      hint: "Acknowledge the contamination but keep the sample in the study.",
+                    },
+                    {
+                      id: "suppress",
+                      Icon: Trash2,
+                      label: "Suppress",
+                      color: "#ed6e6c",
+                      hint: "Drop this contaminated sample from downstream analyses.",
+                    },
+                  ].map((opt) => {
+                    const defaultAction =
+                      sel.verdict === "false_positive" ? "keep" : "suppress";
+                    const active = (sel.action || defaultAction) === opt.id;
+                    const Icon = opt.Icon;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setAction(sel.id, opt.id)}
+                        title={opt.hint}
+                        className="px-3 py-1 text-[11px] rounded-sm flex items-center gap-1.5"
+                        style={{
+                          background: active ? opt.color : "var(--bg-card)",
+                          color: active ? "#fff" : "var(--ink)",
+                          border: active
+                            ? "1px solid transparent"
+                            : "1px solid var(--border-strong)",
+                          fontWeight: 700,
+                          fontFamily: '"Raleway", sans-serif',
+                          cursor: "pointer",
+                        }}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+          </div>
           <textarea
             value={sel.notes}
             onChange={(e) => setNote(sel.id, e.target.value)}
