@@ -33,6 +33,11 @@ import {
   User,
   Users,
   Calendar,
+  Settings,
+  Trash2,
+  Save,
+  Scale,
+  Layers,
 } from "lucide-react";
 
 /* ============================================================================
@@ -960,14 +965,17 @@ function plateDistance(plateMap, source, target) {
    ============================================================================ */
 
 const Pill = ({ children, tone = "neutral", className = "" }) => {
+  // Backgrounds use rgba overlays so they tint whatever surface sits
+  // underneath (light or dark). Text uses the brand accent colour
+  // directly so it stays legible in both themes.
   const tones = {
-    neutral: { background: "#f5f5f4", color: "#292524", border: "#d6d3d1" },
-    good:    { background: "rgba(157,197,68,0.2)", color: "#3d5017", border: "#9dc544" },
-    bad:     { background: "rgba(237,110,108,0.2)", color: "#8a2422", border: "#ed6e6c" },
-    warn:    { background: "rgba(196,192,179,0.4)", color: "#292524", border: "#c4c0b3" },
-    ink:     { background: "#275662", color: "#ffffff", border: "#275662" },
-    primary: { background: "rgba(0,163,166,0.15)", color: "#275662", border: "#00a3a6" },
-    violet:  { background: "rgba(66,48,137,0.10)", color: "#423089", border: "#423089" },
+    neutral: { background: "var(--bg-soft)", color: "var(--ink-muted)", border: "var(--border-strong)" },
+    good:    { background: "rgba(0,163,166,0.18)", color: "#00a3a6", border: "#00a3a6" },
+    bad:     { background: "rgba(237,110,108,0.18)", color: "#ed6e6c", border: "#ed6e6c" },
+    warn:    { background: "rgba(217,122,60,0.18)", color: "#d97a3c", border: "#d97a3c" },
+    ink:     { background: "#275662", color: "#fff", border: "#275662" },
+    primary: { background: "rgba(0,163,166,0.15)", color: "#00a3a6", border: "#00a3a6" },
+    violet:  { background: "rgba(132,107,212,0.18)", color: "#9c8be8", border: "#9c8be8" },
   };
   const t = tones[tone] || tones.neutral;
   return (
@@ -1141,7 +1149,7 @@ const InfoTooltip = ({ children, side = "top", className = "" }) => {
         style={{
           width: 16,
           height: 16,
-          background: visible ? "#00a3a6" : "#c4c0b3",
+          background: visible ? "#00a3a6" : "var(--border-strong)",
           color: "#fff",
           fontSize: 11,
           fontWeight: 700,
@@ -1182,7 +1190,7 @@ const SectionTitle = ({ eyebrow, title, children }) => (
       style={{
         fontFamily: '"Raleway", sans-serif',
         fontWeight: 700,
-        color: "#275662",
+        color: "var(--ink)",
       }}
     >
       {title}
@@ -1209,13 +1217,13 @@ const Chevron = ({ size = 16, color = "#00a3a6" }) => (
 
 const Stat = ({ label, value, tone = "neutral" }) => {
   const styles = {
-    neutral: { background: "#f6f7f7", color: "#275662" },
+    neutral: { background: "var(--bg-soft)", color: "var(--ink)" },
     good: { background: "#00a3a6", color: "white" },
     bad: { background: "#275662", color: "white" },
-    warn: { background: "#c4c0b3", color: "#275662" },
+    warn: { background: "var(--border-strong)", color: "var(--ink)" },
   };
   return (
-    <div className="px-4 py-4 rounded-sm" style={{ ...styles[tone], border: "1px solid #e6e8e8" }}>
+    <div className="px-4 py-4 rounded-sm" style={{ ...styles[tone], border: "1px solid var(--border)" }}>
       <div
         className="text-[10px] tracking-[0.15em] uppercase"
         style={{
@@ -1241,24 +1249,81 @@ const Stat = ({ label, value, tone = "neutral" }) => {
   );
 };
 
+/* ---------- shared metric tone palette ----------
+   One source of truth for the green→amber→red scale used by the three
+   core metrics. Keeps the visual reading consistent everywhere a value
+   is shown (events table bars, gallery cards, diagnostic Diag tiles).
+
+   Brand palette is used in place of true traffic-light hues to stay
+   readable for deuteranopia. All three metrics share the same direction
+   from a curator's risk perspective: low = "nothing to worry about",
+   high = "alert, this call is strong / this contamination is heavy".
+     - probability:  ≥ 0.85 bad (alert — call is confident, contamination
+                     is likely real), ≥ 0.6 warn, else good. Boundaries
+                     re-centred so green doesn't overpower the typical
+                     [cutoff..1] visible range.
+     - rate:         ≤ 1% good, ≤ 10% warn, else bad
+                     `value` is a fraction 0..1
+     - introduced:   ≤ 10% good, ≤ 30% warn, else bad
+                     `value` is a percent 0..100
+*/
+const METRIC_TONE_COLORS = {
+  good: "#00a3a6",
+  warn: "#d97a3c",
+  bad: "#ed6e6c",
+  neutral: "var(--border-strong)",
+};
+function metricTone(value, metric) {
+  if (value == null || !Number.isFinite(value)) return "neutral";
+  if (metric === "probability") {
+    // Visible probability range is typically [cutoff..1] with cutoff ≈ 0.5,
+    // so re-center the colour scale so green only covers values clearly
+    // below the centre (≈ 0.75) of that visible range.
+    return value >= 0.85 ? "bad" : value >= 0.6 ? "warn" : "good";
+  }
+  if (metric === "rate") {
+    return value <= 0.01 ? "good" : value <= 0.1 ? "warn" : "bad";
+  }
+  if (metric === "introduced") {
+    return value <= 10 ? "good" : value <= 30 ? "warn" : "bad";
+  }
+  return "neutral";
+}
+// Continuous gradient for probability — reads as cool teal-green at 0
+// (likely false positive, no concern), warming through amber at 0.5,
+// to salmon at 1.0 (high-confidence contamination call).
+const PROB_GRAD_LOW = "#00a3a6"; // teal
+const PROB_GRAD_MID = "#d97a3c"; // amber
+const PROB_GRAD_HIGH = "#ed6e6c"; // salmon
+function probabilityColor(value) {
+  if (value == null || !Number.isFinite(value)) return METRIC_TONE_COLORS.neutral;
+  const t = Math.max(0, Math.min(1, value));
+  return t < 0.5
+    ? d3.interpolateRgb(PROB_GRAD_LOW, PROB_GRAD_MID)(t / 0.5)
+    : d3.interpolateRgb(PROB_GRAD_MID, PROB_GRAD_HIGH)((t - 0.5) / 0.5);
+}
+const metricColor = (value, metric) => {
+  if (metric === "probability") return probabilityColor(value);
+  return METRIC_TONE_COLORS[metricTone(value, metric)];
+};
+
 const Diag = ({ label, value, tone = "neutral", hint }) => {
+  // Pull from the shared metric palette so the accent stripe matches
+  // every other place a tone is shown for the same value.
   const color =
-    tone === "good" ? "#00a3a6" :
-    tone === "warn" ? "#c4c0b3" :
-    tone === "bad" ? "#ed6e6c" :
-    "#e6e8e8";
+    METRIC_TONE_COLORS[tone] || (tone === "neutral" ? "var(--border)" : "var(--border)");
   return (
     <div className="pl-3 py-1.5 mb-2" style={{ borderLeft: `4px solid ${color}` }}>
       <div
         className="text-[10px] tracking-[0.1em] uppercase"
-        style={{ color: "#797870", fontWeight: 700, fontFamily: '"Raleway", sans-serif' }}
+        style={{ color: "var(--ink-muted)", fontWeight: 700, fontFamily: '"Raleway", sans-serif' }}
       >
         {label}
       </div>
       <div
         className="tabular"
         style={{
-          color: "#275662",
+          color: "var(--ink)",
           fontSize: 22,
           fontWeight: 700,
           lineHeight: 1.1,
@@ -1267,7 +1332,7 @@ const Diag = ({ label, value, tone = "neutral", hint }) => {
       >
         {value}
       </div>
-      {hint && <div className="text-[10px]" style={{ color: "#797870" }}>{hint}</div>}
+      {hint && <div className="text-[10px]" style={{ color: "var(--ink-muted)" }}>{hint}</div>}
     </div>
   );
 };
@@ -1293,7 +1358,7 @@ const Scatterplot = ({ scatter, width = 560, height = 500 }) => {
         style={{
           width,
           height,
-          background: "#fdeceb",
+          background: "var(--bg-alert)",
           border: "1px solid #ed6e6c",
           borderRadius: 2,
           display: "flex",
@@ -1358,10 +1423,10 @@ const Scatterplot = ({ scatter, width = 560, height = 500 }) => {
       y1={sy(lo)}
       x2={sx(hi)}
       y2={sy(hi)}
-      stroke="#000000"
+      stroke="#7d8b91"
       strokeWidth="1.25"
       strokeDasharray="2 4"
-      strokeOpacity="0.75"
+      strokeOpacity="0.85"
     />
   );
 
@@ -1387,7 +1452,7 @@ const Scatterplot = ({ scatter, width = 560, height = 500 }) => {
         viewBox={`0 0 ${width} ${height}`}
         className="border border-stone-300 rounded-sm"
         style={{
-          background: "#fff",
+          background: "var(--bg-card)",
           width: "100%",
           height: "auto",
           display: "block",
@@ -1455,8 +1520,8 @@ const Scatterplot = ({ scatter, width = 560, height = 500 }) => {
             cx={sx(p.lx)}
             cy={sy(p.ly)}
             r={p.onLine ? 4 : 2.8}
-            fill={p.onLine ? "#ed6e6c" : "#275662"}
-            fillOpacity={p.onLine ? 0.9 : 0.35}
+            fill={p.onLine ? "#ed6e6c" : "#7d8b91"}
+            fillOpacity={p.onLine ? 0.9 : 0.55}
             stroke={p.onLine ? "#b84442" : "none"}
             strokeWidth="0.7"
             onMouseEnter={() =>
@@ -1615,6 +1680,7 @@ const NetworkGraph = ({
   onPick,
   onBulkApply,
   hasAb,
+  actionEnabled,
 }) => {
   const [hover, setHover] = useState(null);
   const [zoom, setZoom] = useState({ k: 1, x: 0, y: 0 });
@@ -1853,7 +1919,7 @@ const NetworkGraph = ({
           dataset summary otherwise. */}
       <div
         className="px-3 py-2 flex flex-col gap-2 text-[12px]"
-        style={{ borderBottom: "1px solid #e6e8e8", background: "#f9faf9" }}
+        style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-soft)" }}
       >
         <div className="flex items-center gap-3 flex-wrap">
         {focusIdx != null && sortedComponents[focusIdx] ? (
@@ -1862,8 +1928,8 @@ const NetworkGraph = ({
               onClick={() => setFocusIdx(null)}
               className="px-2 py-0.5 text-[11px] rounded-sm"
               style={{
-                background: "#fff",
-                color: "#275662",
+                background: "var(--bg-card)",
+                color: "var(--ink)",
                 border: "1px solid #275662",
                 fontWeight: 600,
                 fontFamily: '"Raleway", sans-serif',
@@ -1872,10 +1938,10 @@ const NetworkGraph = ({
             >
               ← All components
             </button>
-            <span style={{ color: "#275662", fontWeight: 700 }}>
+            <span style={{ color: "var(--ink)", fontWeight: 700 }}>
               Component #{focusIdx + 1}
             </span>
-            <span style={{ color: "#797870" }}>
+            <span style={{ color: "var(--ink-muted)" }}>
               {sortedComponents[focusIdx].nodes.length} sample
               {sortedComponents[focusIdx].nodes.length !== 1 ? "s" : ""} ·{" "}
               {sortedComponents[focusIdx].edges.length} event
@@ -1883,13 +1949,13 @@ const NetworkGraph = ({
             </span>
           </>
         ) : (
-          <span style={{ color: "#275662", fontWeight: 600 }}>
+          <span style={{ color: "var(--ink)", fontWeight: 600 }}>
             {sortedComponents.length} connected component
             {sortedComponents.length !== 1 ? "s" : ""}
             {sortedComponents.length > 0 && (
               <>
                 {" · "}
-                <span style={{ color: "#797870", fontWeight: 400 }}>
+                <span style={{ color: "var(--ink-muted)", fontWeight: 400 }}>
                   largest has{" "}
                   {Math.max(...sortedComponents.map((c) => c.nodes.length))}{" "}
                   samples — click an entry on the right to focus on it
@@ -1909,6 +1975,7 @@ const NetworkGraph = ({
             onBulkApply={onBulkApply}
             hasAb={hasAb}
             events={events}
+            actionEnabled={actionEnabled}
           >
             <div className="ml-auto flex items-center gap-2.5">
               <VerdictDistribution
@@ -1918,7 +1985,7 @@ const NetworkGraph = ({
                     : events
                 }
               />
-              <span className="text-[12px]" style={{ color: "#797870" }}>
+              <span className="text-[12px]" style={{ color: "var(--ink-muted)" }}>
                 {visibleCount} / {totalEvents ?? events.length}
               </span>
             </div>
@@ -1934,25 +2001,26 @@ const NetworkGraph = ({
         style={{
           top: 8,
           left: 8,
-          background: "rgba(255,255,255,0.92)",
-          border: "1px solid #e6e8e8",
+          background: "var(--bg-card)",
+          border: "1px solid var(--border)",
+          opacity: 0.95,
         }}
       >
         <span
           className="text-[10px] tracking-[0.1em] uppercase"
-          style={{ color: "#275662", fontWeight: 700, fontFamily: '"Raleway", sans-serif' }}
+          style={{ color: "var(--ink)", fontWeight: 700, fontFamily: '"Raleway", sans-serif' }}
         >
           Legend
         </span>
-        <span className="flex items-center gap-1.5 text-[10px]" style={{ color: "#275662" }}>
-          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "#fff", border: "1.2px solid #275662" }} />
+        <span className="flex items-center gap-1.5 text-[10px]" style={{ color: "var(--ink)" }}>
+          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "var(--bg-card)", border: "1.2px solid #275662" }} />
           source only
         </span>
-        <span className="flex items-center gap-1.5 text-[10px]" style={{ color: "#275662" }}>
+        <span className="flex items-center gap-1.5 text-[10px]" style={{ color: "var(--ink)" }}>
           <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "#275662" }} />
           target only
         </span>
-        <span className="flex items-center gap-1.5 text-[10px]" style={{ color: "#275662" }}>
+        <span className="flex items-center gap-1.5 text-[10px]" style={{ color: "var(--ink)" }}>
           <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "#ed6e6c" }} />
           cascade (both)
         </span>
@@ -1966,12 +2034,12 @@ const NetworkGraph = ({
         <span
           className="text-[10px] tabular px-2"
           style={{
-            color: "#797870",
+            color: "var(--ink-muted)",
             fontFamily: "system-ui, monospace",
-            background: "rgba(255,255,255,0.92)",
+            background: "var(--bg-card)",
             borderRadius: 2,
             padding: "3px 6px",
-            border: "1px solid #e6e8e8",
+            border: "1px solid var(--border)",
           }}
         >
           {Math.round(zoom.k * 100)}%
@@ -1980,9 +2048,9 @@ const NetworkGraph = ({
           onClick={resetZoom}
           className="text-[10px] px-2 py-0.5 rounded-sm"
           style={{
-            background: "#fff",
-            color: "#275662",
-            border: "1px solid #c4c0b3",
+            background: "var(--bg-card)",
+            color: "var(--ink)",
+            border: "1px solid var(--border-strong)",
             fontWeight: 600,
             fontFamily: '"Raleway", sans-serif',
           }}
@@ -2134,7 +2202,7 @@ const NetworkGraph = ({
                   // Stroke: 1.2 (low rate) → 4.5 (high rate) base width
                   const baseWidth = 1.2 + t * 3.3;
                   const strokeColor = rejected
-                    ? "#c4c0b3"
+                    ? "var(--border-strong)"
                     : accepted
                       ? "#00a3a6"
                       : // Lerp from light teal-grey (#7a9aa1) to deep teal (#1d3a44)
@@ -2165,9 +2233,9 @@ const NetworkGraph = ({
                       width="44"
                       height="14"
                       rx="2"
-                      fill="#fff"
+                      fill="var(--bg-card)"
                       stroke={
-                        rejected ? "#c4c0b3" : accepted ? "#00a3a6" : "#275662"
+                        rejected ? "var(--border-strong)" : accepted ? "#00a3a6" : "#275662"
                       }
                       strokeWidth="0.8"
                       opacity={isHovered ? 1 : 0.95}
@@ -2197,12 +2265,12 @@ const NetworkGraph = ({
           const isTarget = (inDeg[n.id] || 0) > 0 && (outDeg[n.id] || 0) === 0;
           const isBoth = (inDeg[n.id] || 0) > 0 && (outDeg[n.id] || 0) > 0;
           const fill = isSource
-            ? "#fff"
+            ? "var(--bg-card)"
             : isTarget
               ? "#275662"
               : isBoth
                 ? "#ed6e6c"
-                : "#fff";
+                : "var(--bg-card)";
           const isNodeHover = hover?.kind === "node" && hover.n.id === n.id;
           // Show label when:
           //   - this is a small/compact component (≤ 25 nodes), OR
@@ -2241,7 +2309,7 @@ const NetworkGraph = ({
                   fontFamily="system-ui, sans-serif"
                   fontWeight="700"
                   fill="#275662"
-                  stroke="#ffffff"
+                  stroke="var(--bg-card)"
                   strokeWidth="2"
                   strokeLinejoin="round"
                   paintOrder="stroke fill"
@@ -2298,7 +2366,7 @@ const NetworkGraph = ({
       {hover?.kind === "node" && (
         <div className="px-3 py-2 text-[12px] border-t border-stone-300 bg-[#f6f7f7]">
           <span className="text-stone-500">sample:</span>{" "}
-          <span className="font-semibold" style={{ color: "#275662" }}>
+          <span className="font-semibold" style={{ color: "var(--ink)" }}>
             {hover.n.id}
           </span>
           <span className="text-stone-500 ml-3">contaminates:</span>{" "}
@@ -2309,11 +2377,11 @@ const NetworkGraph = ({
       )}
       {hover?.kind === "edge" && (
         <div className="px-3 py-2 text-[12px] border-t border-stone-300 bg-[#f6f7f7] flex items-center gap-2 flex-wrap">
-          <span className="font-semibold" style={{ color: "#275662" }}>
+          <span className="font-semibold" style={{ color: "var(--ink)" }}>
             {hover.e.source}
           </span>
           <ArrowRight className="inline w-3 h-3" style={{ color: "#00a3a6" }} />
-          <span className="font-semibold" style={{ color: "#275662" }}>
+          <span className="font-semibold" style={{ color: "var(--ink)" }}>
             {hover.e.target}
           </span>
           <span className="text-stone-500 ml-2">rate:</span>{" "}
@@ -2344,23 +2412,23 @@ const NetworkGraph = ({
             width: 224,
             maxHeight: 720,
             borderLeft: "1px solid #e6e8e8",
-            background: "#fafbfb",
+            background: "var(--bg-softer)",
           }}
         >
           <div
             className="px-3 py-2 text-[10px] tracking-[0.1em] uppercase sticky top-0"
             style={{
-              color: "#797870",
+              color: "var(--ink-muted)",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
-              borderBottom: "1px solid #e6e8e8",
-              background: "#fafbfb",
+              borderBottom: "1px solid var(--border)",
+              background: "var(--bg-softer)",
             }}
           >
             Components
           </div>
           {sortedComponents.length === 0 && (
-            <div className="px-3 py-3 text-[11px]" style={{ color: "#797870" }}>
+            <div className="px-3 py-3 text-[11px]" style={{ color: "var(--ink-muted)" }}>
               No components.
             </div>
           )}
@@ -2379,8 +2447,8 @@ const NetworkGraph = ({
                 onMouseLeave={() => setHoverCompIdx(null)}
                 className="w-full text-left px-3 py-2"
                 style={{
-                  background: active ? "#eef8f8" : "transparent",
-                  borderBottom: "1px solid #f0f2f2",
+                  background: active ? "var(--bg-info)" : "transparent",
+                  borderBottom: "1px solid var(--border-soft)",
                   borderLeft: active ? "3px solid #00a3a6" : "3px solid transparent",
                   cursor: "pointer",
                 }}
@@ -2394,19 +2462,19 @@ const NetworkGraph = ({
                 <div
                   className="text-[12px]"
                   style={{
-                    color: "#275662",
+                    color: "var(--ink)",
                     fontWeight: 700,
                     fontFamily: '"Raleway", sans-serif',
                   }}
                 >
                   #{i + 1}{" "}
-                  <span style={{ color: "#797870", fontWeight: 400 }}>
+                  <span style={{ color: "var(--ink-muted)", fontWeight: 400 }}>
                     — {c.nodes.length} sample{c.nodes.length !== 1 ? "s" : ""}
                   </span>
                 </div>
                 <div
                   className="text-[10px] mt-0.5 flex items-center gap-2"
-                  style={{ color: "#797870" }}
+                  style={{ color: "var(--ink-muted)" }}
                 >
                   <span>
                     {c.edges.length} event{c.edges.length !== 1 ? "s" : ""}
@@ -2477,7 +2545,7 @@ const PlateGrid = ({
             key={`ch-${c}`}
             className="flex items-center justify-center text-[10px]"
             style={{
-              color: "#797870",
+              color: "var(--ink-muted)",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
             }}
@@ -2490,7 +2558,7 @@ const PlateGrid = ({
             <div
               className="flex items-center justify-center text-[10px]"
               style={{
-                color: "#797870",
+                color: "var(--ink-muted)",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
               }}
@@ -2510,13 +2578,13 @@ const PlateGrid = ({
                   style={{
                     width: size,
                     height: size,
-                    background: highlight || (filled ? "#f6f7f7" : "#fff"),
+                    background: highlight || (filled ? "var(--bg-soft)" : "var(--bg-card)"),
                     border: highlight
                       ? `1.5px solid ${highlight}`
                       : filled
                         ? "1px solid #c4c0b3"
                         : "1px dashed #e6e8e8",
-                    color: highlight ? "#fff" : "#275662",
+                    color: highlight ? "#fff" : "var(--ink)",
                     cursor: editable || onClickWell ? "pointer" : "default",
                     fontSize: size >= 44 ? 9 : size >= 32 ? 8 : 7,
                     fontFamily: "system-ui, sans-serif",
@@ -2714,7 +2782,7 @@ const UploadCard = ({
           : loaded
             ? "2px solid #00a3a6"
             : "2px dashed #c4c0b3",
-        background: loaded ? "#fff" : "#fafbfb",
+        background: loaded ? "var(--bg-card)" : "var(--bg-softer)",
       }}
     >
       <div
@@ -2728,7 +2796,7 @@ const UploadCard = ({
           <span
             className="text-[14px]"
             style={{
-              color: "#275662",
+              color: "var(--ink)",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
             }}
@@ -2773,7 +2841,7 @@ const UploadCard = ({
           onMouseOver={(e) => (e.currentTarget.style.background = "#00a3a6")}
           onMouseOut={(e) => (e.currentTarget.style.background = "#275662")}
         >
-          {loaded ? "Replace" : "Browse"}
+          {loaded ? "Replace" : "Select file"}
         </button>
         {loaded && onDownload && (
           <button
@@ -2781,9 +2849,9 @@ const UploadCard = ({
             title="Download this file"
             className="px-2 py-1 text-[11px] rounded-sm flex items-center justify-center gap-1"
             style={{
-              background: "#fff",
-              color: "#275662",
-              border: "1px solid #c4c0b3",
+              background: "var(--bg-card)",
+              color: "var(--ink)",
+              border: "1px solid var(--border-strong)",
               fontWeight: 600,
               fontFamily: '"Raleway", sans-serif',
             }}
@@ -2792,7 +2860,7 @@ const UploadCard = ({
               e.currentTarget.style.color = "#00a3a6";
             }}
             onMouseOut={(e) => {
-              e.currentTarget.style.borderColor = "#c4c0b3";
+              e.currentTarget.style.borderColor = "var(--border-strong)";
               e.currentTarget.style.color = "#275662";
             }}
           >
@@ -2806,9 +2874,9 @@ const UploadCard = ({
             title="Remove this file from the session"
             className="px-2 py-1 text-[11px] rounded-sm flex items-center justify-center gap-1"
             style={{
-              background: "#fff",
-              color: "#797870",
-              border: "1px solid #e6e8e8",
+              background: "var(--bg-card)",
+              color: "var(--ink-muted)",
+              border: "1px solid var(--border)",
               fontWeight: 600,
               fontFamily: '"Raleway", sans-serif',
             }}
@@ -2817,7 +2885,7 @@ const UploadCard = ({
               e.currentTarget.style.color = "#ed6e6c";
             }}
             onMouseOut={(e) => {
-              e.currentTarget.style.borderColor = "#e6e8e8";
+              e.currentTarget.style.borderColor = "var(--border)";
               e.currentTarget.style.color = "#797870";
             }}
           >
@@ -2960,14 +3028,14 @@ const EventQueue = ({ events, currentId, onSelect, compact }) => {
   return (
     <div
       className="rounded-sm max-h-[640px] overflow-auto"
-      style={{ border: "1px solid #e6e8e8" }}
+      style={{ border: "1px solid var(--border)" }}
     >
       {events.map((e) => {
         const active = e.id === currentId;
         const dotColor =
           e.verdict === "true_positive" ? "#00a3a6" :
           e.verdict === "false_positive" ? "#ed6e6c" :
-          e.verdict === "uncertain" ? "#c4c0b3" : "#e6e8e8";
+          e.verdict === "uncertain" ? "var(--border-strong)" : "var(--border)";
         return (
           <button
             key={e.id}
@@ -2975,12 +3043,12 @@ const EventQueue = ({ events, currentId, onSelect, compact }) => {
             onClick={() => onSelect(e.id)}
             className="w-full text-left px-3 py-2 text-[12px] flex items-start gap-2"
             style={{
-              borderBottom: "1px solid #f0f2f2",
-              background: active ? "#275662" : "#fff",
-              color: active ? "#fff" : "#275662",
+              borderBottom: "1px solid var(--border-soft)",
+              background: active ? "#275662" : "var(--bg-card)",
+              color: active ? "#fff" : "var(--ink)",
             }}
-            onMouseOver={(ev) => { if (!active) ev.currentTarget.style.background = "#f6f7f7"; }}
-            onMouseOut={(ev) => { if (!active) ev.currentTarget.style.background = "#fff"; }}
+            onMouseOver={(ev) => { if (!active) ev.currentTarget.style.background = "var(--bg-soft)"; }}
+            onMouseOut={(ev) => { if (!active) ev.currentTarget.style.background = "var(--bg-card)"; }}
           >
             {!compact && (
               <span
@@ -3035,7 +3103,7 @@ const CascadeBanner = ({ cascade, onJumpToUpstream }) => {
           >
             Cascade detected
           </div>
-          <div className="text-[13px]" style={{ color: "#275662" }}>
+          <div className="text-[13px]" style={{ color: "var(--ink)" }}>
             {cascade.points_above} points above the line — {total} species
             explained by upstream contamination from{" "}
             <button
@@ -3064,16 +3132,16 @@ const CascadeBanner = ({ cascade, onJumpToUpstream }) => {
 const IntroducedBar = ({ v }) => {
   if (v == null) {
     return (
-      <span className="tabular text-[11px]" style={{ color: "#c4c0b3" }}>
+      <span className="tabular text-[11px]" style={{ color: "var(--border-strong)" }}>
         —
       </span>
     );
   }
   const t = Math.min(1, Math.max(0, v / 100));
-  const color = v > 30 ? "#ed6e6c" : v > 10 ? "#f4b942" : "#9b6dd7";
+  const color = metricColor(v, "introduced");
   return (
     <div className="inline-flex items-center gap-2">
-      <div className="w-16 h-1.5 rounded-sm" style={{ background: "#e6e8e8" }}>
+      <div className="w-16 h-1.5 rounded-sm" style={{ background: "var(--border)" }}>
         <div
           className="h-full rounded-sm"
           style={{ width: `${t * 100}%`, background: color }}
@@ -3095,12 +3163,12 @@ const formatIntroducedPct = (v) =>
 /* ---------- score bar (for events table) ---------- */
 const ScoreBar = ({ v }) => (
   <div className="inline-flex items-center gap-2">
-    <div className="w-16 h-1.5 rounded-sm" style={{ background: "#e6e8e8" }}>
+    <div className="w-16 h-1.5 rounded-sm" style={{ background: "var(--border)" }}>
       <div
         className="h-full rounded-sm"
         style={{
           width: `${Math.min(1, Math.max(0, v)) * 100}%`,
-          background: v > 0.9 ? "#00a3a6" : v > 0.7 ? "#9dc544" : "#ed6e6c",
+          background: metricColor(v, "probability"),
         }}
       />
     </div>
@@ -3124,10 +3192,10 @@ const RateBar = ({ v }) => {
   const hi = 0;
   const lr = v > 0 ? Math.log10(v) : lo;
   const t = Math.min(1, Math.max(0, (lr - lo) / (hi - lo)));
-  const color = v > 0.1 ? "#ed6e6c" : v > 0.01 ? "#f4b942" : "#00a3a6";
+  const color = metricColor(v, "rate");
   return (
     <div className="inline-flex items-center gap-2">
-      <div className="w-16 h-1.5 rounded-sm" style={{ background: "#e6e8e8" }}>
+      <div className="w-16 h-1.5 rounded-sm" style={{ background: "var(--border)" }}>
         <div
           className="h-full rounded-sm"
           style={{ width: `${t * 100}%`, background: color }}
@@ -3174,15 +3242,15 @@ const QuickBtn = ({ children, onClick, active, tone, title }) => {
       ? "#00a3a6"
       : tone === "bad"
         ? "#ed6e6c"
-        : "#c4c0b3"
-    : "#fff";
-  const color = active ? "#fff" : "#275662";
+        : "var(--border-strong)"
+    : "var(--bg-card)";
+  const color = active ? "var(--bg-card)" : "#275662";
   return (
     <button
       onClick={onClick}
       title={title}
       className="p-1 rounded-sm"
-      style={{ background: bg, color, border: "1px solid #e6e8e8" }}
+      style={{ background: bg, color, border: "1px solid var(--border)" }}
     >
       {children}
     </button>
@@ -3196,7 +3264,7 @@ const Th = ({ children, right, onClick }) => (
       right ? "text-right" : "text-left"
     } ${onClick ? "cursor-pointer select-none" : ""}`}
     style={{
-      color: "#275662",
+      color: "var(--ink)",
       fontWeight: 800,
       fontFamily: '"Raleway", sans-serif',
     }}
@@ -3207,7 +3275,7 @@ const Th = ({ children, right, onClick }) => (
 
 /* ---------- validation criteria ---------- */
 const Criterion = ({ n, title, wiki, pass, value }) => {
-  const color = pass == null ? "#e6e8e8" : pass ? "#00a3a6" : "#ed6e6c";
+  const color = pass == null ? "var(--border)" : pass ? "#00a3a6" : "#ed6e6c";
   // Per-criterion description is hidden by default — click the title row
   // to expand the wiki blurb when needed.
   const [showWiki, setShowWiki] = useState(false);
@@ -3233,7 +3301,7 @@ const Criterion = ({ n, title, wiki, pass, value }) => {
         </span>
         <span
           style={{
-            color: "#275662",
+            color: "var(--ink)",
             fontWeight: 700,
             fontSize: 15,
             fontFamily: '"Raleway", sans-serif',
@@ -3242,13 +3310,13 @@ const Criterion = ({ n, title, wiki, pass, value }) => {
           {title}
         </span>
         {showWiki ? (
-          <ChevronUp className="w-3.5 h-3.5 ml-auto" style={{ color: "#797870" }} />
+          <ChevronUp className="w-3.5 h-3.5 ml-auto" style={{ color: "var(--ink-muted)" }} />
         ) : (
-          <ChevronDown className="w-3.5 h-3.5 ml-auto" style={{ color: "#797870" }} />
+          <ChevronDown className="w-3.5 h-3.5 ml-auto" style={{ color: "var(--ink-muted)" }} />
         )}
       </button>
       {showWiki && (
-        <div className="text-[12px] italic mt-1 mb-1" style={{ color: "#797870" }}>
+        <div className="text-[12px] italic mt-1 mb-1" style={{ color: "var(--ink-muted)" }}>
           {wiki}
         </div>
       )}
@@ -3257,7 +3325,7 @@ const Criterion = ({ n, title, wiki, pass, value }) => {
         style={{ fontWeight: 600, fontFamily: '"Raleway", sans-serif' }}
       >
         {pass == null ? (
-          <span style={{ color: "#797870" }}>{value}</span>
+          <span style={{ color: "var(--ink-muted)" }}>{value}</span>
         ) : pass ? (
           <span style={{ color: "#00a3a6" }}>✓ {value}</span>
         ) : (
@@ -3273,8 +3341,8 @@ const ContextualCriterion = ({ n, title, hint, verdict }) => {
   const color =
     verdict.tone === "good" ? "#00a3a6" :
     verdict.tone === "bad" ? "#ed6e6c" :
-    verdict.tone === "warn" ? "#c4c0b3" :
-    "#e6e8e8";
+    verdict.tone === "warn" ? "var(--border-strong)" :
+    "var(--border)";
   const textColor =
     verdict.tone === "good" ? "#00a3a6" :
     verdict.tone === "bad" ? "#ed6e6c" :
@@ -3283,7 +3351,7 @@ const ContextualCriterion = ({ n, title, hint, verdict }) => {
   return (
     <div
       className="pl-3 py-2 mb-2"
-      style={{ borderLeft: `4px solid ${color}`, background: "#fafbfb" }}
+      style={{ borderLeft: `4px solid ${color}`, background: "var(--bg-softer)" }}
     >
       <div className="flex items-baseline gap-2">
         <span
@@ -3298,7 +3366,7 @@ const ContextualCriterion = ({ n, title, hint, verdict }) => {
         </span>
         <span
           style={{
-            color: "#275662",
+            color: "var(--ink)",
             fontWeight: 700,
             fontSize: 15,
             fontFamily: '"Raleway", sans-serif',
@@ -3309,7 +3377,7 @@ const ContextualCriterion = ({ n, title, hint, verdict }) => {
         <span
           className="text-[10px] uppercase tracking-widest"
           style={{
-            color: "#797870",
+            color: "var(--ink-muted)",
             fontWeight: 600,
             fontFamily: '"Raleway", sans-serif',
           }}
@@ -3317,7 +3385,7 @@ const ContextualCriterion = ({ n, title, hint, verdict }) => {
           context
         </span>
       </div>
-      <div className="text-[12px] italic mb-1" style={{ color: "#797870" }}>
+      <div className="text-[12px] italic mb-1" style={{ color: "var(--ink-muted)" }}>
         {hint}
       </div>
       <div
@@ -3339,7 +3407,7 @@ const VerdictBtn = ({ children, onClick, active, tone, icon: Icon, shortcut, hin
   const palette = {
     good: { bg: "#00a3a6", border: "#00a3a6" },
     bad: { bg: "#ed6e6c", border: "#ed6e6c" },
-    warn: { bg: "#c4c0b3", border: "#c4c0b3" },
+    warn: { bg: "var(--border-strong)", border: "var(--border-strong)" },
     neutral: { bg: "#275662", border: "#275662" },
   };
   const p = palette[tone];
@@ -3351,8 +3419,8 @@ const VerdictBtn = ({ children, onClick, active, tone, icon: Icon, shortcut, hin
       className="px-4 py-2 text-[13px] rounded-sm flex items-center gap-2"
       style={{
         border: `2px solid ${p.border}`,
-        background: active ? p.bg : "#fff",
-        color: active ? "#fff" : "#275662",
+        background: active ? p.bg : "var(--bg-card)",
+        color: active ? "#fff" : "var(--ink)",
         fontWeight: 700,
         letterSpacing: "0.02em",
         fontFamily: '"Raleway", sans-serif',
@@ -3367,7 +3435,7 @@ const VerdictBtn = ({ children, onClick, active, tone, icon: Icon, shortcut, hin
             minWidth: 18,
             textAlign: "center",
             padding: "1px 5px",
-            background: active ? "rgba(255,255,255,0.25)" : "#f6f7f7",
+            background: active ? "rgba(255,255,255,0.25)" : "var(--bg-soft)",
             border: active ? "1px solid rgba(255,255,255,0.4)" : "1px solid #e6e8e8",
             borderRadius: 2,
             fontFamily: "ui-monospace, monospace",
@@ -3401,7 +3469,7 @@ const EmptyState = ({ onLoadDemo, demoLoading }) => (
           <div
             className="mt-6 p-4 rounded-sm flex items-center gap-4 flex-wrap"
             style={{
-              background: "#eef8f8",
+              background: "var(--bg-info)",
               border: "1px solid #00a3a6",
               borderLeft: "4px solid #00a3a6",
             }}
@@ -3417,7 +3485,7 @@ const EmptyState = ({ onLoadDemo, demoLoading }) => (
               >
                 No data of your own?
               </div>
-              <div className="text-[13px]" style={{ color: "#275662" }}>
+              <div className="text-[13px]" style={{ color: "var(--ink)" }}>
                 Try the tool on real data from{" "}
                 <a
                   href="https://doi.org/10.1186/s40168-023-01477-2"
@@ -3463,7 +3531,7 @@ const EmptyState = ({ onLoadDemo, demoLoading }) => (
             ["01", <span key="s1">Drop your{" "}
               <code
                 className="bg-stone-100 px-1.5 py-0.5 rounded-sm text-[12px]"
-                style={{ color: "#275662" }}
+                style={{ color: "var(--ink)" }}
               >
                 contamination_events.tsv
               </code>.
@@ -3471,7 +3539,7 @@ const EmptyState = ({ onLoadDemo, demoLoading }) => (
             ["02", <span key="s2">Drop the{" "}
               <code
                 className="bg-stone-100 px-1.5 py-0.5 rounded-sm text-[12px]"
-                style={{ color: "#275662" }}
+                style={{ color: "var(--ink)" }}
               >
                 species_abundance.tsv
               </code>{" "}
@@ -3480,13 +3548,13 @@ const EmptyState = ({ onLoadDemo, demoLoading }) => (
             ["03", <span key="s3">Optionally add{" "}
               <code
                 className="bg-stone-100 px-1.5 py-0.5 rounded-sm text-[12px]"
-                style={{ color: "#275662" }}
+                style={{ color: "var(--ink)" }}
               >
                 metadata.tsv
               </code>{" "}and{" "}
               <code
                 className="bg-stone-100 px-1.5 py-0.5 rounded-sm text-[12px]"
-                style={{ color: "#275662" }}
+                style={{ color: "var(--ink)" }}
               >
                 plate_map.tsv
               </code>{" "}for deeper context.
@@ -3512,7 +3580,7 @@ const EmptyState = ({ onLoadDemo, demoLoading }) => (
       </div>
       <aside
         className="p-6 rounded-sm"
-        style={{ background: "#f6f7f7", borderLeft: "4px solid #00a3a6" }}
+        style={{ background: "var(--bg-soft)", borderLeft: "4px solid #00a3a6" }}
       >
         <div
           className="text-[10px] tracking-[0.15em] uppercase mb-2"
@@ -3551,7 +3619,7 @@ const TopList = ({ title, items, onOpen, fmt }) => (
     >
       {title}
     </div>
-    <div className="rounded-sm" style={{ border: "1px solid #e6e8e8" }}>
+    <div className="rounded-sm" style={{ border: "1px solid var(--border)" }}>
       {items.map((e, i) => (
         <button
           key={e.id}
@@ -3559,22 +3627,22 @@ const TopList = ({ title, items, onOpen, fmt }) => (
           className="w-full flex items-center gap-3 px-3 py-2.5 text-left"
           style={{
             borderBottom: i < items.length - 1 ? "1px solid #f0f2f2" : "none",
-            background: "#fff",
+            background: "var(--bg-card)",
           }}
-          onMouseOver={(e2) => (e2.currentTarget.style.background = "#f6f7f7")}
-          onMouseOut={(e2) => (e2.currentTarget.style.background = "#fff")}
+          onMouseOver={(e2) => (e2.currentTarget.style.background = "var(--bg-soft)")}
+          onMouseOut={(e2) => (e2.currentTarget.style.background = "var(--bg-card)")}
         >
           <span
             className="text-[11px] w-6 tabular"
             style={{
-              color: "#797870",
+              color: "var(--ink-muted)",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
             }}
           >
             {String(i + 1).padStart(2, "0")}
           </span>
-          <span className="text-[13px] flex-1 truncate" style={{ color: "#275662" }}>
+          <span className="text-[13px] flex-1 truncate" style={{ color: "var(--ink)" }}>
             <span style={{ fontWeight: 600 }}>{e.source}</span>
             <ArrowRight className="inline w-3 h-3 mx-1.5" style={{ color: "#00a3a6" }} />
             <span style={{ fontWeight: 600 }}>{e.target}</span>
@@ -3582,7 +3650,7 @@ const TopList = ({ title, items, onOpen, fmt }) => (
           <span
             className="text-[13px] tabular"
             style={{
-              color: "#275662",
+              color: "var(--ink)",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
             }}
@@ -3606,6 +3674,9 @@ function shortenPath(v) {
 }
 
 const RunMetadataBlock = ({ meta }) => {
+  // Run parameters are useful but not essential after first glance —
+  // collapsible, but expanded by default so first-time viewers see them.
+  const [open, setOpen] = useState(true);
   // Choose which fields to show, in this order, with friendly labels.
   // Optional `format(value)` lets a field clean up the raw string (e.g.
   // strip a trailing ".0" so "25.0" → "25").
@@ -3653,21 +3724,34 @@ const RunMetadataBlock = ({ meta }) => {
     <div
       className="mt-4 p-4 rounded-sm"
       style={{
-        background: "#f6f7f7",
-        border: "1px solid #e6e8e8",
+        background: "var(--bg-soft)",
+        border: "1px solid var(--border)",
         borderLeft: "4px solid #00a3a6",
       }}
     >
-      <div
-        className="text-[10px] tracking-[0.15em] uppercase mb-2"
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase mb-2"
         style={{
+          background: "transparent",
+          border: 0,
+          padding: 0,
+          cursor: "pointer",
           color: "#ed6e6c",
           fontWeight: 700,
           fontFamily: '"Raleway", sans-serif',
         }}
+        aria-expanded={open}
       >
+        {open ? (
+          <ChevronDown className="w-3 h-3" />
+        ) : (
+          <ChevronRight className="w-3 h-3" />
+        )}
         Run parameters
-      </div>
+      </button>
+      {open && (
       <dl
         className="grid gap-x-6 gap-y-1.5"
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}
@@ -3682,7 +3766,7 @@ const RunMetadataBlock = ({ meta }) => {
               className="shrink-0"
               title={it.hint || undefined}
               style={{
-                color: "#797870",
+                color: "var(--ink-muted)",
                 fontWeight: 600,
                 fontFamily: '"Raleway", sans-serif',
                 cursor: it.hint ? "help" : undefined,
@@ -3696,7 +3780,7 @@ const RunMetadataBlock = ({ meta }) => {
               title={it.raw !== it.value ? it.raw : undefined}
               className="truncate"
               style={{
-                color: "#275662",
+                color: "var(--ink)",
                 fontFamily: "system-ui, monospace",
                 fontWeight: 500,
               }}
@@ -3706,6 +3790,7 @@ const RunMetadataBlock = ({ meta }) => {
           </div>
         ))}
       </dl>
+      )}
     </div>
   );
 };
@@ -3739,6 +3824,21 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
 
   const cascadeCount = events.filter((e) => e.cascade).length;
 
+  // Number of connected components in the contamination network — gives
+  // a sense of how clustered the events are.
+  const componentCount = useMemo(
+    () => (events.length === 0 ? 0 : buildComponents(events).length),
+    [events],
+  );
+
+  // Number of samples annotated in the metadata file (null when none
+  // loaded). Useful to compare against `samples involved` to see what
+  // fraction of the dataset has context.
+  const annotatedCount = useMemo(() => {
+    if (!metadata) return null;
+    return Object.keys(metadata.bySample || {}).length;
+  }, [metadata]);
+
   const avgIntroducedPct =
     eventsWithIntroduced.length > 0
       ? eventsWithIntroduced.reduce((s, e) => s + e.introducedPct, 0) /
@@ -3757,7 +3857,7 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
         <div
           className="mt-2 mb-8 p-5 rounded-sm flex items-center gap-5 flex-wrap"
           style={{
-            background: "#eef8f8",
+            background: "var(--bg-info)",
             border: "1px solid #00a3a6",
             borderLeft: "4px solid #00a3a6",
           }}
@@ -3766,7 +3866,7 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
             <div
               className="text-[14px]"
               style={{
-                color: "#275662",
+                color: "var(--ink)",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
               }}
@@ -3775,7 +3875,7 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
             </div>
             <div
               className="text-[12px] mt-1"
-              style={{ color: "#797870", lineHeight: 1.5 }}
+              style={{ color: "var(--ink-muted)", lineHeight: 1.5 }}
             >
               Open your{" "}
               <code style={{ fontFamily: "ui-monospace, monospace" }}>
@@ -3804,7 +3904,7 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
               disabled={demoLoading}
               className="px-4 py-2 text-[13px] rounded-sm shrink-0"
               style={{
-                background: demoLoading ? "#c4c0b3" : "#00a3a6",
+                background: demoLoading ? "var(--border-strong)" : "#00a3a6",
                 color: "#fff",
                 fontWeight: 700,
                 letterSpacing: "0.02em",
@@ -3837,8 +3937,20 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
         <Stat label="Rejected (FP)" value={counts.fp} tone="bad" />
       </div>
 
-      {(metadata || plateMap || cascadeCount > 0) && (
-        <div className="grid md:grid-cols-3 gap-3 mb-10">
+      {(events.length > 0 || metadata || plateMap || cascadeCount > 0) && (
+        <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-3 mb-10">
+          {events.length > 0 && (
+            <Stat
+              label="Connected components"
+              value={componentCount}
+            />
+          )}
+          {metadata && (
+            <Stat
+              label="Annotated samples (metadata)"
+              value={`${annotatedCount}`}
+            />
+          )}
           {metadata && (
             <Stat
               label="Related samples (same subject)"
@@ -3862,7 +3974,7 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
       {!hasAb && (
         <div
           className="flex items-start gap-3 p-4 mb-8 rounded-sm"
-          style={{ background: "#fdeceb", border: "1px solid #ed6e6c", color: "#8a2422" }}
+          style={{ background: "var(--bg-alert)", border: "1px solid #ed6e6c", color: "#8a2422" }}
         >
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
           <div className="text-[13px] leading-relaxed">
@@ -3873,33 +3985,45 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
         </div>
       )}
 
-      <div className="grid md:grid-cols-2 gap-8">
-        <TopList
-          title="Top 5 by contamination rate"
-          items={topByRate}
-          onOpen={onOpen}
-          fmt={(e) => `${(e.rate * 100).toFixed(2)}%`}
-        />
-        <TopList
-          title="Top 5 by probability"
-          items={topByScore}
-          onOpen={onOpen}
-          fmt={(e) => e.score.toFixed(3)}
-        />
-        <TopList
-          title="Bottom 5 by contamination rate"
-          items={bottomByRate}
-          onOpen={onOpen}
-          fmt={(e) => `${(e.rate * 100).toFixed(2)}%`}
-        />
-        <TopList
-          title="Bottom 5 by probability"
-          items={bottomByScore}
-          onOpen={onOpen}
-          fmt={(e) => e.score.toFixed(3)}
-        />
+      {/* One column per metric (rate / probability / introduced), with
+          Top above Bottom — visually pairs each Top with its Bottom. */}
+      <div
+        className={`grid gap-x-8 gap-y-6 ${
+          eventsWithIntroduced.length > 0
+            ? "md:grid-cols-2 lg:grid-cols-3"
+            : "md:grid-cols-2"
+        }`}
+      >
+        <div className="space-y-6">
+          <TopList
+            title="Top 5 by contamination rate"
+            items={topByRate}
+            onOpen={onOpen}
+            fmt={(e) => `${(e.rate * 100).toFixed(2)}%`}
+          />
+          <TopList
+            title="Bottom 5 by contamination rate"
+            items={bottomByRate}
+            onOpen={onOpen}
+            fmt={(e) => `${(e.rate * 100).toFixed(2)}%`}
+          />
+        </div>
+        <div className="space-y-6">
+          <TopList
+            title="Top 5 by probability"
+            items={topByScore}
+            onOpen={onOpen}
+            fmt={(e) => e.score.toFixed(3)}
+          />
+          <TopList
+            title="Bottom 5 by probability"
+            items={bottomByScore}
+            onOpen={onOpen}
+            fmt={(e) => e.score.toFixed(3)}
+          />
+        </div>
         {eventsWithIntroduced.length > 0 && (
-          <>
+          <div className="space-y-6">
             <TopList
               title="Top 5 by introduced %"
               items={topByIntroduced}
@@ -3912,7 +4036,7 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
               onOpen={onOpen}
               fmt={(e) => formatIntroducedPct(e.introducedPct)}
             />
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -3920,13 +4044,13 @@ const Overview = ({ counts, events, hasAb, metadata, plateMap, runMetadata, onOp
 };
 
 /* ---------- shared filter bar (Events tab + Scatter gallery) ---------- */
-const FILTER_CHIP_BG = "#ffffff";
-const FILTER_CHIP_BORDER = "1px solid #e6e3d8";
-const FILTER_PANEL_BG = "#faf9f6";
-const FILTER_PANEL_BORDER = "1px solid #e6e3d8";
-const FILTER_DIVIDER_BG = "#e0dccd";
+const FILTER_CHIP_BG = "var(--bg-card)";
+const FILTER_CHIP_BORDER = "1px solid var(--border)";
+const FILTER_PANEL_BG = "var(--bg-soft)";
+const FILTER_PANEL_BORDER = "1px solid var(--border)";
+const FILTER_DIVIDER_BG = "var(--border-strong)";
 const FILTER_LABEL_STYLE = {
-  color: "#797870",
+  color: "var(--ink-muted)",
   fontWeight: 600,
   fontFamily: '"Raleway", sans-serif',
   letterSpacing: "0.04em",
@@ -3936,11 +4060,11 @@ const FILTER_LABEL_STYLE = {
 const FILTER_VALUE_STYLE = {
   fontWeight: 600,
   fontFamily: '"Raleway", sans-serif',
-  color: "#275662",
+  color: "var(--ink)",
 };
 const FILTER_CUTOFF_STYLE = {
   background: "rgba(0,163,166,0.12)",
-  color: "#275662",
+  color: "var(--ink)",
   fontWeight: 600,
   fontFamily: '"Raleway", sans-serif',
   whiteSpace: "nowrap",
@@ -3966,8 +4090,8 @@ const FilterDivider = () => (
 const VERDICT_SEGMENTS = [
   { id: "true_positive", color: "#00a3a6", label: "true positive" },
   { id: "false_positive", color: "#ed6e6c", label: "false positive" },
-  { id: "uncertain", color: "#c4c0b3", label: "uncertain" },
-  { id: "pending", color: "#e6e8e8", label: "pending" },
+  { id: "uncertain", color: "var(--border-strong)", label: "uncertain" },
+  { id: "pending", color: "var(--border)", label: "pending" },
 ];
 
 const VerdictDistribution = ({ events }) => {
@@ -3988,7 +4112,7 @@ const VerdictDistribution = ({ events }) => {
   return (
     <div
       className="flex h-2 rounded-full overflow-hidden"
-      style={{ width: 64, background: "#e6e8e8" }}
+      style={{ width: 64, background: "var(--border)" }}
       title={tip}
     >
       {VERDICT_SEGMENTS.map((s) => {
@@ -4025,6 +4149,7 @@ const EventFilterBar = ({
   onBulkApply,
   hasAb,
   events,
+  actionEnabled,
   children,
 }) => {
   const cutoff = parseFloat(runMetadata?.probability_cutoff);
@@ -4079,6 +4204,21 @@ const EventFilterBar = ({
 
   const [verdictPopoverOpen, setVerdictPopoverOpen] = useState(false);
   const verdictPopoverRef = useRef(null);
+  const [actionPopoverOpen, setActionPopoverOpen] = useState(false);
+  const actionPopoverRef = useRef(null);
+  useEffect(() => {
+    if (!actionPopoverOpen) return;
+    const handle = (e) => {
+      if (
+        actionPopoverRef.current &&
+        !actionPopoverRef.current.contains(e.target)
+      ) {
+        setActionPopoverOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [actionPopoverOpen]);
   useEffect(() => {
     if (!verdictPopoverOpen) return;
     const handle = (e) => {
@@ -4131,7 +4271,7 @@ const EventFilterBar = ({
   const selectStyle = {
     background: FILTER_CHIP_BG,
     border: FILTER_CHIP_BORDER,
-    color: "#275662",
+    color: "var(--ink)",
     fontWeight: 500,
   };
 
@@ -4144,7 +4284,7 @@ const EventFilterBar = ({
       <div className="relative">
         <Search
           className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
-          style={{ color: "#797870" }}
+          style={{ color: "var(--ink-muted)" }}
         />
         <input
           value={filter.q}
@@ -4253,12 +4393,12 @@ const EventFilterBar = ({
             border: !allVerdictsSelected
               ? "1px solid #00a3a6"
               : FILTER_CHIP_BORDER,
-            color: "#275662",
+            color: "var(--ink)",
           }}
           title={`Verdicts: ${verdictLabel}`}
           aria-label={`Verdicts: ${verdictLabel}`}
         >
-          <CheckCheck className="w-4 h-4" />
+          <Scale className="w-4 h-4" />
           {!allVerdictsSelected && (
             <span
               className="absolute text-[9px] rounded-full"
@@ -4284,8 +4424,8 @@ const EventFilterBar = ({
           <div
             className="absolute right-0 top-full mt-1.5 z-20 p-3 rounded-md flex flex-col gap-2"
             style={{
-              background: "#fff",
-              border: "1px solid #c4c0b3",
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-strong)",
               boxShadow: "0 8px 24px rgba(39,86,98,0.12)",
               minWidth: 180,
             }}
@@ -4293,7 +4433,7 @@ const EventFilterBar = ({
             <div
               className="text-[10px] tracking-[0.1em] uppercase mb-1"
               style={{
-                color: "#797870",
+                color: "var(--ink-muted)",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
               }}
@@ -4304,7 +4444,7 @@ const EventFilterBar = ({
               <label
                 key={v.id}
                 className="flex items-center gap-2 text-[12px] cursor-pointer"
-                style={{ color: "#275662", userSelect: "none" }}
+                style={{ color: "var(--ink)", userSelect: "none" }}
               >
                 <input
                   type="checkbox"
@@ -4338,7 +4478,7 @@ const EventFilterBar = ({
                 onClick={() => setFilter({ ...filter, verdicts: [] })}
                 className="text-[11px]"
                 style={{
-                  color: "#797870",
+                  color: "var(--ink-muted)",
                   fontWeight: 600,
                   fontFamily: '"Raleway", sans-serif',
                 }}
@@ -4349,6 +4489,94 @@ const EventFilterBar = ({
           </div>
         )}
       </div>
+
+      {actionEnabled && (
+        <div className="relative" ref={actionPopoverRef}>
+          <button
+            type="button"
+            onClick={() => setActionPopoverOpen((o) => !o)}
+            className="flex items-center justify-center rounded-md outline-none relative"
+            style={{
+              width: 28,
+              height: 28,
+              background: filter.action ? "rgba(0,163,166,0.10)" : FILTER_CHIP_BG,
+              border: filter.action ? "1px solid #00a3a6" : FILTER_CHIP_BORDER,
+              color: "var(--ink)",
+            }}
+            title={
+              filter.action
+                ? `Action: only ${filter.action}`
+                : "Filter by action (suppress / keep)"
+            }
+            aria-label="Filter by action"
+          >
+            <Save className="w-4 h-4" />
+            {filter.action && (
+              <span
+                className="absolute text-[9px] rounded-full"
+                style={{
+                  top: -4,
+                  right: -4,
+                  background: "#00a3a6",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                  lineHeight: "13px",
+                  minWidth: 13,
+                  height: 13,
+                  padding: "0 3px",
+                  textAlign: "center",
+                }}
+              >
+                1
+              </span>
+            )}
+          </button>
+          {actionPopoverOpen && (
+            <div
+              className="absolute right-0 top-full mt-1.5 z-20 p-3 rounded-md flex flex-col gap-2"
+              style={{
+                background: "var(--bg-card)",
+                border: "1px solid var(--border-strong)",
+                boxShadow: "0 8px 24px rgba(39,86,98,0.12)",
+                minWidth: 160,
+              }}
+            >
+              <div
+                className="text-[10px] tracking-[0.1em] uppercase mb-1"
+                style={{
+                  color: "var(--ink-muted)",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                Action
+              </div>
+              {[
+                { id: null, label: "Any" },
+                { id: "keep", label: "Keep only", Icon: Save },
+                { id: "suppress", label: "Suppress only", Icon: Trash2 },
+              ].map((opt) => (
+                <label
+                  key={String(opt.id)}
+                  className="flex items-center gap-2 text-[12px] cursor-pointer"
+                  style={{ color: "var(--ink)", userSelect: "none" }}
+                >
+                  <input
+                    type="radio"
+                    name="filter-action"
+                    checked={(filter.action || null) === opt.id}
+                    onChange={() => setFilter({ ...filter, action: opt.id })}
+                    style={{ accentColor: "#00a3a6" }}
+                  />
+                  {opt.Icon && <opt.Icon className="w-3.5 h-3.5" />}
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {hasContextFilters && (
         <div className="relative" ref={popoverRef}>
@@ -4365,7 +4593,7 @@ const EventFilterBar = ({
                 activeContextCount > 0
                   ? "1px solid #00a3a6"
                   : FILTER_CHIP_BORDER,
-              color: "#275662",
+              color: "var(--ink)",
             }}
             title={
               activeContextCount > 0
@@ -4374,7 +4602,7 @@ const EventFilterBar = ({
             }
             aria-label="Context filters"
           >
-            <SlidersHorizontal className="w-4 h-4" />
+            <Layers className="w-4 h-4" />
             {activeContextCount > 0 && (
               <span
                 className="absolute text-[9px] rounded-full"
@@ -4400,8 +4628,8 @@ const EventFilterBar = ({
             <div
               className="absolute right-0 top-full mt-1.5 z-20 p-3 rounded-md flex flex-col gap-2.5"
               style={{
-                background: "#fff",
-                border: "1px solid #c4c0b3",
+                background: "var(--bg-card)",
+                border: "1px solid var(--border-strong)",
                 boxShadow: "0 8px 24px rgba(39,86,98,0.12)",
                 minWidth: 220,
               }}
@@ -4409,7 +4637,7 @@ const EventFilterBar = ({
               <div
                 className="text-[10px] tracking-[0.1em] uppercase"
                 style={{
-                  color: "#797870",
+                  color: "var(--ink-muted)",
                   fontWeight: 700,
                   fontFamily: '"Raleway", sans-serif',
                 }}
@@ -4501,8 +4729,11 @@ const EventFilterBar = ({
           style={{
             width: 28,
             height: 28,
-            background: FILTER_CHIP_BG,
-            border: FILTER_CHIP_BORDER,
+            // Bulk apply is the primary action on this bar — deep teal
+            // matches the brand and reads as authoritative without
+            // shouting at the user like the violet did.
+            background: "rgba(39,86,98,0.10)",
+            border: "1px solid #275662",
             color: "#275662",
           }}
           title="Bulk apply a verdict to all events matching probability / rate / criteria filters"
@@ -4532,6 +4763,8 @@ const EventsTable = ({
   runMetadata,
   onBulkApply,
   hasAb,
+  actionEnabled,
+  setAction,
 }) => {
   const PAGE_SIZE = 500;
   const [page, setPage] = useState(1);
@@ -4574,10 +4807,11 @@ const EventsTable = ({
         onBulkApply={onBulkApply}
         hasAb={hasAb}
         events={events}
+        actionEnabled={actionEnabled}
       >
         <div className="ml-auto flex items-center gap-2.5">
           <VerdictDistribution events={events} />
-          <span className="text-[12px]" style={{ color: "#797870" }}>
+          <span className="text-[12px]" style={{ color: "var(--ink-muted)" }}>
             {events.length === 0
               ? `0 / ${total}`
               : totalPages > 1
@@ -4589,11 +4823,11 @@ const EventsTable = ({
 
       <div
         className="rounded-sm overflow-x-auto"
-        style={{ border: "1px solid #e6e8e8" }}
+        style={{ border: "1px solid var(--border)" }}
       >
         <table className="w-full text-[13px]">
           <thead>
-            <tr style={{ background: "#f6f7f7", borderBottom: "2px solid #00a3a6" }}>
+            <tr style={{ background: "var(--bg-soft)", borderBottom: "2px solid #00a3a6" }}>
               <Th onClick={() => toggleSort("source")}>
                 Source <SortIcon col="source" />
               </Th>
@@ -4613,7 +4847,7 @@ const EventsTable = ({
               <Th right>Species</Th>
               {hasContext && <Th>Context</Th>}
               <Th>Verdict</Th>
-              <Th>Action</Th>
+              {actionEnabled && <Th>Action</Th>}
             </tr>
           </thead>
           <tbody>
@@ -4623,14 +4857,14 @@ const EventsTable = ({
               return (
                 <tr
                   key={e.id}
-                  style={{ borderBottom: "1px solid #f0f2f2" }}
-                  onMouseOver={(ev) => (ev.currentTarget.style.background = "#f6f7f7")}
-                  onMouseOut={(ev) => (ev.currentTarget.style.background = "white")}
+                  style={{ borderBottom: "1px solid var(--border-soft)" }}
+                  onMouseOver={(ev) => (ev.currentTarget.style.background = "var(--bg-soft)")}
+                  onMouseOut={(ev) => (ev.currentTarget.style.background = "")}
                 >
                   <td
                     className="px-3 py-2.5 cursor-pointer"
                     onClick={() => onPick(e.id)}
-                    style={{ fontWeight: 600, color: "#275662" }}
+                    style={{ fontWeight: 600, color: "var(--ink)" }}
                   >
                     {e.source}
                     {metadata && (
@@ -4646,7 +4880,7 @@ const EventsTable = ({
                   <td
                     className="px-3 py-2.5 cursor-pointer"
                     onClick={() => onPick(e.id)}
-                    style={{ fontWeight: 600, color: "#275662" }}
+                    style={{ fontWeight: 600, color: "var(--ink)" }}
                   >
                     {e.target}
                     {metadata && (
@@ -4669,7 +4903,7 @@ const EventsTable = ({
                   </td>
                   <td
                     className="px-3 py-2.5 text-right tabular"
-                    style={{ color: "#797870" }}
+                    style={{ color: "var(--ink-muted)" }}
                   >
                     {e.introduced.length}
                   </td>
@@ -4694,9 +4928,6 @@ const EventsTable = ({
                       </div>
                     </td>
                   )}
-                  <td className="px-3 py-2.5">
-                    <VerdictBadge v={e.verdict} />
-                  </td>
                   <td className="px-3 py-2.5">
                     <div className="flex gap-1">
                       <QuickBtn
@@ -4740,15 +4971,72 @@ const EventsTable = ({
                       </QuickBtn>
                     </div>
                   </td>
+                  {actionEnabled && (
+                    <td className="px-3 py-2.5">
+                      {e.verdict === "true_positive" ||
+                      e.verdict === "false_positive" ? (
+                        <div className="flex gap-1">
+                          {[
+                            {
+                              id: "keep",
+                              Icon: Save,
+                              color: "#00a3a6",
+                              title: "Keep this sample (acknowledged contamination, but small enough to retain)",
+                            },
+                            {
+                              id: "suppress",
+                              Icon: Trash2,
+                              color: "#ed6e6c",
+                              title: "Suppress this contaminated sample from downstream analyses",
+                            },
+                          ].map((opt) => {
+                            const defaultAction =
+                              e.verdict === "false_positive" ? "keep" : "suppress";
+                            const active = (e.action || defaultAction) === opt.id;
+                            const Icon = opt.Icon;
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  setAction(e.id, opt.id);
+                                }}
+                                title={opt.title}
+                                aria-label={opt.title}
+                                className="rounded-sm flex items-center justify-center"
+                                style={{
+                                  width: 26,
+                                  height: 26,
+                                  background: active ? opt.color : "var(--bg-card)",
+                                  color: active ? "#fff" : "var(--ink-muted)",
+                                  border: active
+                                    ? "1px solid transparent"
+                                    : "1px solid var(--border)",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <Icon className="w-3.5 h-3.5" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span className="text-[11px]" style={{ color: "var(--border-strong)" }}>
+                          —
+                        </span>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}
             {events.length === 0 && (
               <tr>
                 <td
-                  colSpan={hasContext ? 9 : 8}
+                  colSpan={8 + (hasContext ? 1 : 0) + (actionEnabled ? 1 : 0)}
                   className="px-3 py-8 text-center text-[13px]"
-                  style={{ color: "#797870" }}
+                  style={{ color: "var(--ink-muted)" }}
                 >
                   No events match these filters.
                 </td>
@@ -4790,7 +5078,7 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
         style={{
           width: "100%",
           aspectRatio: `${width} / ${height}`,
-          background: "#fdeceb",
+          background: "var(--bg-alert)",
           border: "1px solid #ed6e6c",
           display: "flex",
           alignItems: "center",
@@ -4823,12 +5111,12 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
         style={{
           width,
           height,
-          background: "#fafbfb",
-          border: "1px solid #e6e8e8",
+          background: "var(--bg-softer)",
+          border: "1px solid var(--border)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          color: "#797870",
+          color: "var(--ink-muted)",
           fontSize: 11,
         }}
       >
@@ -4842,7 +5130,7 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
     <svg
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="xMidYMid meet"
-      style={{ display: "block", background: "#fff", width: "100%", height: "auto" }}
+      style={{ display: "block", background: "var(--bg-card)", width: "100%", height: "auto" }}
     >
       {/* axes */}
       <line
@@ -4850,7 +5138,7 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
         y1={pad.t + h}
         x2={pad.l + w}
         y2={pad.t + h}
-        stroke="#c4c0b3"
+        stroke="var(--border-strong)"
         strokeWidth="0.75"
       />
       <line
@@ -4858,7 +5146,7 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
         y1={pad.t}
         x2={pad.l}
         y2={pad.t + h}
-        stroke="#c4c0b3"
+        stroke="var(--border-strong)"
         strokeWidth="0.75"
       />
       {/* axis ticks — every integer log10 step. Label step adapts to
@@ -4877,7 +5165,7 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
               y1={sy(v)}
               x2={pad.l}
               y2={sy(v)}
-              stroke="#c4c0b3"
+              stroke="var(--border-strong)"
               strokeWidth="0.75"
             />,
           );
@@ -4904,7 +5192,7 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
               y1={pad.t + h}
               x2={sx(v)}
               y2={pad.t + h + (labeled ? 3 : 2)}
-              stroke="#c4c0b3"
+              stroke="var(--border-strong)"
               strokeWidth="0.75"
             />,
           );
@@ -4945,8 +5233,8 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
           cx={sx(p.lx)}
           cy={sy(p.ly)}
           r={p.onLine ? 2 : 1.4}
-          fill={p.onLine ? "#ed6e6c" : "#275662"}
-          fillOpacity={p.onLine ? 0.9 : 0.35}
+          fill={p.onLine ? "#ed6e6c" : "#7d8b91"}
+          fillOpacity={p.onLine ? 0.9 : 0.55}
         />
       ))}
       {/* y=x identity (drawn last so it stays on top) */}
@@ -4955,28 +5243,76 @@ const MiniScatter = ({ scatter, width = 220, height = 180 }) => {
         y1={sy(lo)}
         x2={sx(hi)}
         y2={sy(hi)}
-        stroke="#000000"
+        stroke="#7d8b91"
         strokeWidth="0.7"
         strokeDasharray="1.5 2.5"
-        strokeOpacity="0.7"
+        strokeOpacity="0.85"
       />
     </svg>
   );
 };
 
 /* ----- Gallery card ----- */
-const GalleryCard = ({ event, ab, metadata, plateMap, onPick, setVerdict }) => {
+const GalleryCard = ({
+  event,
+  ab,
+  metadata,
+  plateMap,
+  onPick,
+  setVerdict,
+  actionEnabled,
+  setAction,
+}) => {
   const scatter = useMemo(() => buildScatter(ab, event), [ab, event]);
   const related = areRelated(metadata, event.source, event.target);
   const pd = plateDistance(plateMap, event.source, event.target);
   const verdictDot =
     event.verdict === "true_positive" ? "#00a3a6" :
     event.verdict === "false_positive" ? "#ed6e6c" :
-    event.verdict === "uncertain" ? "#c4c0b3" : null;
+    event.verdict === "uncertain" ? "var(--border-strong)" : null;
+  // Action popover — opens only when the user clicks TP/FP. Lets the
+  // curator override the default action (TP→suppress, FP→keep) without
+  // leaving the gallery. Auto-closes 2 s after the mouse leaves the
+  // popover; immediately on outside click.
+  const [actionPopover, setActionPopover] = useState(null); // null | "true_positive" | "false_positive"
+  const closeTimerRef = useRef(null);
+  const popoverRef = useRef(null);
+  useEffect(() => {
+    if (!actionPopover) return;
+    const handle = (ev) => {
+      if (popoverRef.current && !popoverRef.current.contains(ev.target)) {
+        setActionPopover(null);
+      }
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [actionPopover]);
+  const cancelCloseTimer = () => {
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+  const startCloseTimer = () => {
+    cancelCloseTimer();
+    closeTimerRef.current = window.setTimeout(() => {
+      setActionPopover(null);
+    }, 2000);
+  };
   const toggleVerdict = (target) => (e) => {
     e.stopPropagation();
     if (!setVerdict) return;
-    setVerdict(event.id, event.verdict === target ? "pending" : target);
+    cancelCloseTimer();
+    const next = event.verdict === target ? "pending" : target;
+    setVerdict(event.id, next);
+    if (
+      actionEnabled &&
+      (next === "true_positive" || next === "false_positive")
+    ) {
+      setActionPopover(next);
+    } else {
+      setActionPopover(null);
+    }
   };
 
   return (
@@ -4992,12 +5328,19 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick, setVerdict }) => {
       }}
       className="text-left rounded-sm cursor-pointer"
       style={{
-        border: "1px solid #e6e8e8",
-        background: "#fff",
+        border: "1px solid var(--border)",
+        background: "var(--bg-card)",
         transition: "transform 0.12s, box-shadow 0.12s, border-color 0.12s",
         padding: 0,
-        overflow: "hidden",
+        // Allow the action popover to overflow on the right of the card.
+        // Lift this card above its grid siblings while the popover is
+        // open so the popover doesn't get hidden under neighbouring
+        // cards (each card creates its own stacking context via the
+        // hover `transform`).
+        overflow: "visible",
         width: "100%",
+        position: "relative",
+        zIndex: actionPopover ? 30 : "auto",
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = "translateY(-2px)";
@@ -5007,13 +5350,13 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick, setVerdict }) => {
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = "";
         e.currentTarget.style.boxShadow = "";
-        e.currentTarget.style.borderColor = "#e6e8e8";
+        e.currentTarget.style.borderColor = "var(--border)";
       }}
     >
       <div
         style={{
-          background: "#fff",
-          borderBottom: "1px solid #f0f2f2",
+          background: "var(--bg-card)",
+          borderBottom: "1px solid var(--border-soft)",
           position: "relative",
         }}
       >
@@ -5049,14 +5392,33 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick, setVerdict }) => {
                   ? "#00a3a6"
                   : tone === "bad"
                     ? "#ed6e6c"
-                    : "#c4c0b3"
+                    : "var(--border-strong)"
                 : "rgba(255,255,255,0.85)";
-              const color = active ? "#fff" : "#275662";
+              const color = active ? "var(--bg-card)" : "#275662";
               return (
                 <button
                   key={id}
                   type="button"
                   onClick={toggleVerdict(id)}
+                  onMouseEnter={() => {
+                    // Re-show the popover on hover only if this event
+                    // already has an action committed for the current
+                    // verdict — gives the curator a quick way to flip
+                    // their previous choice without re-clicking the
+                    // verdict button. Fresh / pending events stay quiet.
+                    if (
+                      actionEnabled &&
+                      event.action &&
+                      event.verdict === id &&
+                      (id === "true_positive" || id === "false_positive")
+                    ) {
+                      cancelCloseTimer();
+                      setActionPopover(id);
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (actionPopover) startCloseTimer();
+                  }}
                   title={label}
                   className="rounded-full"
                   style={{
@@ -5080,6 +5442,82 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick, setVerdict }) => {
             })}
           </div>
         )}
+        {actionEnabled && actionPopover && (
+          <div
+            ref={popoverRef}
+            onClick={(e) => e.stopPropagation()}
+            onMouseEnter={cancelCloseTimer}
+            onMouseLeave={startCloseTimer}
+            className="absolute z-20 flex flex-col gap-1 p-1.5 rounded-md"
+            style={{
+              // Anchor just to the right of the verdict-button column,
+              // outside the card. z-20 floats it above neighbouring
+              // gallery cards.
+              right: -44,
+              top: "50%",
+              transform: "translateY(-50%)",
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-strong)",
+              boxShadow: "0 8px 24px rgba(39,86,98,0.18)",
+            }}
+          >
+            <div
+              className="text-[9px] tracking-[0.1em] uppercase text-center mb-0.5"
+              style={{
+                color: "var(--ink-muted)",
+                fontWeight: 700,
+                fontFamily: '"Raleway", sans-serif',
+              }}
+            >
+              Action
+            </div>
+            {[
+              {
+                id: "keep",
+                Icon: Save,
+                color: "#00a3a6",
+                title: "Keep this sample",
+              },
+              {
+                id: "suppress",
+                Icon: Trash2,
+                color: "#ed6e6c",
+                title: "Suppress this sample",
+              },
+            ].map((opt) => {
+              const defaultAction =
+                actionPopover === "false_positive" ? "keep" : "suppress";
+              const active = (event.action || defaultAction) === opt.id;
+              const Icon = opt.Icon;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    setAction(event.id, opt.id);
+                    setActionPopover(null);
+                  }}
+                  title={opt.title}
+                  aria-label={opt.title}
+                  className="rounded-full flex items-center justify-center"
+                  style={{
+                    width: 28,
+                    height: 28,
+                    background: active ? opt.color : "var(--bg-card)",
+                    color: active ? "#fff" : "var(--ink-muted)",
+                    border: active
+                      ? "1px solid transparent"
+                      : "1px solid var(--border-strong)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
       <div style={{ padding: "8px 10px" }}>
         <div className="flex items-center gap-1.5 mb-1.5">
@@ -5092,7 +5530,7 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick, setVerdict }) => {
           <div
             className="text-[11px] truncate"
             style={{
-              color: "#275662",
+              color: "var(--ink)",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
             }}
@@ -5104,7 +5542,7 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick, setVerdict }) => {
         <div
           className="grid gap-x-2 gap-y-0.5 text-[10px] tabular mb-1.5"
           style={{
-            color: "#797870",
+            color: "var(--ink-muted)",
             gridTemplateColumns: "max-content 1fr",
           }}
         >
@@ -5117,9 +5555,9 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick, setVerdict }) => {
               fontWeight: 700,
             }}
           >
-            prob
+            probability
           </span>
-          <b style={{ color: "#275662", textAlign: "right" }}>
+          <b style={{ color: "var(--ink)", textAlign: "right" }}>
             {event.score.toFixed(3)}
           </b>
           <span
@@ -5133,7 +5571,7 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick, setVerdict }) => {
           >
             rate
           </span>
-          <b style={{ color: "#275662", textAlign: "right" }}>
+          <b style={{ color: "var(--ink)", textAlign: "right" }}>
             {(event.rate * 100).toFixed(2)}%
           </b>
           {event.introducedPct != null && (
@@ -5147,9 +5585,9 @@ const GalleryCard = ({ event, ab, metadata, plateMap, onPick, setVerdict }) => {
                   fontWeight: 700,
                 }}
               >
-                intro
+                introduced
               </span>
-              <b style={{ color: "#275662", textAlign: "right" }}>
+              <b style={{ color: "var(--ink)", textAlign: "right" }}>
                 {formatIntroducedPct(event.introducedPct)}
               </b>
             </>
@@ -5313,9 +5751,9 @@ const SampleCombobox = ({
         placeholder={placeholder}
         className="w-full px-3 py-2 text-[12px] rounded-sm"
         style={{
-          border: `1px solid ${invalid ? "#ed6e6c" : "#e6e8e8"}`,
-          background: "#fff",
-          color: "#275662",
+          border: `1px solid ${invalid ? "#ed6e6c" : "var(--border)"}`,
+          background: "var(--bg-card)",
+          color: "var(--ink)",
           fontFamily: "ui-monospace, monospace",
         }}
       />
@@ -5326,8 +5764,8 @@ const SampleCombobox = ({
             top: "calc(100% + 2px)",
             left: 0,
             right: 0,
-            background: "#fff",
-            border: "1px solid #e6e8e8",
+            background: "var(--bg-card)",
+            border: "1px solid var(--border)",
             borderRadius: 3,
             maxHeight: 280,
             overflowY: "auto",
@@ -5349,7 +5787,7 @@ const SampleCombobox = ({
                       color: g.accent,
                       fontWeight: 700,
                       fontFamily: '"Raleway", sans-serif',
-                      background: "#f6f7f7",
+                      background: "var(--bg-soft)",
                       borderTop: gi > 0 ? "1px solid #e6e8e8" : "none",
                     }}
                   >
@@ -5371,8 +5809,8 @@ const SampleCombobox = ({
                         padding: "6px 12px",
                         fontSize: 12,
                         fontFamily: "ui-monospace, monospace",
-                        color: "#275662",
-                        background: isHi ? "#eef8f8" : "transparent",
+                        color: "var(--ink)",
+                        background: isHi ? "var(--bg-info)" : "transparent",
                         cursor: "pointer",
                       }}
                     >
@@ -5392,12 +5830,12 @@ const SampleCombobox = ({
             top: "calc(100% + 2px)",
             left: 0,
             right: 0,
-            background: "#fff",
-            border: "1px solid #e6e8e8",
+            background: "var(--bg-card)",
+            border: "1px solid var(--border)",
             borderRadius: 3,
             padding: "8px 12px",
             fontSize: 11,
-            color: "#797870",
+            color: "var(--ink-muted)",
             zIndex: 30,
             boxShadow: "0 4px 12px rgba(39,86,98,0.12)",
           }}
@@ -5415,7 +5853,15 @@ const SampleCombobox = ({
    their scatterplot, then optionally add the pair as a manually-curated TP
    event. Useful for catching false negatives that CroCoDeEL didn't flag.
    ============================================================================ */
-const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, metadata }) => {
+const ExplorePairs = ({
+  ab,
+  samples,
+  onAddManualEvent,
+  existingPairs,
+  plateMap,
+  metadata,
+  actionEnabled,
+}) => {
   const [src, setSrc] = useState("");
   const [tgt, setTgt] = useState("");
   // Sliders work in log-space for rate (so the user gets fine control at
@@ -5424,8 +5870,18 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
   const [rateLog, setRateLog] = useState(-2);
   const [probability, setProbability] = useState(0.9);
   const [verdict, setVerdict] = useState("true_positive");
+  // Action override for the manual event when actionEnabled. Mirrors
+  // setVerdict's defaults: TP → suppress, FP → keep.
+  const [action, setAction] = useState("suppress");
   const [notes, setNotes] = useState("Manually added by user");
   const [feedback, setFeedback] = useState(null);
+
+  // Reset action to the verdict's default whenever the verdict changes.
+  useEffect(() => {
+    if (verdict === "true_positive") setAction("suppress");
+    else if (verdict === "false_positive") setAction("keep");
+    else setAction(null);
+  }, [verdict]);
 
   const rate = Math.pow(10, rateLog);
 
@@ -5536,6 +5992,7 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
       introduced: introducedFromLine,
       verdict,
       notes,
+      action: actionEnabled ? action : undefined,
     });
     const verdictLabel =
       verdict === "true_positive"
@@ -5558,12 +6015,12 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
   };
 
   return (
-    <div>
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)] gap-5 items-start">
       <div
-        className="rounded-sm p-4 mb-5"
+        className="rounded-sm p-4"
         style={{
-          background: "#f6f7f7",
-          border: "1px solid #e6e8e8",
+          background: "var(--bg-soft)",
+          border: "1px solid var(--border)",
         }}
       >
         <div
@@ -5576,7 +6033,7 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
         >
           Explore new pairs
         </div>
-        <p className="text-[12px] mb-3" style={{ color: "#5a5550", lineHeight: 1.55 }}>
+        <p className="text-[12px] mb-3" style={{ color: "var(--ink-soft)", lineHeight: 1.55 }}>
           Pick two samples to inspect their scatterplot, even if CroCoDeEL didn't
           flag them. Useful for catching missed contamination events (false
           negatives), e.g. when two samples sit next to each other on the plate
@@ -5591,7 +6048,7 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
             <label
               className="text-[10px] tracking-[0.1em] uppercase block mb-1"
               style={{
-                color: "#797870",
+                color: "var(--ink-muted)",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
               }}
@@ -5611,7 +6068,7 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
             <label
               className="text-[10px] tracking-[0.1em] uppercase block mb-1"
               style={{
-                color: "#797870",
+                color: "var(--ink-muted)",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
               }}
@@ -5638,13 +6095,13 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
             <label
               className="text-[10px] tracking-[0.1em] uppercase block mb-1"
               style={{
-                color: "#797870",
+                color: "var(--ink-muted)",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
               }}
             >
               Estimated contamination rate ·{" "}
-              <span style={{ color: "#275662" }}>
+              <span style={{ color: "var(--ink)" }}>
                 {(rate * 100).toFixed(2)}%
               </span>
             </label>
@@ -5659,14 +6116,14 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
             />
             <div
               className="flex justify-between text-[10px] mt-0.5"
-              style={{ color: "#797870" }}
+              style={{ color: "var(--ink-muted)" }}
             >
               <span>0.1%</span>
               <span>1%</span>
               <span>10%</span>
               <span>99%</span>
             </div>
-            <div className="text-[10px] mt-1" style={{ color: "#797870" }}>
+            <div className="text-[10px] mt-1" style={{ color: "var(--ink-muted)" }}>
               Drags the contamination line to log10(rate). Slider is
               log-scaled.
             </div>
@@ -5675,13 +6132,13 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
             <label
               className="text-[10px] tracking-[0.1em] uppercase block mb-1"
               style={{
-                color: "#797870",
+                color: "var(--ink-muted)",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
               }}
             >
               Your estimated probability (confidence) ·{" "}
-              <span style={{ color: "#275662" }}>
+              <span style={{ color: "var(--ink)" }}>
                 {probability.toFixed(2)}
               </span>
             </label>
@@ -5696,13 +6153,13 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
             />
             <div
               className="flex justify-between text-[10px] mt-0.5"
-              style={{ color: "#797870" }}
+              style={{ color: "var(--ink-muted)" }}
             >
               <span>0.0</span>
               <span>0.5</span>
               <span>1.0</span>
             </div>
-            <div className="text-[10px] mt-1" style={{ color: "#797870" }}>
+            <div className="text-[10px] mt-1" style={{ color: "var(--ink-muted)" }}>
               Like CroCoDeEL's RF probability — your subjective confidence
               that this is a real contamination.
             </div>
@@ -5714,7 +6171,7 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
           <label
             className="text-[10px] tracking-[0.1em] uppercase block mb-2"
             style={{
-              color: "#797870",
+              color: "var(--ink-muted)",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
             }}
@@ -5725,7 +6182,7 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
             {[
               { id: "true_positive", label: "True positive", color: "#00a3a6" },
               { id: "false_positive", label: "False positive", color: "#ed6e6c" },
-              { id: "uncertain", label: "Uncertain", color: "#c4c0b3" },
+              { id: "uncertain", label: "Uncertain", color: "var(--border-strong)" },
             ].map((v) => {
               const active = verdict === v.id;
               return (
@@ -5734,9 +6191,9 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
                   onClick={() => setVerdict(v.id)}
                   className="px-3 py-1.5 text-[11px] rounded-sm flex items-center gap-1.5"
                   style={{
-                    background: active ? v.color : "#fff",
-                    color: active ? "#fff" : "#275662",
-                    border: `1px solid ${active ? v.color : "#e6e8e8"}`,
+                    background: active ? v.color : "var(--bg-card)",
+                    color: active ? "#fff" : "var(--ink)",
+                    border: `1px solid ${active ? v.color : "var(--border)"}`,
                     fontWeight: 700,
                     fontFamily: '"Raleway", sans-serif',
                     cursor: "pointer",
@@ -5750,12 +6207,71 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
           </div>
         </div>
 
+        {/* Action picker — only when the suppress/keep feature is on
+            and the verdict is TP or FP. */}
+        {actionEnabled &&
+          (verdict === "true_positive" || verdict === "false_positive") && (
+            <div className="mb-3">
+              <label
+                className="text-[10px] tracking-[0.1em] uppercase block mb-2"
+                style={{
+                  color: "var(--ink-muted)",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                Action
+              </label>
+              <div className="flex gap-2 flex-wrap">
+                {[
+                  {
+                    id: "keep",
+                    Icon: Save,
+                    label: "Keep",
+                    color: "#00a3a6",
+                    title: "Keep this sample (acknowledged contamination, but small enough to retain).",
+                  },
+                  {
+                    id: "suppress",
+                    Icon: Trash2,
+                    label: "Suppress",
+                    color: "#ed6e6c",
+                    title: "Drop this contaminated sample from downstream analyses.",
+                  },
+                ].map((opt) => {
+                  const active = action === opt.id;
+                  const Icon = opt.Icon;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setAction(opt.id)}
+                      title={opt.title}
+                      className="px-3 py-1.5 text-[11px] rounded-sm flex items-center gap-1.5"
+                      style={{
+                        background: active ? opt.color : "var(--bg-card)",
+                        color: active ? "#fff" : "var(--ink)",
+                        border: `1px solid ${active ? opt.color : "var(--border)"}`,
+                        fontWeight: 700,
+                        fontFamily: '"Raleway", sans-serif',
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Icon className="w-3 h-3" />
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
         {/* Notes field — pre-filled but editable */}
         <div className="mb-3">
           <label
             className="text-[10px] tracking-[0.1em] uppercase block mb-1"
             style={{
-              color: "#797870",
+              color: "var(--ink-muted)",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
             }}
@@ -5768,9 +6284,9 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
             rows={2}
             className="w-full px-3 py-2 text-[12px] rounded-sm"
             style={{
-              border: "1px solid #e6e8e8",
-              background: "#fff",
-              color: "#275662",
+              border: "1px solid var(--border)",
+              background: "var(--bg-card)",
+              color: "var(--ink)",
               fontFamily:
                 '"Avenir Next", "Nunito Sans", system-ui, sans-serif',
               resize: "vertical",
@@ -5784,7 +6300,7 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
             disabled={!canSave}
             className="px-4 py-2 text-[12px] rounded-sm flex items-center gap-2"
             style={{
-              background: canSave ? "#00a3a6" : "#e6e8e8",
+              background: canSave ? "#00a3a6" : "var(--border)",
               color: canSave ? "#fff" : "#797870",
               border: "none",
               fontWeight: 700,
@@ -5797,7 +6313,7 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
             Save as new contamination event
           </button>
           {!src || !tgt ? (
-            <span className="text-[11px]" style={{ color: "#797870" }}>
+            <span className="text-[11px]" style={{ color: "var(--ink-muted)" }}>
               Pick both source and target to see the plot.
             </span>
           ) : src === tgt ? (
@@ -5809,7 +6325,7 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
               This pair is already in your events list.
             </span>
           ) : (
-            <span className="text-[11px]" style={{ color: "#797870" }}>
+            <span className="text-[11px]" style={{ color: "var(--ink-muted)" }}>
               {introducedFromLine.length} species fall on the line you placed
               {(() => {
                 if (!ab || !tgt) return null;
@@ -5838,23 +6354,155 @@ const ExplorePairs = ({ ab, samples, onAddManualEvent, existingPairs, plateMap, 
         </div>
       </div>
 
-      {scatter && !scatter.error && (
-        <div className="flex justify-center">
-          <Scatterplot scatter={scatter} />
-        </div>
-      )}
-      {scatter && scatter.error && (
+      <div
+        className="rounded-sm p-4 flex flex-col gap-3"
+        style={{
+          background: "var(--bg-card)",
+          border: "1px solid var(--border)",
+        }}
+      >
         <div
-          className="p-4 rounded-sm text-[12px]"
+          className="text-[10px] tracking-[0.15em] uppercase"
           style={{
-            background: "#fdeceb",
-            border: "1px solid #ed6e6c",
-            color: "#8a2422",
+            color: "#ed6e6c",
+            fontWeight: 700,
+            fontFamily: '"Raleway", sans-serif',
           }}
         >
-          {scatter.error}
+          Live preview
         </div>
-      )}
+        {scatter && !scatter.error ? (
+          <div className="flex justify-center">
+            <Scatterplot scatter={scatter} width={460} height={400} />
+          </div>
+        ) : scatter && scatter.error ? (
+          <div
+            className="p-4 rounded-sm text-[12px]"
+            style={{
+              background: "var(--bg-alert)",
+              border: "1px solid #ed6e6c",
+              color: "#8a2422",
+            }}
+          >
+            {scatter.error}
+          </div>
+        ) : (
+          <div
+            className="p-8 rounded-sm text-center text-[12px]"
+            style={{
+              border: "1px dashed var(--border-strong)",
+              color: "var(--ink-muted)",
+            }}
+          >
+            Pick both source and target to see the scatterplot.
+          </div>
+        )}
+        {/* Dynamic introduced-species summary — recomputed live as the
+            user moves the rate / probability sliders. */}
+        {(() => {
+          const targetSpeciesCount = (() => {
+            if (!ab || !tgt) return null;
+            let n = 0;
+            for (const sp of ab.species) {
+              if ((ab.matrix[sp]?.[tgt] || 0) > 0) n++;
+            }
+            return n;
+          })();
+          const introducedCount = introducedFromLine.length;
+          const pct =
+            targetSpeciesCount && targetSpeciesCount > 0
+              ? (introducedCount / targetSpeciesCount) * 100
+              : null;
+          return (
+            <div
+              className="grid grid-cols-2 gap-3"
+              style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}
+            >
+              <div
+                className="rounded-sm p-3"
+                style={{
+                  background: "var(--bg-soft)",
+                  borderLeft: "4px solid #ed6e6c",
+                }}
+              >
+                <div
+                  className="text-[10px] tracking-[0.1em] uppercase"
+                  style={{
+                    color: "var(--ink-muted)",
+                    fontWeight: 700,
+                    fontFamily: '"Raleway", sans-serif',
+                  }}
+                >
+                  Introduced species
+                </div>
+                <div
+                  className="tabular mt-1"
+                  style={{
+                    fontWeight: 800,
+                    fontSize: 24,
+                    lineHeight: 1,
+                    color: "var(--ink)",
+                    fontFamily: '"Raleway", sans-serif',
+                  }}
+                >
+                  {introducedCount}
+                </div>
+                <div
+                  className="text-[11px] mt-1"
+                  style={{ color: "var(--ink-muted)" }}
+                >
+                  on the line you placed
+                </div>
+              </div>
+              <div
+                className="rounded-sm p-3"
+                style={{
+                  background: "var(--bg-soft)",
+                  borderLeft: `4px solid ${
+                    pct == null
+                      ? "var(--border-strong)"
+                      : metricColor(pct, "introduced")
+                  }`,
+                }}
+              >
+                <div
+                  className="text-[10px] tracking-[0.1em] uppercase"
+                  style={{
+                    color: "var(--ink-muted)",
+                    fontWeight: 700,
+                    fontFamily: '"Raleway", sans-serif',
+                  }}
+                >
+                  % of {tgt || "target"} species
+                </div>
+                <div
+                  className="tabular mt-1"
+                  style={{
+                    fontWeight: 800,
+                    fontSize: 24,
+                    lineHeight: 1,
+                    color:
+                      pct == null
+                        ? "var(--ink-muted)"
+                        : metricColor(pct, "introduced"),
+                    fontFamily: '"Raleway", sans-serif',
+                  }}
+                >
+                  {pct == null ? "—" : `${pct.toFixed(1)}%`}
+                </div>
+                <div
+                  className="text-[11px] mt-1"
+                  style={{ color: "var(--ink-muted)" }}
+                >
+                  {targetSpeciesCount != null
+                    ? `${targetSpeciesCount} species observed in target`
+                    : "load target to compute"}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
     </div>
   );
 };
@@ -5879,7 +6527,7 @@ const Pagination = ({ page, totalPages, onChange }) => {
       disabled={disabled}
       className="px-2.5 py-1 text-[11px] rounded-sm"
       style={{
-        background: disabled ? "#e6e8e8" : "#fff",
+        background: disabled ? "var(--border)" : "var(--bg-card)",
         color: disabled ? "#797870" : "#275662",
         border: "1px solid #275662",
         fontWeight: 600,
@@ -5895,13 +6543,13 @@ const Pagination = ({ page, totalPages, onChange }) => {
   return (
     <div
       className="flex items-center gap-2 mt-6 flex-wrap"
-      style={{ color: "#275662" }}
+      style={{ color: "var(--ink)" }}
     >
       {btn("« First", 1, page <= 1)}
       {btn("‹ Prev", page - 1, page <= 1)}
       <span
         className="text-[11px]"
-        style={{ color: "#797870", fontFamily: '"Raleway", sans-serif' }}
+        style={{ color: "var(--ink-muted)", fontFamily: '"Raleway", sans-serif' }}
       >
         Page
       </span>
@@ -5924,14 +6572,14 @@ const Pagination = ({ page, totalPages, onChange }) => {
         className="px-2 py-1 text-[11px] rounded-sm w-16"
         style={{
           border: "1px solid #275662",
-          color: "#275662",
-          background: "#fff",
+          color: "var(--ink)",
+          background: "var(--bg-card)",
           fontFamily: '"Raleway", sans-serif',
         }}
       />
       <span
         className="text-[11px]"
-        style={{ color: "#797870", fontFamily: '"Raleway", sans-serif' }}
+        style={{ color: "var(--ink-muted)", fontFamily: '"Raleway", sans-serif' }}
       >
         of {totalPages}
       </span>
@@ -5954,6 +6602,8 @@ const ScatterTab = ({
   onPick,
   onAddManualEvent,
   onBulkApply,
+  actionEnabled,
+  setAction,
 }) => {
   const [mode, setMode] = useState("flagged"); // "flagged" or "explore"
   const [sortBy, setSortBy] = useState("score");
@@ -5986,13 +6636,13 @@ const ScatterTab = ({
   if (!ab) {
     return (
       <div>
-        <SectionTitle eyebrow="Scatterplots" title="Event gallery">
+        <SectionTitle eyebrow="Scatterplots" title="Scatterplot gallery">
           Browse every flagged event as a scatterplot thumbnail. Click any card
           to open it in the Guided validation workflow.
         </SectionTitle>
         <div
           className="p-6 rounded-sm"
-          style={{ background: "#fdeceb", border: "1px solid #ed6e6c", color: "#8a2422" }}
+          style={{ background: "var(--bg-alert)", border: "1px solid #ed6e6c", color: "#8a2422" }}
         >
           <strong>Scatterplots require the abundance table.</strong> Drop{" "}
           <code>species_abundance.tsv</code> above to enable this view.
@@ -6035,7 +6685,7 @@ const ScatterTab = ({
 
   return (
     <div>
-      <SectionTitle eyebrow="Scatterplots" title="Event gallery">
+      <SectionTitle eyebrow="Scatterplots" title="Scatterplot gallery">
         Browse every flagged event as a scatterplot thumbnail, or explore any
         two samples to look for missed contamination events (false negatives).
       </SectionTitle>
@@ -6057,7 +6707,7 @@ const ScatterTab = ({
               className="px-3 py-1.5 text-[11px] rounded-sm"
               style={{
                 background: active ? "#275662" : "transparent",
-                color: active ? "#fff" : "#275662",
+                color: active ? "#fff" : "var(--ink)",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
                 border: "none",
@@ -6078,6 +6728,7 @@ const ScatterTab = ({
           existingPairs={existingPairs}
           plateMap={plateMap}
           metadata={metadata}
+          actionEnabled={actionEnabled}
         />
       ) : (
         <>
@@ -6090,10 +6741,11 @@ const ScatterTab = ({
         onBulkApply={onBulkApply}
         hasAb={!!ab}
         events={events}
+        actionEnabled={actionEnabled}
       >
         <div className="ml-auto flex items-center gap-2.5">
           <VerdictDistribution events={sorted} />
-          <span className="text-[12px]" style={{ color: "#797870" }}>
+          <span className="text-[12px]" style={{ color: "var(--ink-muted)" }}>
             {sorted.length} / {events.length}
           </span>
         </div>
@@ -6102,7 +6754,7 @@ const ScatterTab = ({
         <span
           className="text-[11px] uppercase tracking-[0.1em]"
           style={{
-            color: "#797870",
+            color: "var(--ink-muted)",
             fontWeight: 700,
             fontFamily: '"Raleway", sans-serif',
           }}
@@ -6128,8 +6780,8 @@ const ScatterTab = ({
               }
               className="px-3 py-1 text-[11px] rounded-sm"
               style={{
-                background: active ? "#275662" : "#fff",
-                color: active ? "#fff" : "#275662",
+                background: active ? "#275662" : "var(--bg-card)",
+                color: active ? "#fff" : "var(--ink)",
                 border: "1px solid #275662",
                 fontWeight: 600,
                 fontFamily: '"Raleway", sans-serif',
@@ -6144,7 +6796,7 @@ const ScatterTab = ({
             </button>
           );
         })}
-        <span className="ml-auto text-[12px]" style={{ color: "#797870" }}>
+        <span className="ml-auto text-[12px]" style={{ color: "var(--ink-muted)" }}>
           {sorted.length === 0
             ? "0 events"
             : `${startIdx + 1}–${startIdx + visible.length} of ${sorted.length} event${sorted.length !== 1 ? "s" : ""}`}
@@ -6166,6 +6818,8 @@ const ScatterTab = ({
             plateMap={plateMap}
             onPick={onPick}
             setVerdict={setVerdict}
+            actionEnabled={actionEnabled}
+            setAction={setAction}
           />
         ))}
       </div>
@@ -6178,7 +6832,7 @@ const ScatterTab = ({
         />
       )}
 
-      <p className="text-[11px] mt-6" style={{ color: "#797870" }}>
+      <p className="text-[11px] mt-6" style={{ color: "var(--ink-muted)" }}>
         Click any thumbnail to open the full view with diagnostics and verdict
         controls.
       </p>
@@ -6200,6 +6854,7 @@ const NetworkTab = ({
   onPick,
   onBulkApply,
   hasAb,
+  actionEnabled,
 }) => {
   const filteredIds = useMemo(
     () => new Set(filtered.map((e) => e.id)),
@@ -6226,10 +6881,11 @@ const NetworkTab = ({
       onPick={onPick}
       onBulkApply={onBulkApply}
       hasAb={hasAb}
+      actionEnabled={actionEnabled}
     />
     <p
       className="text-[11px] mt-3 flex items-center gap-1.5"
-      style={{ color: "#797870" }}
+      style={{ color: "var(--ink-muted)" }}
     >
       <span
         className="inline-block w-2 h-2 rounded-full"
@@ -6240,7 +6896,7 @@ const NetworkTab = ({
     </p>
     <p
       className="text-[10px] mt-1"
-      style={{ color: "#797870", fontStyle: "italic" }}
+      style={{ color: "var(--ink-muted)", fontStyle: "italic" }}
     >
       Sample labels are hidden on components with more than 25 nodes to keep
       the overview readable — click the component in the right sidebar to
@@ -6450,7 +7106,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
           <label
             className="text-[11px]"
             style={{
-              color: "#275662",
+              color: "var(--ink)",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
             }}
@@ -6466,7 +7122,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
                 setPlateMap({ ...plateMap, format: { rows: r, cols: c } });
             }}
             className="px-2 py-1 text-[11px] rounded-sm"
-            style={{ border: "1px solid #c4c0b3" }}
+            style={{ border: "1px solid var(--border-strong)" }}
           >
             <option value="8x12">96-well (8×12)</option>
             <option value="16x24">384-well (16×24)</option>
@@ -6474,7 +7130,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
           <label
             className="text-[11px] ml-3"
             style={{
-              color: "#275662",
+              color: "var(--ink)",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
             }}
@@ -6482,7 +7138,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
             Plate:
           </label>
           <div className="relative" ref={plateMenuRef}>
-            <div className="flex items-center" style={{ border: "1px solid #c4c0b3", borderRadius: 2 }}>
+            <div className="flex items-center" style={{ border: "1px solid var(--border-strong)", borderRadius: 2 }}>
               <input
                 value={plateId}
                 onChange={(e) => setPlateId(e.target.value)}
@@ -6500,7 +7156,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
                     border: 0,
                     borderLeft: "1px solid #e6e8e8",
                     cursor: "pointer",
-                    color: "#797870",
+                    color: "var(--ink-muted)",
                   }}
                   title="Show all plates"
                   aria-label="Show all plates"
@@ -6514,8 +7170,8 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
               <div
                 className="absolute left-0 top-full mt-1 z-20 rounded-sm overflow-hidden"
                 style={{
-                  background: "#fff",
-                  border: "1px solid #c4c0b3",
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border-strong)",
                   boxShadow: "0 8px 24px rgba(39,86,98,0.12)",
                   minWidth: "100%",
                   maxHeight: 240,
@@ -6532,15 +7188,15 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
                     }}
                     className="block w-full text-left px-2 py-1 text-[11px]"
                     style={{
-                      background: id === plateId ? "#eef8f8" : "transparent",
-                      color: "#275662",
+                      background: id === plateId ? "var(--bg-info)" : "transparent",
+                      color: "var(--ink)",
                       fontWeight: id === plateId ? 700 : 500,
                       border: 0,
                       cursor: "pointer",
                       fontFamily: '"Raleway", sans-serif',
                     }}
                     onMouseOver={(ev) => {
-                      if (id !== plateId) ev.currentTarget.style.background = "#f6f7f7";
+                      if (id !== plateId) ev.currentTarget.style.background = "var(--bg-soft)";
                     }}
                     onMouseOut={(ev) => {
                       if (id !== plateId) ev.currentTarget.style.background = "transparent";
@@ -6557,8 +7213,8 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
             onClick={() => setPlateId(nextPlateId)}
             className="px-2 py-1 text-[11px] rounded-sm flex items-center gap-1"
             style={{
-              background: "#fff",
-              color: "#275662",
+              background: "var(--bg-card)",
+              color: "var(--ink)",
               border: "1px solid #275662",
               fontWeight: 600,
               fontFamily: '"Raleway", sans-serif',
@@ -6601,9 +7257,9 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
         <div
           className="mt-3 p-2.5 rounded-sm text-[11px]"
           style={{
-            background: "#f6f7f7",
-            border: "1px solid #e6e8e8",
-            color: "#275662",
+            background: "var(--bg-soft)",
+            border: "1px solid var(--border)",
+            color: "var(--ink)",
           }}
         >
           <span
@@ -6644,10 +7300,10 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
             disabled={!plateMap}
             className="px-3 py-1.5 text-[11px] rounded-sm"
             style={{
-              background: "#fff",
-              color: "#275662",
+              background: "var(--bg-card)",
+              color: "var(--ink)",
               fontWeight: 700,
-              border: "1px solid #c4c0b3",
+              border: "1px solid var(--border-strong)",
               opacity: !plateMap ? 0.4 : 1,
               fontFamily: '"Raleway", sans-serif',
             }}
@@ -6674,19 +7330,19 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
           <div className="relative flex-1 min-w-[180px]">
             <Search
               className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
-              style={{ color: "#797870" }}
+              style={{ color: "var(--ink-muted)" }}
             />
             <input
               value={sampleQuery}
               onChange={(e) => setSampleQuery(e.target.value)}
               placeholder="search sample…"
               className="pl-7 pr-3 py-1.5 text-[12px] rounded-sm w-full outline-none"
-              style={{ border: "1px solid #c4c0b3" }}
+              style={{ border: "1px solid var(--border-strong)" }}
             />
           </div>
           <label
             className="flex items-center gap-1.5 text-[12px] cursor-pointer"
-            style={{ color: "#275662" }}
+            style={{ color: "var(--ink)" }}
           >
             <input
               type="checkbox"
@@ -6698,7 +7354,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
           </label>
         </div>
 
-        <div className="mb-3 text-[12px]" style={{ color: "#797870" }}>
+        <div className="mb-3 text-[12px]" style={{ color: "var(--ink-muted)" }}>
           {unplaced.length} unplaced · {placed.size} placed of {samples.length}
           {sampleQuery && (
             <>
@@ -6709,7 +7365,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
 
         <div
           className="rounded-sm max-h-[520px] overflow-auto"
-          style={{ border: "1px solid #e6e8e8" }}
+          style={{ border: "1px solid var(--border)" }}
         >
           {filteredSamples.map((s) => {
             const pos = plateMap?.bySample[s];
@@ -6719,13 +7375,13 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
                 key={s}
                 className="px-3 py-2 text-[12px] flex items-center gap-2"
                 style={{
-                  borderBottom: "1px solid #f0f2f2",
+                  borderBottom: "1px solid var(--border-soft)",
                   background: isSelected
                     ? "#00a3a6"
                     : pos
-                      ? "#f6f7f7"
-                      : "#fff",
-                  color: isSelected ? "#fff" : "#275662",
+                      ? "var(--bg-soft)"
+                      : "var(--bg-card)",
+                  color: isSelected ? "#fff" : "var(--ink)",
                 }}
               >
                 <button
@@ -6757,7 +7413,7 @@ const PlateEditor = ({ samples, plateMap, setPlateMap }) => {
           {filteredSamples.length === 0 && (
             <div
               className="px-3 py-6 text-center text-[12px]"
-              style={{ color: "#797870" }}
+              style={{ color: "var(--ink-muted)" }}
             >
               No samples match this filter.
             </div>
@@ -6772,13 +7428,13 @@ const kbdStyle = {
   display: "inline-block",
   padding: "1px 6px",
   margin: "0 2px",
-  background: "#fff",
-  border: "1px solid #c4c0b3",
+  background: "var(--bg-card)",
+  border: "1px solid var(--border-strong)",
   borderRadius: 3,
   fontFamily: "system-ui, monospace",
   fontSize: 10,
   fontWeight: 600,
-  color: "#275662",
+  color: "var(--ink)",
 };
 
 /* ---------- PLATE THUMBNAIL (for overview grid) ---------- */
@@ -6811,8 +7467,8 @@ const PlateThumbnail = ({
       onClick={onClick}
       className="rounded-sm text-left"
       style={{
-        border: "1px solid #e6e8e8",
-        background: "#fff",
+        border: "1px solid var(--border)",
+        background: "var(--bg-card)",
         padding: 12,
         transition:
           "transform 0.12s, box-shadow 0.12s, border-color 0.12s",
@@ -6827,7 +7483,7 @@ const PlateThumbnail = ({
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = "";
         e.currentTarget.style.boxShadow = "";
-        e.currentTarget.style.borderColor = "#e6e8e8";
+        e.currentTarget.style.borderColor = "var(--border)";
       }}
     >
       <svg
@@ -6840,8 +7496,8 @@ const PlateThumbnail = ({
           y="0"
           width={width}
           height={height}
-          fill="#fafbfb"
-          stroke="#e6e8e8"
+          fill="var(--bg-softer)"
+          stroke="var(--border)"
           strokeWidth="1"
           rx="2"
         />
@@ -6850,7 +7506,7 @@ const PlateThumbnail = ({
             const sid = grid[`${r}-${c}`];
             const hasEvent = sid && eventsBySample[sid];
             const selected = sid && selectedEventWells?.has(sid);
-            let fill = "#e6e8e8"; // empty well
+            let fill = "var(--border)"; // empty well
             if (sid) fill = "#c9dfe0"; // placed
             if (hasEvent) fill = "#ed6e6c"; // contamination
             if (selected) fill = "#00a3a6"; // currently-picked event
@@ -6869,7 +7525,7 @@ const PlateThumbnail = ({
       <div
         className="mt-2 text-[13px] truncate"
         style={{
-          color: "#275662",
+          color: "var(--ink)",
           fontWeight: 700,
           fontFamily: '"Raleway", sans-serif',
         }}
@@ -6878,7 +7534,7 @@ const PlateThumbnail = ({
       </div>
       <div
         className="text-[11px] tabular flex items-center justify-between mt-0.5"
-        style={{ color: "#797870" }}
+        style={{ color: "var(--ink-muted)" }}
       >
         <span>
           {plate.nSamples} sample{plate.nSamples !== 1 ? "s" : ""}
@@ -7111,9 +7767,9 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
               data-tutorial={`plate-mode-${m.id}`}
               className="px-4 py-1.5 text-[12px] rounded-sm"
               style={{
-                background: active ? "#275662" : "#fff",
-                color: active ? "#fff" : disabled ? "#c4c0b3" : "#275662",
-                border: `1px solid ${disabled ? "#e6e8e8" : "#275662"}`,
+                background: active ? "#275662" : "var(--bg-card)",
+                color: active ? "#fff" : disabled ? "var(--border-strong)" : "#275662",
+                border: `1px solid ${disabled ? "var(--border)" : "#275662"}`,
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
                 cursor: disabled ? "not-allowed" : "pointer",
@@ -7157,7 +7813,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
             <span
               className="text-[11px] uppercase tracking-[0.1em]"
               style={{
-                color: "#797870",
+                color: "var(--ink-muted)",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
               }}
@@ -7178,8 +7834,8 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
                   onClick={() => setPlateFilter(f.id)}
                   className="px-3 py-1 text-[11px] rounded-sm"
                   style={{
-                    background: active ? "#275662" : "#fff",
-                    color: active ? "#fff" : "#275662",
+                    background: active ? "#275662" : "var(--bg-card)",
+                    color: active ? "#fff" : "var(--ink)",
                     border: "1px solid #275662",
                     fontWeight: 600,
                     fontFamily: '"Raleway", sans-serif',
@@ -7193,7 +7849,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
             {/* legend */}
             <div
               className="ml-auto flex items-center gap-3 text-[11px]"
-              style={{ color: "#797870" }}
+              style={{ color: "var(--ink-muted)" }}
             >
               <span className="flex items-center gap-1">
                 <span
@@ -7217,9 +7873,9 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
             <div
               className="p-6 rounded-sm text-[13px] text-center"
               style={{
-                background: "#f6f7f7",
-                border: "1px solid #e6e8e8",
-                color: "#797870",
+                background: "var(--bg-soft)",
+                border: "1px solid var(--border)",
+                color: "var(--ink-muted)",
               }}
             >
               No plates match this filter.
@@ -7248,7 +7904,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
             </div>
           )}
 
-          <p className="text-[11px] mt-6" style={{ color: "#797870" }}>
+          <p className="text-[11px] mt-6" style={{ color: "var(--ink-muted)" }}>
             Click any plate to open it in Inspect mode with the full grid and
             events list.
           </p>
@@ -7276,10 +7932,10 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
                         className="px-3 py-1 text-[11px] rounded-sm"
                         style={{
                           background:
-                            activePlate === p ? "#00a3a6" : "#f6f7f7",
+                            activePlate === p ? "#00a3a6" : "var(--bg-soft)",
                           color: activePlate === p ? "#fff" : "#275662",
                           fontWeight: 700,
-                          border: "1px solid #e6e8e8",
+                          border: "1px solid var(--border)",
                           fontFamily: '"Raleway", sans-serif',
                         }}
                       >
@@ -7292,7 +7948,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
                     <label
                       className="text-[11px]"
                       style={{
-                        color: "#275662",
+                        color: "var(--ink)",
                         fontWeight: 700,
                         fontFamily: '"Raleway", sans-serif',
                       }}
@@ -7305,8 +7961,8 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
                       className="px-3 py-1 text-[12px] rounded-sm"
                       style={{
                         border: "1px solid #275662",
-                        background: "#fff",
-                        color: "#275662",
+                        background: "var(--bg-card)",
+                        color: "var(--ink)",
                         fontWeight: 700,
                         fontFamily: '"Raleway", sans-serif',
                         minWidth: 160,
@@ -7322,9 +7978,9 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
                       onClick={() => setMode("overview")}
                       className="px-3 py-1 text-[11px] rounded-sm"
                       style={{
-                        background: "#fff",
-                        color: "#275662",
-                        border: "1px solid #c4c0b3",
+                        background: "var(--bg-card)",
+                        color: "var(--ink)",
+                        border: "1px solid var(--border-strong)",
                         fontWeight: 600,
                         fontFamily: '"Raleway", sans-serif',
                       }}
@@ -7397,7 +8053,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
 
             <div
               className="mt-3 flex items-center gap-4 text-[11px] flex-wrap"
-              style={{ color: "#797870" }}
+              style={{ color: "var(--ink-muted)" }}
             >
               <span className="flex items-center gap-1.5">
                 <span
@@ -7420,7 +8076,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
                     style={{
                       width: 1,
                       height: 12,
-                      background: "#c4c0b3",
+                      background: "var(--border-strong)",
                       margin: "0 4px",
                     }}
                   />
@@ -7471,7 +8127,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
               >
                 <label
                   className="flex items-center gap-1 text-[11px] cursor-pointer select-none"
-                  style={{ color: "#275662", fontWeight: 600 }}
+                  style={{ color: "var(--ink)", fontWeight: 600 }}
                 >
                   <input
                     type="checkbox"
@@ -7484,7 +8140,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
                 {metadata && (
                   <label
                     className="flex items-center gap-1 text-[11px] cursor-pointer select-none"
-                    style={{ color: "#275662", fontWeight: 600 }}
+                    style={{ color: "var(--ink)", fontWeight: 600 }}
                   >
                     <input
                       type="checkbox"
@@ -7500,9 +8156,9 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
                   onChange={(e) => setEventFilter(e.target.value)}
                   className="px-2 py-1 text-[11px] rounded-sm"
                   style={{
-                    border: "1px solid #c4c0b3",
-                    background: "#fff",
-                    color: "#275662",
+                    border: "1px solid var(--border-strong)",
+                    background: "var(--bg-card)",
+                    color: "var(--ink)",
                   }}
                 >
                   <option value="all">involving {activePlate}</option>
@@ -7516,7 +8172,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
             </div>
             <div
               className="rounded-sm overflow-auto max-h-[520px]"
-              style={{ border: "1px solid #e6e8e8" }}
+              style={{ border: "1px solid var(--border)" }}
             >
               {filteredEvents.map((e) => {
                 const samePlate = e.a.plate === e.b.plate;
@@ -7534,18 +8190,18 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
                     onMouseLeave={() => setHoverEvent(null)}
                     className="w-full text-left px-3 py-2.5 text-[12px]"
                     style={{
-                      borderBottom: "1px solid #f0f2f2",
-                      background: "#fff",
+                      borderBottom: "1px solid var(--border-soft)",
+                      background: "var(--bg-card)",
                     }}
                     onMouseOver={(ev) =>
-                      (ev.currentTarget.style.background = "#f6f7f7")
+                      (ev.currentTarget.style.background = "var(--bg-soft)")
                     }
                     onMouseOut={(ev) =>
-                      (ev.currentTarget.style.background = "#fff")
+                      (ev.currentTarget.style.background = "var(--bg-card)")
                     }
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span style={{ color: "#275662", fontWeight: 600 }}>
+                      <span style={{ color: "var(--ink)", fontWeight: 600 }}>
                         {samePlate ? (
                           <>
                             {e.a.plate} · {wellLabel(e.a.row, e.a.col)} →{" "}
@@ -7570,7 +8226,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
                     </div>
                     <div
                       className="text-[11px] mt-0.5"
-                      style={{ color: "#797870" }}
+                      style={{ color: "var(--ink-muted)" }}
                     >
                       {e.source} → {e.target} · probability {e.score.toFixed(2)}
                       {e.introducedPct != null && (
@@ -7583,7 +8239,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
               {filteredEvents.length === 0 && (
                 <div
                   className="px-3 py-6 text-center text-[12px]"
-                  style={{ color: "#797870" }}
+                  style={{ color: "var(--ink-muted)" }}
                 >
                   No events match this filter.
                 </div>
@@ -7591,7 +8247,7 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
             </div>
             <p
               className="text-[11px] mt-2"
-              style={{ color: "#797870" }}
+              style={{ color: "var(--ink-muted)" }}
             >
               Hover an event to highlight its wells. Click to open in Guided
               validation.
@@ -7618,9 +8274,9 @@ const PlateTab = ({ events, plateMap, setPlateMap, samples, onPick, metadata, fo
         <div
           className="p-6 rounded-sm text-[13px]"
           style={{
-            background: "#f6f7f7",
-            border: "1px solid #e6e8e8",
-            color: "#275662",
+            background: "var(--bg-soft)",
+            border: "1px solid var(--border)",
+            color: "var(--ink)",
           }}
         >
           No plate map loaded. Open <code>plate_map.tsv</code> above, or
@@ -7678,7 +8334,7 @@ const DualRange = ({ values, min, max, step, onChange }) => (
             borderRadius: 3,
             background: getTrackBackground({
               values,
-              colors: ["#e6e8e8", "#00a3a6", "#e6e8e8"],
+              colors: ["var(--border)", "#00a3a6", "var(--border)"],
               min,
               max,
             }),
@@ -7700,7 +8356,7 @@ const DualRange = ({ values, min, max, step, onChange }) => (
             height: 16,
             width: 16,
             borderRadius: "50%",
-            background: "#fff",
+            background: "var(--bg-card)",
             border: `2px solid ${isDragged ? "#00a3a6" : "#275662"}`,
             boxShadow: isDragged
               ? "0 0 0 4px rgba(0,163,166,0.18)"
@@ -7721,6 +8377,7 @@ const BulkApplyByCriteriaDialog = ({
   onApply,
   bulkMarkSameSubjectAsFP,
   bulkMarkTowardNCAsTP,
+  actionEnabled,
 }) => {
   const pendingSameSubjectCount = useMemo(() => {
     if (!metadata) return 0;
@@ -7826,6 +8483,10 @@ const BulkApplyByCriteriaDialog = ({
   });
   const [verdict, setVerdict] = useState("true_positive");
   const [comment, setComment] = useState("");
+  // Action override for the bulk apply. null = leave each event's
+  // existing action untouched. Only meaningful when the suppress/keep
+  // feature is enabled in Configuration.
+  const [bulkAction, setBulkAction] = useState(null);
 
   // Compute the 5-criteria pass/fail status for every event once. Each
   // entry is { shape, nOnLine, decade, missing, above } where each
@@ -7896,6 +8557,7 @@ const BulkApplyByCriteriaDialog = ({
       matched.map((e) => e.id),
       verdict,
       comment.trim(),
+      bulkAction,
     );
     onClose();
   };
@@ -7918,7 +8580,7 @@ const BulkApplyByCriteriaDialog = ({
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
         style={{
-          background: "#fff",
+          background: "var(--bg-card)",
           borderRadius: 4,
           padding: "24px 28px",
           maxWidth: 720,
@@ -7933,14 +8595,14 @@ const BulkApplyByCriteriaDialog = ({
           style={{
             fontSize: 18,
             fontWeight: 700,
-            color: "#275662",
+            color: "var(--ink)",
             fontFamily: '"Raleway", sans-serif',
             marginBottom: 6,
           }}
         >
           Bulk apply verdict by criteria
         </h3>
-        <p style={{ fontSize: 12, color: "#797870", marginBottom: 16 }}>
+        <p style={{ fontSize: 12, color: "var(--ink-muted)", marginBottom: 16 }}>
           Match every event whose probability, rate, introduced %  and
           5-criteria status fit the filters below, then apply a single
           verdict (and an optional shared note).
@@ -7956,14 +8618,14 @@ const BulkApplyByCriteriaDialog = ({
               padding: 12,
               marginBottom: 16,
               borderRadius: 4,
-              background: "#f6f7f7",
-              border: "1px solid #e6e8e8",
+              background: "var(--bg-soft)",
+              border: "1px solid var(--border)",
             }}
           >
             <div
               style={{
                 fontSize: 10,
-                color: "#797870",
+                color: "var(--ink-muted)",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
                 letterSpacing: "0.1em",
@@ -7980,9 +8642,9 @@ const BulkApplyByCriteriaDialog = ({
                   onClick={() => runPreset(bulkMarkSameSubjectAsFP)}
                   className="px-3 py-2 text-[11px] rounded-sm flex items-center gap-2"
                   style={{
-                    background: "#fff",
-                    color: "#275662",
-                    border: "1px solid #c4c0b3",
+                    background: "var(--bg-card)",
+                    color: "var(--ink)",
+                    border: "1px solid var(--border-strong)",
                     fontWeight: 600,
                     fontFamily: '"Raleway", sans-serif',
                     cursor: "pointer",
@@ -7993,7 +8655,7 @@ const BulkApplyByCriteriaDialog = ({
                     e.currentTarget.style.color = "#ed6e6c";
                   }}
                   onMouseOut={(e) => {
-                    e.currentTarget.style.borderColor = "#c4c0b3";
+                    e.currentTarget.style.borderColor = "var(--border-strong)";
                     e.currentTarget.style.color = "#275662";
                   }}
                   title="Bulk-classify same-subject (longitudinal) events as false positives, with an explanatory note"
@@ -8011,9 +8673,9 @@ const BulkApplyByCriteriaDialog = ({
                   onClick={() => runPreset(bulkMarkTowardNCAsTP)}
                   className="px-3 py-2 text-[11px] rounded-sm flex items-center gap-2"
                   style={{
-                    background: "#fff",
-                    color: "#275662",
-                    border: "1px solid #c4c0b3",
+                    background: "var(--bg-card)",
+                    color: "var(--ink)",
+                    border: "1px solid var(--border-strong)",
                     fontWeight: 600,
                     fontFamily: '"Raleway", sans-serif',
                     cursor: "pointer",
@@ -8024,7 +8686,7 @@ const BulkApplyByCriteriaDialog = ({
                     e.currentTarget.style.color = "#00a3a6";
                   }}
                   onMouseOut={(e) => {
-                    e.currentTarget.style.borderColor = "#c4c0b3";
+                    e.currentTarget.style.borderColor = "var(--border-strong)";
                     e.currentTarget.style.color = "#275662";
                   }}
                   title="Bulk-classify events flowing into a negative control as true positives"
@@ -8052,7 +8714,7 @@ const BulkApplyByCriteriaDialog = ({
             <div
               style={{
                 fontSize: 11,
-                color: "#797870",
+                color: "var(--ink-muted)",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
                 marginBottom: 4,
@@ -8078,11 +8740,13 @@ const BulkApplyByCriteriaDialog = ({
                   width: 80,
                   padding: "4px 6px",
                   fontSize: 12,
-                  border: "1px solid #c4c0b3",
+                  border: "1px solid var(--border-strong)",
                   borderRadius: 2,
+                  background: "var(--bg-card)",
+                  color: "var(--ink)",
                 }}
               />
-              <span style={{ fontSize: 11, color: "#797870" }}>to</span>
+              <span style={{ fontSize: 11, color: "var(--ink-muted)" }}>to</span>
               <input
                 type="number"
                 min={0}
@@ -8098,8 +8762,10 @@ const BulkApplyByCriteriaDialog = ({
                   width: 80,
                   padding: "4px 6px",
                   fontSize: 12,
-                  border: "1px solid #c4c0b3",
+                  border: "1px solid var(--border-strong)",
                   borderRadius: 2,
+                  background: "var(--bg-card)",
+                  color: "var(--ink)",
                 }}
               />
             </div>
@@ -8120,7 +8786,7 @@ const BulkApplyByCriteriaDialog = ({
             <div
               style={{
                 fontSize: 11,
-                color: "#797870",
+                color: "var(--ink-muted)",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
                 marginBottom: 4,
@@ -8147,11 +8813,13 @@ const BulkApplyByCriteriaDialog = ({
                   width: 80,
                   padding: "4px 6px",
                   fontSize: 12,
-                  border: "1px solid #c4c0b3",
+                  border: "1px solid var(--border-strong)",
                   borderRadius: 2,
+                  background: "var(--bg-card)",
+                  color: "var(--ink)",
                 }}
               />
-              <span style={{ fontSize: 11, color: "#797870" }}>to</span>
+              <span style={{ fontSize: 11, color: "var(--ink-muted)" }}>to</span>
               <input
                 type="number"
                 min={0}
@@ -8167,8 +8835,10 @@ const BulkApplyByCriteriaDialog = ({
                   width: 80,
                   padding: "4px 6px",
                   fontSize: 12,
-                  border: "1px solid #c4c0b3",
+                  border: "1px solid var(--border-strong)",
                   borderRadius: 2,
+                  background: "var(--bg-card)",
+                  color: "var(--ink)",
                 }}
               />
             </div>
@@ -8185,7 +8855,7 @@ const BulkApplyByCriteriaDialog = ({
               />
               <div
                 className="flex justify-between text-[10px] mt-0.5"
-                style={{ color: "#797870" }}
+                style={{ color: "var(--ink-muted)" }}
               >
                 <span>0%</span>
                 <span>0.1%</span>
@@ -8199,7 +8869,7 @@ const BulkApplyByCriteriaDialog = ({
             <div
               style={{
                 fontSize: 11,
-                color: "#797870",
+                color: "var(--ink-muted)",
                 fontWeight: 700,
                 fontFamily: '"Raleway", sans-serif',
                 marginBottom: 4,
@@ -8238,11 +8908,13 @@ const BulkApplyByCriteriaDialog = ({
                   width: 80,
                   padding: "4px 6px",
                   fontSize: 12,
-                  border: "1px solid #c4c0b3",
+                  border: "1px solid var(--border-strong)",
                   borderRadius: 2,
+                  background: "var(--bg-card)",
+                  color: "var(--ink)",
                 }}
               />
-              <span style={{ fontSize: 11, color: "#797870" }}>to</span>
+              <span style={{ fontSize: 11, color: "var(--ink-muted)" }}>to</span>
               <input
                 type="number"
                 min={0}
@@ -8259,8 +8931,10 @@ const BulkApplyByCriteriaDialog = ({
                   width: 80,
                   padding: "4px 6px",
                   fontSize: 12,
-                  border: "1px solid #c4c0b3",
+                  border: "1px solid var(--border-strong)",
                   borderRadius: 2,
+                  background: "var(--bg-card)",
+                  color: "var(--ink)",
                 }}
               />
             </div>
@@ -8283,7 +8957,7 @@ const BulkApplyByCriteriaDialog = ({
         <div
           style={{
             fontSize: 11,
-            color: "#797870",
+            color: "var(--ink-muted)",
             fontWeight: 700,
             fontFamily: '"Raleway", sans-serif',
             marginBottom: 6,
@@ -8313,7 +8987,7 @@ const BulkApplyByCriteriaDialog = ({
                 fontSize: 12,
               }}
             >
-              <span style={{ color: "#275662" }}>{c.label}</span>
+              <span style={{ color: "var(--ink)" }}>{c.label}</span>
               <div style={{ display: "flex", gap: 4 }}>
                 {[
                   { k: "any", lbl: "any" },
@@ -8331,8 +9005,8 @@ const BulkApplyByCriteriaDialog = ({
                       style={{
                         padding: "3px 9px",
                         fontSize: 11,
-                        background: active ? "#275662" : "#fff",
-                        color: active ? "#fff" : "#275662",
+                        background: active ? "#275662" : "var(--bg-card)",
+                        color: active ? "#fff" : "var(--ink)",
                         border: "1px solid #275662",
                         borderRadius: 2,
                         cursor: ab ? "pointer" : "not-allowed",
@@ -8353,7 +9027,7 @@ const BulkApplyByCriteriaDialog = ({
         <div
           style={{
             fontSize: 11,
-            color: "#797870",
+            color: "var(--ink-muted)",
             fontWeight: 700,
             fontFamily: '"Raleway", sans-serif',
             marginBottom: 6,
@@ -8367,7 +9041,7 @@ const BulkApplyByCriteriaDialog = ({
           {[
             { v: "true_positive", lbl: "True positive", bg: "#00a3a6" },
             { v: "false_positive", lbl: "False positive", bg: "#ed6e6c" },
-            { v: "uncertain", lbl: "Uncertain", bg: "#c4c0b3" },
+            { v: "uncertain", lbl: "Uncertain", bg: "var(--border-strong)" },
             { v: "pending", lbl: "Reset to pending", bg: "#5a5550" },
           ].map((v) => {
             const active = verdict === v.v;
@@ -8378,9 +9052,9 @@ const BulkApplyByCriteriaDialog = ({
                 style={{
                   padding: "6px 12px",
                   fontSize: 12,
-                  background: active ? v.bg : "#fff",
-                  color: active ? "#fff" : "#275662",
-                  border: `1px solid ${active ? v.bg : "#c4c0b3"}`,
+                  background: active ? v.bg : "var(--bg-card)",
+                  color: active ? "#fff" : "var(--ink)",
+                  border: `1px solid ${active ? v.bg : "var(--border-strong)"}`,
                   borderRadius: 2,
                   cursor: "pointer",
                   fontWeight: 700,
@@ -8393,11 +9067,101 @@ const BulkApplyByCriteriaDialog = ({
           })}
         </div>
 
+        {actionEnabled &&
+          (verdict === "true_positive" || verdict === "false_positive") && (
+            <>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--ink-muted)",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                  marginBottom: 6,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Action
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 6,
+                  marginBottom: 16,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                {[
+                  {
+                    id: "keep",
+                    Icon: Save,
+                    label: "Keep",
+                    color: "#00a3a6",
+                    title:
+                      "Force every matched sample to keep. Click again to leave existing actions untouched.",
+                  },
+                  {
+                    id: "suppress",
+                    Icon: Trash2,
+                    label: "Suppress",
+                    color: "#ed6e6c",
+                    title:
+                      "Force every matched sample to suppress. Click again to leave existing actions untouched.",
+                  },
+                ].map((opt) => {
+                  const active = bulkAction === opt.id;
+                  const Icon = opt.Icon;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() =>
+                        setBulkAction(active ? null : opt.id)
+                      }
+                      title={opt.title}
+                      style={{
+                        padding: "6px 12px",
+                        fontSize: 12,
+                        background: active ? opt.color : "var(--bg-card)",
+                        color: active ? "#fff" : "var(--ink)",
+                        border: `1px solid ${
+                          active ? opt.color : "var(--border-strong)"
+                        }`,
+                        borderRadius: 2,
+                        cursor: "pointer",
+                        fontWeight: 700,
+                        fontFamily: '"Raleway", sans-serif',
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {opt.label}
+                    </button>
+                  );
+                })}
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--ink-muted)",
+                    fontStyle: "italic",
+                  }}
+                >
+                  {bulkAction
+                    ? `Will overwrite the action on every matched sample.`
+                    : `No action chosen — existing actions on matched samples are preserved.`}
+                </span>
+              </div>
+            </>
+          )}
+
         {/* Comment */}
         <div
           style={{
             fontSize: 11,
-            color: "#797870",
+            color: "var(--ink-muted)",
             fontWeight: 700,
             fontFamily: '"Raleway", sans-serif',
             marginBottom: 6,
@@ -8416,7 +9180,9 @@ const BulkApplyByCriteriaDialog = ({
             width: "100%",
             padding: "8px",
             fontSize: 12,
-            border: "1px solid #c4c0b3",
+            border: "1px solid var(--border-strong)",
+            background: "var(--bg-card)",
+            color: "var(--ink)",
             borderRadius: 2,
             fontFamily: "system-ui, sans-serif",
             marginBottom: 16,
@@ -8432,7 +9198,7 @@ const BulkApplyByCriteriaDialog = ({
             alignItems: "center",
             gap: 10,
             paddingTop: 12,
-            borderTop: "1px solid #e6e8e8",
+            borderTop: "1px solid var(--border)",
           }}
         >
           <div
@@ -8452,9 +9218,9 @@ const BulkApplyByCriteriaDialog = ({
                 padding: "8px 16px",
                 fontSize: 12,
                 fontWeight: 600,
-                background: "#fff",
-                color: "#797870",
-                border: "1px solid #c4c0b3",
+                background: "var(--bg-card)",
+                color: "var(--ink-muted)",
+                border: "1px solid var(--border-strong)",
                 borderRadius: 3,
                 cursor: "pointer",
                 fontFamily: '"Raleway", sans-serif',
@@ -8469,7 +9235,7 @@ const BulkApplyByCriteriaDialog = ({
                 padding: "8px 16px",
                 fontSize: 12,
                 fontWeight: 700,
-                background: matched.length === 0 ? "#e6e8e8" : "#00a3a6",
+                background: matched.length === 0 ? "var(--border)" : "#00a3a6",
                 color: matched.length === 0 ? "#797870" : "#fff",
                 border: "none",
                 borderRadius: 3,
@@ -8505,6 +9271,8 @@ const ValidateTab = ({
   ab,
   setVerdict,
   setNote,
+  actionEnabled,
+  setAction,
   metadata,
   plateMap,
   bulkResetAllVerdicts,
@@ -8666,11 +9434,12 @@ const ValidateTab = ({
             bulkApplyToEvents && onOpenBulkApply ? onOpenBulkApply : undefined
           }
           events={events}
+          actionEnabled={actionEnabled}
           hasAb={hasAb}
         >
           <div className="ml-auto flex items-center gap-2.5">
             <VerdictDistribution events={queue} />
-            <span className="text-[12px]" style={{ color: "#797870" }}>
+            <span className="text-[12px]" style={{ color: "var(--ink-muted)" }}>
               {queue.length} / {events.length}
             </span>
           </div>
@@ -8687,7 +9456,7 @@ const ValidateTab = ({
           }}
         >
           <span>Event queue</span>
-          <span className="tabular" style={{ color: "#275662" }}>
+          <span className="tabular" style={{ color: "var(--ink)" }}>
             {idx + 1}/{queue.length}
           </span>
         </div>
@@ -8697,9 +9466,9 @@ const ValidateTab = ({
             onClick={bulkResetAllVerdicts}
             className="w-full mb-3 px-3 py-2 text-[11px] rounded-sm flex items-center justify-center gap-1.5 text-left"
             style={{
-              background: "#fff",
-              color: "#797870",
-              border: "1px solid #e6e8e8",
+              background: "var(--bg-card)",
+              color: "var(--ink-muted)",
+              border: "1px solid var(--border)",
               fontWeight: 600,
               fontFamily: '"Raleway", sans-serif',
               cursor: "pointer",
@@ -8709,7 +9478,7 @@ const ValidateTab = ({
               e.currentTarget.style.color = "#ed6e6c";
             }}
             onMouseOut={(e) => {
-              e.currentTarget.style.borderColor = "#e6e8e8";
+              e.currentTarget.style.borderColor = "var(--border)";
               e.currentTarget.style.color = "#797870";
             }}
             title="Clear all verdicts and notes; events return to the pending state"
@@ -8734,9 +9503,9 @@ const ValidateTab = ({
             title="Previous pending event (←)"
             className="px-3 py-1.5 text-[11px] rounded-sm flex items-center gap-1.5"
             style={{
-              background: "#fff",
-              color: hasPrevPending ? "#275662" : "#c4c0b3",
-              border: "1px solid #c4c0b3",
+              background: "var(--bg-card)",
+              color: hasPrevPending ? "#275662" : "var(--border-strong)",
+              border: "1px solid var(--border-strong)",
               fontWeight: 600,
               fontFamily: '"Raleway", sans-serif',
               cursor: hasPrevPending ? "pointer" : "not-allowed",
@@ -8748,9 +9517,9 @@ const ValidateTab = ({
               style={{
                 fontSize: 9,
                 padding: "1px 4px",
-                background: "#f6f7f7",
+                background: "var(--bg-soft)",
                 borderRadius: 2,
-                color: "#797870",
+                color: "var(--ink-muted)",
                 marginLeft: 2,
               }}
             >
@@ -8763,8 +9532,8 @@ const ValidateTab = ({
             title="Next pending event (→)"
             className="px-3 py-1.5 text-[11px] rounded-sm flex items-center gap-1.5"
             style={{
-              background: hasNextPending ? "#00a3a6" : "#fff",
-              color: hasNextPending ? "#fff" : "#c4c0b3",
+              background: hasNextPending ? "#00a3a6" : "var(--bg-card)",
+              color: hasNextPending ? "#fff" : "var(--border-strong)",
               border: hasNextPending ? "1px solid #00a3a6" : "1px solid #c4c0b3",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
@@ -8776,7 +9545,7 @@ const ValidateTab = ({
               style={{
                 fontSize: 9,
                 padding: "1px 4px",
-                background: hasNextPending ? "rgba(255,255,255,0.25)" : "#f6f7f7",
+                background: hasNextPending ? "rgba(255,255,255,0.25)" : "var(--bg-soft)",
                 borderRadius: 2,
                 color: hasNextPending ? "#fff" : "#797870",
               }}
@@ -8790,9 +9559,9 @@ const ValidateTab = ({
             title="Keyboard shortcuts (?)"
             className="ml-auto px-2 py-1.5 text-[11px] rounded-sm"
             style={{
-              background: showShortcutsHelp ? "#275662" : "#fff",
+              background: showShortcutsHelp ? "#275662" : "var(--bg-card)",
               color: showShortcutsHelp ? "#fff" : "#797870",
-              border: "1px solid #c4c0b3",
+              border: "1px solid var(--border-strong)",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
               cursor: "pointer",
@@ -8807,8 +9576,8 @@ const ValidateTab = ({
           <div
             className="mb-4 p-4 rounded-sm"
             style={{
-              background: "#f6f7f7",
-              border: "1px solid #e6e8e8",
+              background: "var(--bg-soft)",
+              border: "1px solid var(--border)",
               borderLeft: "4px solid #00a3a6",
             }}
           >
@@ -8842,24 +9611,24 @@ const ValidateTab = ({
                       minWidth: 28,
                       textAlign: "center",
                       padding: "2px 6px",
-                      background: "#fff",
-                      border: "1px solid #c4c0b3",
+                      background: "var(--bg-card)",
+                      border: "1px solid var(--border-strong)",
                       borderRadius: 3,
                       fontFamily: "ui-monospace, monospace",
                       fontSize: 11,
                       fontWeight: 700,
-                      color: "#275662",
+                      color: "var(--ink)",
                     }}
                   >
                     {key}
                   </kbd>
-                  <span style={{ color: "#5a5550" }}>{desc}</span>
+                  <span style={{ color: "var(--ink-soft)" }}>{desc}</span>
                 </div>
               ))}
             </div>
             <div
               className="text-[11px] mt-3"
-              style={{ color: "#797870", fontStyle: "italic" }}
+              style={{ color: "var(--ink-muted)", fontStyle: "italic" }}
             >
               Shortcuts are disabled while typing in the notes field. Use the
               event queue in the sidebar to jump back to a validated event.
@@ -8884,7 +9653,7 @@ const ValidateTab = ({
             ) : (
               <div
                 className="p-4 text-[13px] rounded-sm"
-                style={{ background: "#fdeceb", border: "1px solid #ed6e6c", color: "#8a2422" }}
+                style={{ background: "var(--bg-alert)", border: "1px solid #ed6e6c", color: "#8a2422" }}
               >
                 Open <code>species_abundance.tsv</code> to see the plot and
                 enable diagnostic checks.
@@ -8894,21 +9663,17 @@ const ValidateTab = ({
               <Diag
                 label="Probability"
                 value={sel.score.toFixed(3)}
-                tone={sel.score > 0.9 ? "good" : sel.score > 0.7 ? "warn" : "bad"}
+                tone={metricTone(sel.score, "probability")}
               />
-              <Diag label="Rate" value={`${(sel.rate * 100).toFixed(2)}%`} />
+              <Diag
+                label="Rate"
+                value={`${(sel.rate * 100).toFixed(2)}%`}
+                tone={metricTone(sel.rate, "rate")}
+              />
               <Diag
                 label="Introduced"
                 value={formatIntroducedPct(sel.introducedPct)}
-                tone={
-                  sel.introducedPct == null
-                    ? "neutral"
-                    : sel.introducedPct > 30
-                      ? "bad"
-                      : sel.introducedPct > 10
-                        ? "warn"
-                        : "good"
-                }
+                tone={metricTone(sel.introducedPct, "introduced")}
               />
             </div>
 
@@ -8920,8 +9685,8 @@ const ValidateTab = ({
               style={{
                 background:
                   autoScore.total > 0 && autoScore.good < autoScore.total
-                    ? "#fdf2f1"
-                    : "#f6f7f7",
+                    ? "var(--bg-alert-soft)"
+                    : "var(--bg-soft)",
                 border:
                   autoScore.total > 0 && autoScore.good < autoScore.total
                     ? "1px solid #f4b5b3"
@@ -8957,7 +9722,7 @@ const ValidateTab = ({
                         border: 0,
                         padding: 0,
                         cursor: "pointer",
-                        color: "#797870",
+                        color: "var(--ink-muted)",
                       }}
                     >
                       <HelpCircle className="w-3 h-3" />
@@ -9002,7 +9767,7 @@ const ValidateTab = ({
                     <span style={{ fontSize: 22, fontWeight: 800 }}>
                       {autoScore.good}
                     </span>
-                    <span style={{ fontSize: 13, color: "#797870" }}>
+                    <span style={{ fontSize: 13, color: "var(--ink-muted)" }}>
                       {" "}
                       / {autoScore.total}
                     </span>
@@ -9012,7 +9777,7 @@ const ValidateTab = ({
               {showDiagBlurb && (
                 <div
                   className="text-[11px] mb-3"
-                  style={{ color: "#5a5550", lineHeight: 1.5, fontStyle: "italic" }}
+                  style={{ color: "var(--ink-soft)", lineHeight: 1.5, fontStyle: "italic" }}
                 >
                   Each check is a hint, not a verdict. The grade is informative
                   — failing criterion 04 (missing source species) alone is a
@@ -9026,7 +9791,7 @@ const ValidateTab = ({
               )}
               <div className="space-y-1.5">
                 {autoScore.reasons.length === 0 && (
-                  <div className="text-[12px]" style={{ color: "#797870" }}>
+                  <div className="text-[12px]" style={{ color: "var(--ink-muted)" }}>
                     Open the abundance table to compute.
                   </div>
                 )}
@@ -9043,7 +9808,7 @@ const ValidateTab = ({
                         style={{ color: "#ed6e6c" }}
                       />
                     )}
-                    <span style={{ color: "#275662" }}>{r.label}</span>
+                    <span style={{ color: "var(--ink)" }}>{r.label}</span>
                   </div>
                 ))}
               </div>
@@ -9056,7 +9821,7 @@ const ValidateTab = ({
                   border: 0,
                   padding: 0,
                   cursor: "pointer",
-                  color: "#275662",
+                  color: "var(--ink)",
                   fontWeight: 700,
                   fontFamily: '"Raleway", sans-serif',
                 }}
@@ -9192,7 +9957,7 @@ const ValidateTab = ({
             (metadata && (metadata.bySample[sel.source] || metadata.bySample[sel.target]))) && (
             <div
               className="mt-4 p-3 rounded-sm text-[12px]"
-              style={{ background: "#f6f7f7", border: "1px solid #e6e8e8" }}
+              style={{ background: "var(--bg-soft)", border: "1px solid var(--border)" }}
             >
               <button
                 type="button"
@@ -9243,7 +10008,7 @@ const ValidateTab = ({
                     >
                       <div
                         className="text-[10px] uppercase mb-2 self-start"
-                        style={{ color: "#797870", fontWeight: 600 }}
+                        style={{ color: "var(--ink-muted)", fontWeight: 600 }}
                       >
                         Position on {plateMap.bySample[sel.source]?.plate}
                       </div>
@@ -9263,7 +10028,7 @@ const ValidateTab = ({
                       {onOpenPlate && (
                         <div
                           className="text-[10px] mt-2 flex items-center gap-1"
-                          style={{ color: "#797870", fontStyle: "italic" }}
+                          style={{ color: "var(--ink-muted)", fontStyle: "italic" }}
                         >
                           <span>open in Plate inspection</span>
                           <ArrowRight className="w-3 h-3 opacity-60" />
@@ -9277,7 +10042,7 @@ const ValidateTab = ({
                       <div>
                         <div
                           className="text-[10px] uppercase mb-2"
-                          style={{ color: "#797870", fontWeight: 600 }}
+                          style={{ color: "var(--ink-muted)", fontWeight: 600 }}
                         >
                           Sample context
                         </div>
@@ -9288,12 +10053,12 @@ const ValidateTab = ({
                                 className="w-2 h-2 rounded-full"
                                 style={{ background: "#00a3a6" }}
                               />
-                              <span style={{ color: "#797870", fontSize: 11 }}>
+                              <span style={{ color: "var(--ink-muted)", fontSize: 11 }}>
                                 source
                               </span>
                               <span
                                 style={{
-                                  color: "#275662",
+                                  color: "var(--ink)",
                                   fontWeight: 600,
                                   fontFamily: '"Raleway", sans-serif',
                                 }}
@@ -9309,12 +10074,12 @@ const ValidateTab = ({
                                 className="w-2 h-2 rounded-full"
                                 style={{ background: "#ed6e6c" }}
                               />
-                              <span style={{ color: "#797870", fontSize: 11 }}>
+                              <span style={{ color: "var(--ink-muted)", fontSize: 11 }}>
                                 target
                               </span>
                               <span
                                 style={{
-                                  color: "#275662",
+                                  color: "var(--ink)",
                                   fontWeight: 600,
                                   fontFamily: '"Raleway", sans-serif',
                                 }}
@@ -9336,7 +10101,7 @@ const ValidateTab = ({
           {sel.introduced.length > 0 && (
             <div
               className="mt-4 p-3 rounded-sm text-[12px]"
-              style={{ background: "#f6f7f7", border: "1px solid #e6e8e8" }}
+              style={{ background: "var(--bg-soft)", border: "1px solid var(--border)" }}
             >
               <button
                 type="button"
@@ -9363,15 +10128,15 @@ const ValidateTab = ({
               {showIntroduced && (
                 <div
                   className="flex flex-wrap gap-1 max-h-28 overflow-auto p-2 rounded-sm mt-3"
-                  style={{ background: "#fff", border: "1px solid #e6e8e8" }}
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
                 >
                   {sel.introduced.slice(0, 80).map((s, i) => (
                     <span
                       key={i}
                       className="text-[11px] px-1.5 py-0.5 rounded-sm"
                       style={{
-                        background: "#f6f7f7",
-                        color: "#275662",
+                        background: "var(--bg-soft)",
+                        color: "var(--ink)",
                         fontFamily: "system-ui, monospace",
                       }}
                     >
@@ -9381,7 +10146,7 @@ const ValidateTab = ({
                   {sel.introduced.length > 80 && (
                     <span
                       className="text-[11px] px-1.5 py-0.5"
-                      style={{ color: "#797870" }}
+                      style={{ color: "var(--ink-muted)" }}
                     >
                       + {sel.introduced.length - 80} more
                     </span>
@@ -9393,7 +10158,7 @@ const ValidateTab = ({
           </div>
         </div>
 
-        <div className="mt-8 pt-6" style={{ borderTop: "1px solid #e6e8e8" }}>
+        <div className="mt-8 pt-6" style={{ borderTop: "1px solid var(--border)" }}>
           <div
             className="text-[10px] tracking-[0.15em] uppercase mb-3"
             style={{
@@ -9446,13 +10211,80 @@ const ValidateTab = ({
               Reset
             </VerdictBtn>
           </div>
+          {actionEnabled &&
+            (sel.verdict === "true_positive" ||
+              sel.verdict === "false_positive") && (
+            <div
+              className="flex items-center gap-2 mb-4 p-2 rounded-sm"
+              style={{
+                background: "var(--bg-soft)",
+                border: "1px solid var(--border)",
+              }}
+            >
+              <span
+                className="text-[10px] tracking-[0.15em] uppercase"
+                style={{
+                  color: "var(--ink-muted)",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                Action
+              </span>
+              {[
+                {
+                  id: "keep",
+                  label: "Keep",
+                  hint: "Acknowledge the contamination but keep the sample in the study.",
+                },
+                {
+                  id: "suppress",
+                  label: "Suppress",
+                  hint: "Drop this contaminated sample from downstream analyses.",
+                },
+              ].map((opt) => {
+                const defaultAction =
+                  sel.verdict === "false_positive" ? "keep" : "suppress";
+                const active = (sel.action || defaultAction) === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setAction(sel.id, opt.id)}
+                    title={opt.hint}
+                    className="px-3 py-1 text-[11px] rounded-sm"
+                    style={{
+                      background: active
+                        ? opt.id === "suppress"
+                          ? "#ed6e6c"
+                          : "#00a3a6"
+                        : "var(--bg-card)",
+                      color: active ? "#fff" : "var(--ink)",
+                      border: active
+                        ? "1px solid transparent"
+                        : "1px solid var(--border-strong)",
+                      fontWeight: 700,
+                      fontFamily: '"Raleway", sans-serif',
+                      cursor: "pointer",
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <textarea
             value={sel.notes}
             onChange={(e) => setNote(sel.id, e.target.value)}
             placeholder="Notes: related samples? plate position? cascade?"
             rows={3}
             className="w-full px-3 py-2 text-[13px] rounded-sm outline-none"
-            style={{ border: "1px solid #c4c0b3" }}
+            style={{
+              border: "1px solid var(--border-strong)",
+              background: "var(--bg-card)",
+              color: "var(--ink)",
+            }}
           />
           <div className="mt-4 flex justify-between">
             <button
@@ -9461,8 +10293,8 @@ const ValidateTab = ({
               className="px-5 py-2 text-[12px] rounded-sm"
               style={{
                 border: "1px solid #275662",
-                background: "#fff",
-                color: "#275662",
+                background: "var(--bg-card)",
+                color: "var(--ink)",
                 fontWeight: 700,
                 opacity: idx === 0 ? 0.3 : 1,
                 cursor: idx === 0 ? "not-allowed" : "pointer",
@@ -9501,12 +10333,12 @@ const ValidateTab = ({
 const ExportCard = ({ title, desc, action, onClick }) => (
   <div
     className="p-5 flex flex-col rounded-sm"
-    style={{ border: "1px solid #e6e8e8", background: "#fff" }}
+    style={{ border: "1px solid var(--border)", background: "var(--bg-card)" }}
   >
     <div
       className="mb-2"
       style={{
-        color: "#275662",
+        color: "var(--ink)",
         fontSize: 18,
         fontWeight: 700,
         fontFamily: '"Raleway", sans-serif',
@@ -9514,7 +10346,7 @@ const ExportCard = ({ title, desc, action, onClick }) => (
     >
       {title}
     </div>
-    <div className="text-[13px] flex-1 mb-4" style={{ color: "#797870", lineHeight: 1.5 }}>
+    <div className="text-[13px] flex-1 mb-4" style={{ color: "var(--ink-muted)", lineHeight: 1.5 }}>
       {desc}
     </div>
     <button
@@ -9554,7 +10386,7 @@ const HelpSection = ({ id, eyebrow, title, children }) => (
     <h2
       className="text-[24px] mb-3"
       style={{
-        color: "#275662",
+        color: "var(--ink)",
         fontWeight: 700,
         fontFamily: '"Raleway", sans-serif',
       }}
@@ -9568,14 +10400,14 @@ const HelpSection = ({ id, eyebrow, title, children }) => (
 );
 
 const HelpCol = ({ name, required, recognized, type, desc, aliases, example }) => (
-  <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+  <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
     <td className="py-3 pr-4 align-top">
       <div className="flex items-center gap-2 flex-wrap">
         <code
           className="text-[12px] px-1.5 py-0.5 rounded-sm"
           style={{
-            background: required ? "#275662" : "#f6f7f7",
-            color: required ? "#fff" : "#275662",
+            background: required ? "#275662" : "var(--bg-soft)",
+            color: required ? "#fff" : "var(--ink)",
             fontFamily: "ui-monospace, monospace",
             fontWeight: 700,
           }}
@@ -9599,7 +10431,7 @@ const HelpCol = ({ name, required, recognized, type, desc, aliases, example }) =
             className="text-[10px] px-1.5 rounded-sm"
             style={{
               background: "rgba(0,163,166,0.15)",
-              color: "#275662",
+              color: "var(--ink)",
               fontWeight: 700,
             }}
           >
@@ -9608,7 +10440,7 @@ const HelpCol = ({ name, required, recognized, type, desc, aliases, example }) =
         )}
       </div>
       {aliases && (
-        <div className="text-[11px] mt-1.5" style={{ color: "#797870" }}>
+        <div className="text-[11px] mt-1.5" style={{ color: "var(--ink-muted)" }}>
           aliases: {aliases.map((a) => (
             <code
               key={a}
@@ -9621,7 +10453,7 @@ const HelpCol = ({ name, required, recognized, type, desc, aliases, example }) =
         </div>
       )}
     </td>
-    <td className="py-3 pr-4 align-top text-[12px]" style={{ color: "#797870" }}>
+    <td className="py-3 pr-4 align-top text-[12px]" style={{ color: "var(--ink-muted)" }}>
       {type}
     </td>
     <td className="py-3 align-top text-[13px]">
@@ -9630,10 +10462,10 @@ const HelpCol = ({ name, required, recognized, type, desc, aliases, example }) =
         <pre
           className="mt-2 p-2 rounded-sm text-[11px]"
           style={{
-            background: "#f6f7f7",
-            border: "1px solid #e6e8e8",
+            background: "var(--bg-soft)",
+            border: "1px solid var(--border)",
             fontFamily: "ui-monospace, monospace",
-            color: "#275662",
+            color: "var(--ink)",
             overflowX: "auto",
             margin: 0,
           }}
@@ -9690,7 +10522,7 @@ const PatternMiniPlot = ({
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      style={{ background: "#fff", borderRadius: 3 }}
+      style={{ background: "var(--bg-card)", borderRadius: 3 }}
     >
       {/* Faint gridlines — match the main Scatterplot's #eee */}
       {ticks.map((t, i) => (
@@ -9782,7 +10614,7 @@ const PatternMiniPlot = ({
           cy={toY(y)}
           r={2.2}
           fill="#ed6e6c"
-          stroke="#fff"
+          stroke="var(--bg-card)"
           strokeWidth={0.6}
         />
       ))}
@@ -9873,13 +10705,13 @@ const PatternCard = ({
             }
           : verdict === "FN"
             ? { bg: "#9dc544", text: "False negative — missed" }
-            : { bg: "#c4c0b3", text: "Uncertain" };
+            : { bg: "var(--border-strong)", text: "Uncertain" };
   return (
     <div
       style={{
-        border: "1px solid #e6e8e8",
+        border: "1px solid var(--border)",
         borderRadius: 4,
-        background: "#fff",
+        background: "var(--bg-card)",
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
@@ -9922,7 +10754,7 @@ const PatternCard = ({
           style={{
             fontSize: 14,
             fontWeight: 700,
-            color: "#275662",
+            color: "var(--ink)",
             marginBottom: 4,
             fontFamily: '"Raleway", sans-serif',
             lineHeight: 1.3,
@@ -9934,7 +10766,7 @@ const PatternCard = ({
           <div
             style={{
               fontSize: 11,
-              color: "#797870",
+              color: "var(--ink-muted)",
               marginBottom: 10,
               fontFamily: "ui-monospace, monospace",
             }}
@@ -9952,7 +10784,7 @@ const PatternCard = ({
         <div
           style={{
             fontSize: 12,
-            color: "#5a5550",
+            color: "var(--ink-soft)",
             lineHeight: 1.55,
             marginBottom: 12,
           }}
@@ -9961,7 +10793,7 @@ const PatternCard = ({
         </div>
         <div
           className="mt-3 pt-3"
-          style={{ borderTop: "1px solid #f0f2f2" }}
+          style={{ borderTop: "1px solid var(--border-soft)" }}
         >
           <div
             style={{
@@ -9978,7 +10810,7 @@ const PatternCard = ({
           </div>
           <ul
             className="list-disc pl-5 text-[12px]"
-            style={{ color: "#5a5550", lineHeight: 1.55 }}
+            style={{ color: "var(--ink-soft)", lineHeight: 1.55 }}
           >
             {signals.map((s, i) => (
               <li key={i}>{s}</li>
@@ -9988,7 +10820,7 @@ const PatternCard = ({
         {watchOut && (
           <div
             className="mt-3 pt-3"
-            style={{ borderTop: "1px solid #f0f2f2" }}
+            style={{ borderTop: "1px solid var(--border-soft)" }}
           >
             <div
               style={{
@@ -10003,7 +10835,7 @@ const PatternCard = ({
             >
               Watch out
             </div>
-            <p style={{ fontSize: 12, color: "#5a5550", lineHeight: 1.55 }}>
+            <p style={{ fontSize: 12, color: "var(--ink-soft)", lineHeight: 1.55 }}>
               {watchOut}
             </p>
           </div>
@@ -10869,7 +11701,7 @@ const LearnTab = () => {
           background: "rgba(0,163,166,0.06)",
           border: "1px solid rgba(0,163,166,0.3)",
           fontSize: 13,
-          color: "#275662",
+          color: "var(--ink)",
           lineHeight: 1.6,
         }}
       >
@@ -10891,7 +11723,7 @@ const LearnTab = () => {
           style={{
             fontSize: 18,
             fontWeight: 700,
-            color: "#275662",
+            color: "var(--ink)",
             fontFamily: '"Raleway", sans-serif',
             marginBottom: 4,
             display: "flex",
@@ -10912,7 +11744,7 @@ const LearnTab = () => {
         </h2>
         <p
           className="text-[13px] mb-5"
-          style={{ color: "#5a5550", lineHeight: 1.55 }}
+          style={{ color: "var(--ink-soft)", lineHeight: 1.55 }}
         >
           Cases CroCoDeEL flags AND human experts confirm. The shared
           signature: a clear linear cluster on the y = x diagonal,
@@ -11030,7 +11862,7 @@ const LearnTab = () => {
           style={{
             fontSize: 18,
             fontWeight: 700,
-            color: "#275662",
+            color: "var(--ink)",
             fontFamily: '"Raleway", sans-serif',
             marginBottom: 4,
             display: "flex",
@@ -11051,7 +11883,7 @@ const LearnTab = () => {
         </h2>
         <p
           className="text-[13px] mb-5"
-          style={{ color: "#5a5550", lineHeight: 1.55 }}
+          style={{ color: "var(--ink-soft)", lineHeight: 1.55 }}
         >
           CroCoDeEL flagged these but a human curator decided they're
           biological similarity, not mechanical contamination. The
@@ -11062,7 +11894,7 @@ const LearnTab = () => {
         <p
           className="text-[12px] mb-5"
           style={{
-            color: "#797870",
+            color: "var(--ink-muted)",
             lineHeight: 1.55,
             fontStyle: "italic",
           }}
@@ -11078,11 +11910,11 @@ const LearnTab = () => {
             background: "rgba(196,192,179,0.15)",
             borderLeft: "3px solid #c4c0b3",
             fontSize: 12,
-            color: "#5a5550",
+            color: "var(--ink-soft)",
             lineHeight: 1.55,
           }}
         >
-          <strong style={{ color: "#275662" }}>
+          <strong style={{ color: "var(--ink)" }}>
             Verdict depends on your stringency.
           </strong>{" "}
           The original Goulet et al. paper classified these four as false
@@ -11207,7 +12039,7 @@ const LearnTab = () => {
           style={{
             fontSize: 18,
             fontWeight: 700,
-            color: "#275662",
+            color: "var(--ink)",
             fontFamily: '"Raleway", sans-serif',
             marginBottom: 4,
             display: "flex",
@@ -11228,7 +12060,7 @@ const LearnTab = () => {
         </h2>
         <p
           className="text-[13px] mb-5"
-          style={{ color: "#5a5550", lineHeight: 1.55 }}
+          style={{ color: "var(--ink-soft)", lineHeight: 1.55 }}
         >
           The most concerning category for a curator: events humans
           identified that CroCoDeEL didn't flag. They won't appear in your
@@ -11329,10 +12161,10 @@ const LearnTab = () => {
       <div
         className="rounded-sm p-4 mt-8"
         style={{
-          background: "#f6f7f7",
-          border: "1px solid #e6e8e8",
+          background: "var(--bg-soft)",
+          border: "1px solid var(--border)",
           fontSize: 12,
-          color: "#797870",
+          color: "var(--ink-muted)",
           lineHeight: 1.6,
         }}
       >
@@ -11386,7 +12218,7 @@ const HelpTab = ({ onStartTour }) => {
                 href={`#${item.id}`}
                 className="text-[12px] py-1 hover:underline"
                 style={{
-                  color: "#275662",
+                  color: "var(--ink)",
                   fontWeight: 600,
                   fontFamily: '"Raleway", sans-serif',
                 }}
@@ -11411,7 +12243,7 @@ const HelpTab = ({ onStartTour }) => {
           <div
             className="mb-8 p-4 rounded-sm flex items-center gap-4 flex-wrap"
             style={{
-              background: "#eef8f8",
+              background: "var(--bg-info)",
               border: "1px solid #00a3a6",
             }}
           >
@@ -11419,7 +12251,7 @@ const HelpTab = ({ onStartTour }) => {
               <div
                 className="text-[13px]"
                 style={{
-                  color: "#275662",
+                  color: "var(--ink)",
                   fontWeight: 700,
                   fontFamily: '"Raleway", sans-serif',
                 }}
@@ -11428,7 +12260,7 @@ const HelpTab = ({ onStartTour }) => {
               </div>
               <div
                 className="text-[12px] mt-0.5"
-                style={{ color: "#797870" }}
+                style={{ color: "var(--ink-muted)" }}
               >
                 A 60-second walkthrough loads the demo dataset and shows
                 you each tab in context.
@@ -11474,7 +12306,7 @@ const HelpTab = ({ onStartTour }) => {
             sample metadata, then mark each one as true positive, false
             positive or uncertain. Export the curated TSV when done.
           </p>
-          <p style={{ color: "#797870", fontSize: 12 }}>
+          <p style={{ color: "var(--ink-muted)", fontSize: 12 }}>
             CroCoDeEL itself is published in Goulet L. et al., bioRxiv 2025
             (doi.org/10.1101/2025.01.15.633153). This interpretation tool was
             built on top of it to further explore the contamination events,
@@ -11534,12 +12366,12 @@ const HelpTab = ({ onStartTour }) => {
               border: "1px solid rgba(0,163,166,0.3)",
             }}
           >
-            <p className="mb-2" style={{ color: "#275662", fontWeight: 600 }}>
+            <p className="mb-2" style={{ color: "var(--ink)", fontWeight: 600 }}>
               All files are TSV (tab-separated). Column names are matched
               case-insensitively and many aliases are accepted — see each
               file's section below for details.
             </p>
-            <p style={{ color: "#797870" }}>
+            <p style={{ color: "var(--ink-muted)" }}>
               Files are parsed entirely in your browser. Nothing is sent
               to any server.
             </p>
@@ -11567,19 +12399,19 @@ const HelpTab = ({ onStartTour }) => {
               <tr style={{ borderBottom: "2px solid #275662" }}>
                 <th
                   className="py-2 pr-4 text-[11px] uppercase tracking-wider"
-                  style={{ color: "#275662" }}
+                  style={{ color: "var(--ink)" }}
                 >
                   Column
                 </th>
                 <th
                   className="py-2 pr-4 text-[11px] uppercase tracking-wider"
-                  style={{ color: "#275662" }}
+                  style={{ color: "var(--ink)" }}
                 >
                   Type
                 </th>
                 <th
                   className="py-2 text-[11px] uppercase tracking-wider"
-                  style={{ color: "#275662" }}
+                  style={{ color: "var(--ink)" }}
                 >
                   Description
                 </th>
@@ -11673,19 +12505,19 @@ const HelpTab = ({ onStartTour }) => {
               <tr style={{ borderBottom: "2px solid #275662" }}>
                 <th
                   className="py-2 pr-4 text-[11px] uppercase tracking-wider"
-                  style={{ color: "#275662" }}
+                  style={{ color: "var(--ink)" }}
                 >
                   Column
                 </th>
                 <th
                   className="py-2 pr-4 text-[11px] uppercase tracking-wider"
-                  style={{ color: "#275662" }}
+                  style={{ color: "var(--ink)" }}
                 >
                   Type
                 </th>
                 <th
                   className="py-2 text-[11px] uppercase tracking-wider"
-                  style={{ color: "#275662" }}
+                  style={{ color: "var(--ink)" }}
                 >
                   Effect
                 </th>
@@ -11763,14 +12595,14 @@ const HelpTab = ({ onStartTour }) => {
                 ]}
                 example={`sample_id  group_id\n58D7       G_058_059_060\n58M        G_058_059_060\n60D38      G_058_059_060\n63D9       G_063\n83D88      G_083`}
               />
-              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
                 <td className="py-3 pr-4 align-top">
                   <div className="flex items-center gap-2 flex-wrap">
                     <code
                       className="text-[12px] px-1.5 py-0.5 rounded-sm"
                       style={{
-                        background: "#f6f7f7",
-                        color: "#797870",
+                        background: "var(--bg-soft)",
+                        color: "var(--ink-muted)",
                         fontFamily: "ui-monospace, monospace",
                         fontWeight: 700,
                         fontStyle: "italic",
@@ -11782,7 +12614,7 @@ const HelpTab = ({ onStartTour }) => {
                 </td>
                 <td
                   className="py-3 pr-4 align-top text-[12px]"
-                  style={{ color: "#797870" }}
+                  style={{ color: "var(--ink-muted)" }}
                 >
                   any
                 </td>
@@ -11802,10 +12634,10 @@ const HelpTab = ({ onStartTour }) => {
               border: "1px solid rgba(0,163,166,0.3)",
             }}
           >
-            <p style={{ color: "#275662", fontWeight: 600 }}>
+            <p style={{ color: "var(--ink)", fontWeight: 600 }}>
               You can add as many extra columns as you want.
             </p>
-            <p style={{ color: "#797870", marginTop: 4 }}>
+            <p style={{ color: "var(--ink-muted)", marginTop: 4 }}>
               Only the six columns above (sample_id + 5 recognized) trigger
               dedicated UI features. Any other column you include —
               treatment arm, batch number, sequencing depth, location, NCBI
@@ -11893,7 +12725,7 @@ const HelpTab = ({ onStartTour }) => {
         >
           <div className="space-y-4">
             <div>
-              <h4 style={{ color: "#275662", fontWeight: 700 }}>
+              <h4 style={{ color: "var(--ink)", fontWeight: 700 }}>
                 Overview
               </h4>
               <p>
@@ -11902,7 +12734,7 @@ const HelpTab = ({ onStartTour }) => {
               </p>
             </div>
             <div>
-              <h4 style={{ color: "#275662", fontWeight: 700 }}>
+              <h4 style={{ color: "var(--ink)", fontWeight: 700 }}>
                 Events table
               </h4>
               <p>
@@ -11918,7 +12750,7 @@ const HelpTab = ({ onStartTour }) => {
               </p>
             </div>
             <div>
-              <h4 style={{ color: "#275662", fontWeight: 700 }}>
+              <h4 style={{ color: "var(--ink)", fontWeight: 700 }}>
                 Scatterplots
               </h4>
               <p>
@@ -11935,7 +12767,7 @@ const HelpTab = ({ onStartTour }) => {
               </p>
             </div>
             <div>
-              <h4 style={{ color: "#275662", fontWeight: 700 }}>
+              <h4 style={{ color: "var(--ink)", fontWeight: 700 }}>
                 Contamination network
               </h4>
               <p>
@@ -11963,7 +12795,7 @@ const HelpTab = ({ onStartTour }) => {
               </p>
             </div>
             <div>
-              <h4 style={{ color: "#275662", fontWeight: 700 }}>Plate map</h4>
+              <h4 style={{ color: "var(--ink)", fontWeight: 700 }}>Plate map</h4>
               <p>
                 Three sub-views: Overview (thumbnails of all plates),
                 Inspect (single plate with optional contamination arrows),
@@ -11972,7 +12804,7 @@ const HelpTab = ({ onStartTour }) => {
               </p>
             </div>
             <div>
-              <h4 style={{ color: "#275662", fontWeight: 700 }}>
+              <h4 style={{ color: "var(--ink)", fontWeight: 700 }}>
                 Guided validation
               </h4>
               <p>
@@ -11987,18 +12819,19 @@ const HelpTab = ({ onStartTour }) => {
               </p>
             </div>
             <div>
-              <h4 style={{ color: "#275662", fontWeight: 700 }}>Datasets</h4>
+              <h4 style={{ color: "var(--ink)", fontWeight: 700 }}>Datasets</h4>
               <p>
                 Browse and load the bundled paper datasets in one click.
                 See the section above.
               </p>
             </div>
             <div>
-              <h4 style={{ color: "#275662", fontWeight: 700 }}>Export</h4>
+              <h4 style={{ color: "var(--ink)", fontWeight: 700 }}>Export</h4>
               <p>
-                Two TSV outputs (true positives only, or everything except
-                false positives), and a JSON audit trail with verdicts,
-                notes, metadata context and cascade flags.
+                A single TSV with every event (verdict, action and notes
+                included), plus a JSON audit trail with metadata context
+                and cascade flags. Filter downstream using the verdict /
+                action columns if you only want TPs or want to drop FPs.
               </p>
             </div>
           </div>
@@ -12026,35 +12859,35 @@ const HelpTab = ({ onStartTour }) => {
               </tr>
             </thead>
             <tbody>
-              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
-                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "#797870", fontWeight: 700 }}>01</td>
-                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "#275662" }}>RF probability</td>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>01</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>RF probability</td>
                 <td className="py-2.5 align-top text-[13px]">
                   CroCoDeEL's own probability for this event. Higher is more
                   confident.
                 </td>
               </tr>
-              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
-                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "#797870", fontWeight: 700 }}>02</td>
-                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "#275662" }}>Contamination rate</td>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>02</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Contamination rate</td>
                 <td className="py-2.5 align-top text-[13px]">
                   Magnitude of the contamination. Very small rates (&lt; 0.1%)
                   are noisy; very high rates (&gt; 30%) are striking and often
                   correspond to identical or near-identical samples.
                 </td>
               </tr>
-              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
-                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "#797870", fontWeight: 700 }}>03</td>
-                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "#275662" }}>Missing-from-source species</td>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>03</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Missing-from-source species</td>
                 <td className="py-2.5 align-top text-[13px]">
                   Number of species detected in the contaminated sample but
                   absent from the alleged source. A real contamination should
                   not introduce species that the source itself does not have.
                 </td>
               </tr>
-              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
-                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "#797870", fontWeight: 700 }}>04</td>
-                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "#275662" }}>Above-line species</td>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>04</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Above-line species</td>
                 <td className="py-2.5 align-top text-[13px]">
                   Number of species more abundant in the contaminated sample
                   than in the source (above the y=x diagonal in the
@@ -12062,9 +12895,9 @@ const HelpTab = ({ onStartTour }) => {
                   such species.
                 </td>
               </tr>
-              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
-                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "#797870", fontWeight: 700 }}>05</td>
-                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "#275662" }}>Related samples</td>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>05</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Related samples</td>
                 <td className="py-2.5 align-top text-[13px]">
                   Are source and target the same subject (longitudinal) or in
                   the same group (sibling, cage, site)? Both situations are
@@ -12073,8 +12906,8 @@ const HelpTab = ({ onStartTour }) => {
                 </td>
               </tr>
               <tr>
-                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "#797870", fontWeight: 700 }}>06</td>
-                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "#275662" }}>Proximity on plate</td>
+                <td className="py-2.5 pr-3 align-top text-[12px]" style={{ color: "var(--ink-muted)", fontWeight: 700 }}>06</td>
+                <td className="py-2.5 pr-4 align-top text-[13px]" style={{ fontWeight: 600, color: "var(--ink)" }}>Proximity on plate</td>
                 <td className="py-2.5 align-top text-[13px]">
                   Chebyshev distance between the two wells. Adjacent (Δ ≤ 1)
                   is a strong well-to-well leakage signal; Δ = 2 is suspicious;
@@ -12104,14 +12937,14 @@ const HelpTab = ({ onStartTour }) => {
               </tr>
             </thead>
             <tbody>
-              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
                 <td className="py-3 pr-4 align-middle">
                   <Pill tone="bad">
                     <ShieldAlert className="w-3 h-3" />
                     control
                   </Pill>
                 </td>
-                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "var(--ink-muted)" }}>
                   biome contains "control" / "blank" / "negative"
                 </td>
                 <td className="py-3 align-middle text-[13px]">
@@ -12119,14 +12952,14 @@ const HelpTab = ({ onStartTour }) => {
                   critical and should be flagged as well-to-well leakage.
                 </td>
               </tr>
-              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
                 <td className="py-3 pr-4 align-middle">
                   <Pill tone="warn">
                     <Droplets className="w-3 h-3" />
                     low biomass
                   </Pill>
                 </td>
-                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "var(--ink-muted)" }}>
                   low_biomass = true
                 </td>
                 <td className="py-3 align-middle text-[13px]">
@@ -12134,14 +12967,14 @@ const HelpTab = ({ onStartTour }) => {
                   contamination per Lou et al. 2023.
                 </td>
               </tr>
-              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
                 <td className="py-3 pr-4 align-middle">
                   <Pill tone="warn">
                     <Activity className="w-3 h-3" />
                     low sequencing depth
                   </Pill>
                 </td>
-                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "var(--ink-muted)" }}>
                   low_sequencing_depth = true
                 </td>
                 <td className="py-3 align-middle text-[13px]">
@@ -12149,14 +12982,14 @@ const HelpTab = ({ onStartTour }) => {
                   weaker contamination signal.
                 </td>
               </tr>
-              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
                 <td className="py-3 pr-4 align-middle">
                   <Pill tone="primary">
                     <Beaker className="w-3 h-3" />
                     infant gut
                   </Pill>
                 </td>
-                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "var(--ink-muted)" }}>
                   biome value
                 </td>
                 <td className="py-3 align-middle text-[13px]">
@@ -12164,28 +12997,28 @@ const HelpTab = ({ onStartTour }) => {
                   flagged as a control to avoid duplicate display.
                 </td>
               </tr>
-              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
                 <td className="py-3 pr-4 align-middle">
                   <Pill tone="neutral">
                     <User className="w-3 h-3" />
                     58
                   </Pill>
                 </td>
-                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "var(--ink-muted)" }}>
                   subject_id
                 </td>
                 <td className="py-3 align-middle text-[13px]">
                   Subject / individual identifier.
                 </td>
               </tr>
-              <tr style={{ borderBottom: "1px solid #f0f2f2" }}>
+              <tr style={{ borderBottom: "1px solid var(--border-soft)" }}>
                 <td className="py-3 pr-4 align-middle">
                   <Pill tone="neutral">
                     <Calendar className="w-3 h-3" />
                     D7
                   </Pill>
                 </td>
-                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "var(--ink-muted)" }}>
                   timepoint
                 </td>
                 <td className="py-3 align-middle text-[13px]">
@@ -12199,7 +13032,7 @@ const HelpTab = ({ onStartTour }) => {
                     G_058_059_060
                   </Pill>
                 </td>
-                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "#797870" }}>
+                <td className="py-3 pr-4 align-middle text-[12px]" style={{ color: "var(--ink-muted)" }}>
                   group_id
                 </td>
                 <td className="py-3 align-middle text-[13px]">
@@ -12220,7 +13053,7 @@ const HelpTab = ({ onStartTour }) => {
           <p>
             Active anywhere on the Guided validation tab, except when the
             focus is in a text input or the bulk-apply dialog is open.
-            Press <kbd style={{ display: "inline-block", padding: "1px 6px", border: "1px solid #c4c0b3", borderRadius: 3, background: "#fff", fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#275662" }}>?</kbd>{" "}
+            Press <kbd style={{ display: "inline-block", padding: "1px 6px", border: "1px solid var(--border-strong)", borderRadius: 3, background: "var(--bg-card)", fontFamily: "ui-monospace, monospace", fontSize: 11, color: "var(--ink)" }}>?</kbd>{" "}
             in the app to see the same list inline.
           </p>
           <table className="w-full text-left mt-3">
@@ -12243,7 +13076,7 @@ const HelpTab = ({ onStartTour }) => {
                 ["?", "Toggle the in-app shortcuts cheatsheet"],
                 ["Esc", "Close the cheatsheet"],
               ].map(([k, d]) => (
-                <tr key={k} style={{ borderBottom: "1px solid #f0f2f2" }}>
+                <tr key={k} style={{ borderBottom: "1px solid var(--border-soft)" }}>
                   <td className="py-2.5 pr-4 align-middle">
                     <kbd
                       style={{
@@ -12251,13 +13084,13 @@ const HelpTab = ({ onStartTour }) => {
                         minWidth: 28,
                         textAlign: "center",
                         padding: "2px 8px",
-                        border: "1px solid #c4c0b3",
+                        border: "1px solid var(--border-strong)",
                         borderRadius: 3,
-                        background: "#fff",
+                        background: "var(--bg-card)",
                         fontFamily: "ui-monospace, monospace",
                         fontSize: 11,
                         fontWeight: 700,
-                        color: "#275662",
+                        color: "var(--ink)",
                       }}
                     >
                       {k}
@@ -12331,7 +13164,7 @@ const HelpTab = ({ onStartTour }) => {
               border: "1px solid #00a3a6",
             }}
           >
-            <p style={{ color: "#275662", fontWeight: 600 }}>
+            <p style={{ color: "var(--ink)", fontWeight: 600 }}>
               The application runs entirely in your browser. No file you
               load is ever sent to any server.
             </p>
@@ -12346,7 +13179,7 @@ const HelpTab = ({ onStartTour }) => {
           <h4
             className="mt-5 text-[14px]"
             style={{
-              color: "#275662",
+              color: "var(--ink)",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
             }}
@@ -12360,7 +13193,7 @@ const HelpTab = ({ onStartTour }) => {
             <em>Saved</em> pill appears in the bottom-right corner each time
             the save succeeds. What is persisted:
           </p>
-          <ul className="list-disc pl-5 text-[13px]" style={{ color: "#5a5550", lineHeight: 1.7 }}>
+          <ul className="list-disc pl-5 text-[13px]" style={{ color: "var(--ink-soft)", lineHeight: 1.7 }}>
             <li>Loaded events (with verdicts and notes)</li>
             <li>CroCoDeEL run parameters from the file header</li>
             <li>Sample metadata, plate map, and species abundance table</li>
@@ -12379,7 +13212,7 @@ const HelpTab = ({ onStartTour }) => {
             it.
           </p>
           <p>
-            <strong style={{ color: "#275662" }}>Storage limits.</strong>{" "}
+            <strong style={{ color: "var(--ink)" }}>Storage limits.</strong>{" "}
             Browser localStorage is typically capped at 5–10 MB per origin.
             On large datasets the species abundance table can approach
             this. If a save would exceed the quota, the app gracefully
@@ -12389,14 +13222,14 @@ const HelpTab = ({ onStartTour }) => {
             events with verdicts and notes.
           </p>
           <p>
-            <strong style={{ color: "#275662" }}>Clearing storage.</strong>{" "}
+            <strong style={{ color: "var(--ink)" }}>Clearing storage.</strong>{" "}
             Use the <em>Clear session</em> button in the files bar to wipe
             everything immediately. The Discard button on the welcome
             popup does the same when offered. You can also remove just one
             file via the trash icon on its file card.
           </p>
           <p>
-            <strong style={{ color: "#275662" }}>Private / incognito
+            <strong style={{ color: "var(--ink)" }}>Private / incognito
             windows.</strong>{" "}
             Browsers may restrict or fully disable localStorage in private
             mode. In that case the app still works in-memory, but your
@@ -12418,7 +13251,7 @@ const HelpTab = ({ onStartTour }) => {
         <HelpSection id="h-faq" eyebrow="Common questions" title="FAQ">
           <div className="space-y-5">
             <div>
-              <p style={{ color: "#275662", fontWeight: 700 }}>
+              <p style={{ color: "var(--ink)", fontWeight: 700 }}>
                 Why does an event between two longitudinal samples (same
                 subject) appear with such a high contamination rate?
               </p>
@@ -12432,7 +13265,7 @@ const HelpTab = ({ onStartTour }) => {
               </p>
             </div>
             <div>
-              <p style={{ color: "#275662", fontWeight: 700 }}>
+              <p style={{ color: "var(--ink)", fontWeight: 700 }}>
                 A negative control (NC) appears as a target — what does that
                 mean?
               </p>
@@ -12446,7 +13279,7 @@ const HelpTab = ({ onStartTour }) => {
               </p>
             </div>
             <div>
-              <p style={{ color: "#275662", fontWeight: 700 }}>
+              <p style={{ color: "var(--ink)", fontWeight: 700 }}>
                 What if my plate has a different format from yours
                 (e.g. 384-well, custom labels)?
               </p>
@@ -12458,7 +13291,7 @@ const HelpTab = ({ onStartTour }) => {
               </p>
             </div>
             <div>
-              <p style={{ color: "#275662", fontWeight: 700 }}>
+              <p style={{ color: "var(--ink)", fontWeight: 700 }}>
                 Can I edit the plate map directly in the app?
               </p>
               <p>
@@ -12469,7 +13302,7 @@ const HelpTab = ({ onStartTour }) => {
               </p>
             </div>
             <div>
-              <p style={{ color: "#275662", fontWeight: 700 }}>
+              <p style={{ color: "var(--ink)", fontWeight: 700 }}>
                 Does refreshing the page lose my work?
               </p>
               <p>
@@ -12499,14 +13332,14 @@ const HelpTab = ({ onStartTour }) => {
           <div
             className="p-4 rounded-sm text-[13px]"
             style={{
-              background: "#f6f7f7",
-              border: "1px solid #e6e8e8",
+              background: "var(--bg-soft)",
+              border: "1px solid var(--border)",
             }}
           >
             Goulet L. et al.,{" "}
             <em>
-              CroCoDeEL: CROss-sample COntamination DEtection and Estimation
-              of its Level
+              Cross-sample Contamination Detection and Estimation of its
+              Level (CroCoDeEL)
             </em>
             , bioRxiv 2025.{" "}
             <a
@@ -12525,8 +13358,8 @@ const HelpTab = ({ onStartTour }) => {
           <div
             className="p-4 rounded-sm text-[13px]"
             style={{
-              background: "#f6f7f7",
-              border: "1px solid #e6e8e8",
+              background: "var(--bg-soft)",
+              border: "1px solid var(--border)",
             }}
           >
             Lou Y.C. et al.,{" "}
@@ -12544,7 +13377,7 @@ const HelpTab = ({ onStartTour }) => {
               doi.org/10.1186/s40168-023-01477-2
             </a>
           </div>
-          <p style={{ color: "#797870", fontSize: 12 }}>
+          <p style={{ color: "var(--ink-muted)", fontSize: 12 }}>
             CroCoDeEL is developed at INRAE / Metagenopolis. Source code:{" "}
             <a
               href="https://github.com/metagenopolis/CroCoDeEL"
@@ -12574,6 +13407,17 @@ const DatasetsTab = ({ onLoadDataset, hasCurrentData }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [loadingId, setLoadingId] = useState(null);
+  // Filter / search state — applied client-side to the manifest.
+  const [query, setQuery] = useState("");
+  const [profilerFilter, setProfilerFilter] = useState(null); // null | string
+  const [requirePlate, setRequirePlate] = useState(false);
+  const [requireMetadata, setRequireMetadata] = useState(false);
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(1);
+  // Snap back to page 1 whenever the filtered set changes shape.
+  useEffect(() => {
+    setPage(1);
+  }, [query, profilerFilter, requirePlate, requireMetadata]);
 
   useEffect(() => {
     let cancelled = false;
@@ -12621,7 +13465,7 @@ const DatasetsTab = ({ onLoadDataset, hasCurrentData }) => {
       </SectionTitle>
 
       {loading && (
-        <div className="text-[12px]" style={{ color: "#797870" }}>
+        <div className="text-[12px]" style={{ color: "var(--ink-muted)" }}>
           Loading dataset list…
         </div>
       )}
@@ -12630,32 +13474,195 @@ const DatasetsTab = ({ onLoadDataset, hasCurrentData }) => {
         <div
           className="p-4 rounded-sm text-[12px]"
           style={{
-            background: "#fdeceb",
+            background: "var(--bg-alert)",
             border: "1px solid #ed6e6c",
             color: "#8a2422",
           }}
         >
           <strong>Could not load datasets manifest.</strong> {error}
-          <div className="mt-2" style={{ color: "#5a5550" }}>
+          <div className="mt-2" style={{ color: "var(--ink-soft)" }}>
             Make sure <code>public/datasets/manifest.json</code> is deployed
             alongside the app.
           </div>
         </div>
       )}
 
-      {manifest && manifest.datasets && (
-        <div className="grid md:grid-cols-2 gap-4 mt-6">
-          {manifest.datasets.map((d) => (
-            <DatasetCard
-              key={d.id}
-              dataset={d}
-              onLoad={() => handleLoad(d)}
-              loading={loadingId === d.id}
-              hasCurrentData={hasCurrentData}
-            />
-          ))}
-        </div>
-      )}
+      {manifest && manifest.datasets && (() => {
+        const profilers = Array.from(
+          new Set(
+            manifest.datasets
+              .map((d) => detectProfiler(d))
+              .filter(Boolean),
+          ),
+        ).sort();
+        const q = query.trim().toLowerCase();
+        const filtered = manifest.datasets.filter((d) => {
+          if (q) {
+            const hay = [
+              d.id,
+              d.short_title,
+              d.title,
+              d.description,
+              d.citation,
+              d.biome,
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .toLowerCase();
+            if (!hay.includes(q)) return false;
+          }
+          if (profilerFilter && detectProfiler(d) !== profilerFilter) return false;
+          if (requirePlate && !d.files?.plate_map) return false;
+          if (requireMetadata && !d.files?.metadata) return false;
+          return true;
+        });
+        return (
+          <>
+            <div
+              className="flex flex-wrap gap-2 items-center mt-4 mb-4 p-2 rounded-md"
+              style={{
+                background: FILTER_PANEL_BG,
+                border: FILTER_PANEL_BORDER,
+              }}
+            >
+              <div className="relative">
+                <Search
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
+                  style={{ color: "var(--ink-muted)" }}
+                />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search id, title, biome…"
+                  className="pl-7 pr-3 py-1 text-[12px] rounded-md w-56 outline-none"
+                  style={{
+                    background: FILTER_CHIP_BG,
+                    border: FILTER_CHIP_BORDER,
+                    color: "var(--ink)",
+                    fontWeight: 500,
+                  }}
+                />
+              </div>
+              <FilterDivider />
+              <span
+                className="text-[10px] tracking-[0.1em] uppercase"
+                style={{
+                  color: "var(--ink-muted)",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                Profiler
+              </span>
+              {[null, ...profilers].map((p) => {
+                const active = profilerFilter === p;
+                const label = p == null ? "All" : p;
+                return (
+                  <button
+                    key={String(p)}
+                    type="button"
+                    onClick={() => setProfilerFilter(p)}
+                    className="px-2 py-1 text-[11px] rounded-md"
+                    style={{
+                      background: active ? "rgba(0,163,166,0.12)" : FILTER_CHIP_BG,
+                      border: active
+                        ? "1px solid #00a3a6"
+                        : FILTER_CHIP_BORDER,
+                      color: active ? "#00a3a6" : "var(--ink)",
+                      fontWeight: 600,
+                      fontFamily: '"Raleway", sans-serif',
+                      cursor: "pointer",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+              <FilterDivider />
+              {[
+                { id: "metadata", label: "with metadata", state: requireMetadata, set: setRequireMetadata },
+                { id: "plate", label: "with plate map", state: requirePlate, set: setRequirePlate },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => t.set((v) => !v)}
+                  className="px-2 py-1 text-[11px] rounded-md"
+                  style={{
+                    background: t.state ? "rgba(0,163,166,0.12)" : FILTER_CHIP_BG,
+                    border: t.state
+                      ? "1px solid #00a3a6"
+                      : FILTER_CHIP_BORDER,
+                    color: t.state ? "#00a3a6" : "var(--ink)",
+                    fontWeight: 600,
+                    fontFamily: '"Raleway", sans-serif',
+                    cursor: "pointer",
+                  }}
+                >
+                  {t.label}
+                </button>
+              ))}
+              <span
+                className="ml-auto text-[12px]"
+                style={{ color: "var(--ink-muted)" }}
+              >
+                {(() => {
+                  const total = manifest.datasets.length;
+                  if (filtered.length === 0) return `0 / ${total}`;
+                  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+                  const safePage = Math.min(Math.max(1, page), totalPages);
+                  const startIdx = (safePage - 1) * PAGE_SIZE;
+                  const endIdx = Math.min(filtered.length, startIdx + PAGE_SIZE);
+                  return totalPages > 1
+                    ? `${startIdx + 1}–${endIdx} of ${filtered.length} (filtered) / ${total} total`
+                    : `${filtered.length} / ${total}`;
+                })()}
+              </span>
+            </div>
+
+            {filtered.length === 0 ? (
+              <div
+                className="p-6 text-center text-[13px] rounded-sm"
+                style={{
+                  border: "1px dashed var(--border-strong)",
+                  color: "var(--ink-muted)",
+                }}
+              >
+                No datasets match these filters.
+              </div>
+            ) : (() => {
+              const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+              const safePage = Math.min(Math.max(1, page), totalPages);
+              const startIdx = (safePage - 1) * PAGE_SIZE;
+              const visible = filtered.slice(startIdx, startIdx + PAGE_SIZE);
+              return (
+                <>
+                  <div className="grid md:grid-cols-2 gap-4 mt-2">
+                    {visible.map((d) => (
+                      <DatasetCard
+                        key={d.id}
+                        dataset={d}
+                        onLoad={() => handleLoad(d)}
+                        loading={loadingId === d.id}
+                        hasCurrentData={hasCurrentData}
+                      />
+                    ))}
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="mt-4 flex justify-center">
+                      <Pagination
+                        page={safePage}
+                        totalPages={totalPages}
+                        onChange={setPage}
+                      />
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </>
+        );
+      })()}
     </div>
   );
 };
@@ -12683,8 +13690,8 @@ const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
     <div
       className="p-5 rounded-sm flex flex-col"
       style={{
-        background: "#fff",
-        border: "1px solid #e6e8e8",
+        background: "var(--bg-card)",
+        border: "1px solid var(--border)",
       }}
     >
       <div className="flex items-start justify-between gap-3 mb-2">
@@ -12702,7 +13709,7 @@ const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
           <div
             className="text-[14px]"
             style={{
-              color: "#275662",
+              color: "var(--ink)",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
               lineHeight: 1.3,
@@ -12715,7 +13722,7 @@ const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
           <span
             className="text-[9px] tracking-[0.1em] uppercase px-2 py-0.5 rounded-sm shrink-0"
             style={{
-              background: "#eef8f8",
+              background: "var(--bg-info)",
               color: "#00787a",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
@@ -12729,29 +13736,29 @@ const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
 
       <p
         className="text-[12px] mb-3"
-        style={{ color: "#5a5550", lineHeight: 1.55 }}
+        style={{ color: "var(--ink-soft)", lineHeight: 1.55 }}
       >
         {dataset.description}
       </p>
 
       <div
         className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] mb-3"
-        style={{ color: "#797870" }}
+        style={{ color: "var(--ink-muted)" }}
       >
         {dataset.biome && (
           <span>
-            <strong style={{ color: "#275662" }}>Biome:</strong> {dataset.biome}
+            <strong style={{ color: "var(--ink)" }}>Biome:</strong> {dataset.biome}
           </span>
         )}
         {dataset.samples_count != null && (
           <span>
-            <strong style={{ color: "#275662" }}>Samples:</strong>{" "}
+            <strong style={{ color: "var(--ink)" }}>Samples:</strong>{" "}
             {dataset.samples_count}
           </span>
         )}
         {dataset.events_count != null && (
           <span>
-            <strong style={{ color: "#275662" }}>Events:</strong>{" "}
+            <strong style={{ color: "var(--ink)" }}>Events:</strong>{" "}
             {dataset.events_count}
           </span>
         )}
@@ -12776,7 +13783,7 @@ const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
         <span
           className="text-[9px] tracking-[0.05em] uppercase px-2 py-0.5 rounded-sm"
           style={{
-            background: "#eef8f8",
+            background: "var(--bg-info)",
             color: "#00787a",
             fontWeight: 700,
             fontFamily: '"Raleway", sans-serif',
@@ -12787,7 +13794,7 @@ const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
         <span
           className="text-[9px] tracking-[0.05em] uppercase px-2 py-0.5 rounded-sm"
           style={{
-            background: "#eef8f8",
+            background: "var(--bg-info)",
             color: "#00787a",
             fontWeight: 700,
             fontFamily: '"Raleway", sans-serif',
@@ -12799,7 +13806,7 @@ const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
           <span
             className="text-[9px] tracking-[0.05em] uppercase px-2 py-0.5 rounded-sm"
             style={{
-              background: "#eef8f8",
+              background: "var(--bg-info)",
               color: "#00787a",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
@@ -12812,7 +13819,7 @@ const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
           <span
             className="text-[9px] tracking-[0.05em] uppercase px-2 py-0.5 rounded-sm"
             style={{
-              background: "#eef8f8",
+              background: "var(--bg-info)",
               color: "#00787a",
               fontWeight: 700,
               fontFamily: '"Raleway", sans-serif',
@@ -12823,7 +13830,7 @@ const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] mb-4" style={{ color: "#797870" }}>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] mb-4" style={{ color: "var(--ink-muted)" }}>
         {dataset.citation && <span>{dataset.citation}</span>}
         {dataset.paper_url && (
           <a
@@ -12861,7 +13868,7 @@ const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
           disabled={loading}
           className="w-full px-4 py-2 text-[12px] rounded-sm flex items-center justify-center gap-2"
           style={{
-            background: loading ? "#e6e8e8" : "#275662",
+            background: loading ? "var(--border)" : "#275662",
             color: loading ? "#797870" : "#fff",
             border: "none",
             fontWeight: 700,
@@ -12887,24 +13894,20 @@ const DatasetCard = ({ dataset, onLoad, loading, hasCurrentData }) => {
   );
 };
 
-const ExportTab = ({ counts, onExportTSV, onExportJSON, onExportHTML }) => (
+const ExportTab = ({ counts, onExportTSV, onExportHTML }) => (
   <div>
     <SectionTitle eyebrow="Export" title="Save your curated report">
-      All your verdicts and notes live in browser memory — export before closing
-      the tab.
+      Download a TSV with every event (verdict, action, notes) or a printable
+      HTML report. To back up the full session — including loaded files and UI
+      state — use <strong style={{ color: "var(--ink)" }}>Download session</strong>{" "}
+      on the files bar.
     </SectionTitle>
     <div className="grid md:grid-cols-2 gap-4 mt-8">
       <ExportCard
-        title="TSV — true positives only"
-        desc="Drop-in replacement for the CroCoDeEL output, keeping only events marked as true positives."
+        title="TSV — every event"
+        desc="Every event with its verdict, action and notes. Filter downstream using the verdict / action columns if you want to drop FPs or keep TPs only."
         action="Download TSV"
-        onClick={() => onExportTSV(true)}
-      />
-      <ExportCard
-        title="TSV — everything except false positives"
-        desc="Includes uncertain and pending events. Useful for partial filtering before full curation."
-        action="Download TSV"
-        onClick={() => onExportTSV(false)}
+        onClick={() => onExportTSV()}
       />
       <ExportCard
         title="HTML report — printable / Save as PDF"
@@ -12912,23 +13915,17 @@ const ExportTab = ({ counts, onExportTSV, onExportJSON, onExportHTML }) => (
         action="Download HTML"
         onClick={onExportHTML}
       />
-      <ExportCard
-        title="JSON — full audit trail"
-        desc="All events with verdict, notes, metadata context and cascade flags for reproducibility."
-        action="Download JSON"
-        onClick={onExportJSON}
-      />
     </div>
     <div
       className="mt-10 pt-6 grid grid-cols-2 md:grid-cols-4 gap-4"
-      style={{ borderTop: "1px solid #e6e8e8" }}
+      style={{ borderTop: "1px solid var(--border)" }}
     >
       <Stat label="Total" value={counts.total} />
       <Stat label="True positives" value={counts.tp} tone="good" />
       <Stat label="False positives" value={counts.fp} tone="bad" />
       <Stat label="Pending" value={counts.pending + counts.uncertain} />
     </div>
-    <p className="text-[12px] mt-6" style={{ color: "#797870" }}>
+    <p className="text-[12px] mt-6" style={{ color: "var(--ink-muted)" }}>
       Need to retrieve the files you opened? Each file card at the top of
       the page has a small Download button when the file is loaded.
     </p>
@@ -13181,7 +14178,7 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
           right: 0,
           width: 360,
           height: "100vh",
-          background: "#fff",
+          background: "var(--bg-card)",
           borderLeft: "4px solid #00a3a6",
           boxShadow: "-8px 0 24px rgba(39,86,98,0.12)",
           zIndex: 1400,
@@ -13194,7 +14191,7 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
         <div
           style={{
             padding: "18px 22px 14px",
-            borderBottom: "1px solid #e6e8e8",
+            borderBottom: "1px solid var(--border)",
           }}
         >
           <div
@@ -13226,7 +14223,7 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
                 background: "transparent",
                 border: "none",
                 cursor: "pointer",
-                color: "#797870",
+                color: "var(--ink-muted)",
                 padding: 4,
                 display: "flex",
                 alignItems: "center",
@@ -13239,7 +14236,7 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
           <div
             style={{
               height: 4,
-              background: "#f0f2f2",
+              background: "var(--border-soft)",
               borderRadius: 2,
               overflow: "hidden",
             }}
@@ -13267,7 +14264,7 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
             style={{
               fontSize: 18,
               fontWeight: 700,
-              color: "#275662",
+              color: "var(--ink)",
               marginBottom: 12,
               lineHeight: 1.3,
             }}
@@ -13277,7 +14274,7 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
           <div
             style={{
               fontSize: 13,
-              color: "#5a5550",
+              color: "var(--ink-soft)",
               lineHeight: 1.6,
               whiteSpace: "pre-wrap",
             }}
@@ -13293,7 +14290,7 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
             <div
               className="mt-4 p-3 rounded-sm flex items-center gap-3"
               style={{
-                background: dataLoaded ? "#eef8f8" : "#f6f7f7",
+                background: dataLoaded ? "var(--bg-info)" : "var(--bg-soft)",
                 border: dataLoaded
                   ? "1px solid #00a3a6"
                   : "1px solid #c4c0b3",
@@ -13307,7 +14304,7 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
                   />
                   <span
                     className="text-[12px]"
-                    style={{ color: "#275662", fontWeight: 600 }}
+                    style={{ color: "var(--ink)", fontWeight: 600 }}
                   >
                     Demo data loaded — you can continue.
                   </span>
@@ -13324,7 +14321,7 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
                   />
                   <span
                     className="text-[12px]"
-                    style={{ color: "#797870", fontWeight: 600 }}
+                    style={{ color: "var(--ink-muted)", fontWeight: 600 }}
                   >
                     Loading demo data…
                   </span>
@@ -13334,7 +14331,7 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
                 <>
                   <span
                     className="text-[12px] flex-1"
-                    style={{ color: "#797870" }}
+                    style={{ color: "var(--ink-muted)" }}
                   >
                     Demo data not loaded yet.
                   </span>
@@ -13362,7 +14359,7 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
         <div
           style={{
             padding: "14px 22px 18px",
-            borderTop: "1px solid #e6e8e8",
+            borderTop: "1px solid var(--border)",
             display: "flex",
             gap: 8,
             alignItems: "center",
@@ -13378,7 +14375,7 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
               fontSize: 11,
               fontWeight: 600,
               background: "transparent",
-              color: "#797870",
+              color: "var(--ink-muted)",
               border: "none",
               cursor: "pointer",
               fontFamily: '"Raleway", sans-serif',
@@ -13395,9 +14392,9 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
                 padding: "8px 14px",
                 fontSize: 12,
                 fontWeight: 600,
-                background: "#fff",
-                color: "#275662",
-                border: "1px solid #c4c0b3",
+                background: "var(--bg-card)",
+                color: "var(--ink)",
+                border: "1px solid var(--border-strong)",
                 borderRadius: 3,
                 cursor: "pointer",
                 fontFamily: '"Raleway", sans-serif',
@@ -13426,7 +14423,7 @@ const TutorialPanel = ({ steps, onClose, onAction, dataLoaded, demoLoading }) =>
               padding: "8px 16px",
               fontSize: 12,
               fontWeight: 700,
-              background: blocked ? "#c4c0b3" : "#00a3a6",
+              background: blocked ? "var(--border-strong)" : "#00a3a6",
               color: "#fff",
               border: "none",
               borderRadius: 3,
@@ -13463,7 +14460,7 @@ const TutorialWelcome = ({ onStart, onSkip }) => (
   >
     <div
       style={{
-        background: "#fff",
+        background: "var(--bg-card)",
         borderRadius: 4,
         padding: "28px 32px",
         maxWidth: 440,
@@ -13488,7 +14485,7 @@ const TutorialWelcome = ({ onStart, onSkip }) => (
         style={{
           fontSize: 22,
           fontWeight: 700,
-          color: "#275662",
+          color: "var(--ink)",
           marginBottom: 12,
           lineHeight: 1.25,
         }}
@@ -13498,7 +14495,7 @@ const TutorialWelcome = ({ onStart, onSkip }) => (
       <p
         style={{
           fontSize: 13,
-          color: "#5a5550",
+          color: "var(--ink-soft)",
           lineHeight: 1.6,
           marginBottom: 20,
         }}
@@ -13521,9 +14518,9 @@ const TutorialWelcome = ({ onStart, onSkip }) => (
             padding: "10px 18px",
             fontSize: 13,
             fontWeight: 600,
-            background: "#fff",
-            color: "#797870",
-            border: "1px solid #c4c0b3",
+            background: "var(--bg-card)",
+            color: "var(--ink-muted)",
+            border: "1px solid var(--border-strong)",
             borderRadius: 3,
             cursor: "pointer",
             fontFamily: '"Raleway", sans-serif',
@@ -13565,6 +14562,93 @@ export default function App() {
   const [metadata, setMetadata] = useState(initial?.metadata || null);
   const [plateMap, setPlateMap] = useState(initial?.plateMap || null);
   const [tab, setTab] = useState(initial?.tab || "overview");
+  // Global config dialog — accessible from the header gear button on
+  // every page. Body is currently a placeholder; populate as we
+  // surface user-tunable settings.
+  const [configOpen, setConfigOpen] = useState(false);
+  // Theme picker — light / dark / auto-os / auto-time. Persisted in
+  // localStorage so the choice survives session resets. For schedule
+  // mode the dark window is also user-configurable (default 19:00 -
+  // 07:00).
+  const [theme, setTheme] = useState(() => {
+    if (typeof window === "undefined") return "light";
+    const v = window.localStorage.getItem("crocodeel-theme") || "light";
+    // Backwards compat: the old "auto" key meant time-based.
+    if (v === "auto") return "auto-time";
+    return v;
+  });
+  const [darkStart, setDarkStart] = useState(() => {
+    if (typeof window === "undefined") return "19:00";
+    return window.localStorage.getItem("crocodeel-theme-dark-start") || "19:00";
+  });
+  const [darkEnd, setDarkEnd] = useState(() => {
+    if (typeof window === "undefined") return "07:00";
+    return window.localStorage.getItem("crocodeel-theme-dark-end") || "07:00";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("crocodeel-theme-dark-start", darkStart);
+    window.localStorage.setItem("crocodeel-theme-dark-end", darkEnd);
+  }, [darkStart, darkEnd]);
+  // Suppress / keep action — opt-in feature. When enabled, every TP
+  // verdict defaults to `action: "suppress"` and the user can flip
+  // individual events to "keep" to preserve borderline-contaminated
+  // samples. Disabled by default to avoid extra cognitive load for the
+  // typical curator. Persisted separately from the session.
+  const [actionEnabled, setActionEnabled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("crocodeel-action-enabled") === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      "crocodeel-action-enabled",
+      actionEnabled ? "1" : "0",
+    );
+  }, [actionEnabled]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("crocodeel-theme", theme);
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    // Time `HH:MM` -> minutes since midnight. Used to test whether the
+    // current local time falls inside the user-defined dark window.
+    // The window may wrap past midnight (start > end) in which case we
+    // OR the two halves.
+    const toMin = (s) => {
+      const [h, m] = (s || "0:0").split(":").map(Number);
+      return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+    };
+    const inDarkWindow = () => {
+      const now = new Date();
+      const cur = now.getHours() * 60 + now.getMinutes();
+      const a = toMin(darkStart);
+      const b = toMin(darkEnd);
+      if (a === b) return false;
+      return a < b ? cur >= a && cur < b : cur >= a || cur < b;
+    };
+    const resolve = () => {
+      if (theme === "light" || theme === "dark") return theme;
+      if (theme === "auto-os") return mql.matches ? "dark" : "light";
+      if (theme === "auto-time") return inDarkWindow() ? "dark" : "light";
+      return "light";
+    };
+    document.documentElement.setAttribute("data-theme", resolve());
+    if (theme === "auto-os") {
+      const onChange = () =>
+        document.documentElement.setAttribute("data-theme", resolve());
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    }
+    if (theme === "auto-time") {
+      // Re-evaluate every minute so the page flips at the user's
+      // dark-window boundary without a reload.
+      const id = window.setInterval(
+        () => document.documentElement.setAttribute("data-theme", resolve()),
+        60 * 1000,
+      );
+      return () => window.clearInterval(id);
+    }
+  }, [theme, darkStart, darkEnd]);
   const [selId, setSelId] = useState(
     initial?.selId !== undefined ? initial.selId : null,
   );
@@ -13596,6 +14680,7 @@ export default function App() {
   const [err, setErr] = useState(null);
   const eventFileRef = useRef(null);
   const abFileRef = useRef(null);
+  const sessionFileRef = useRef(null);
 
   /* Save indicator: shows a discrete "Saved" pill briefly after each
      auto-save. Set to a timestamp on save; the indicator fades out via
@@ -13715,7 +14800,7 @@ export default function App() {
       {
         title: "Export your curated report",
         body:
-          "When done, the Export tab produces a curated TSV (true positives only, or everything except false positives) and a JSON audit trail with every verdict, note and metadata context.",
+          "When done, the Export tab produces a curated TSV with every event (verdict, action, notes) plus a JSON audit trail with metadata context and cascade flags. Filter downstream using the verdict / action columns if needed.",
         action: "tabExport",
         highlight: '[data-tutorial="tab-export"]',
       },
@@ -13955,6 +15040,19 @@ export default function App() {
       if (filter.verdicts && filter.verdicts.length < 4) {
         if (!filter.verdicts.includes(e.verdict || "pending")) return false;
       }
+      if (filter.action) {
+        // Resolve the same default the UI shows: TP -> suppress, FP -> keep,
+        // others -> no action. An event matches the filter only if its
+        // (explicit or defaulted) action equals the requested one.
+        const defaultAction =
+          e.verdict === "true_positive"
+            ? "suppress"
+            : e.verdict === "false_positive"
+              ? "keep"
+              : null;
+        const effective = e.action || defaultAction;
+        if (effective !== filter.action) return false;
+      }
       // Subject filter — events are "same subject" only when both samples
       // are annotated and share a subject_id (areRelated.kind === "subject").
       // Events with missing/unknown subjects are treated as "different" so
@@ -14034,7 +15132,29 @@ export default function App() {
     events.find((e) => e.id === selId) || events[0] || null;
   const setVerdict = (id, verdict) =>
     setRawEvents((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, verdict } : e)),
+      prev.map((e) => {
+        if (e.id !== id) return e;
+        const next = { ...e, verdict };
+        // When the suppress/keep feature is on, reset the action to
+        // the verdict's default on every verdict change — TP -> suppress
+        // (drop the contaminated sample), FP -> keep (call was wrong,
+        // sample is fine). Other verdicts clear the action. The popover
+        // lets the user override afterwards.
+        if (actionEnabled) {
+          if (verdict === "true_positive") {
+            next.action = "suppress";
+          } else if (verdict === "false_positive") {
+            next.action = "keep";
+          } else {
+            next.action = null;
+          }
+        }
+        return next;
+      }),
+    );
+  const setAction = (id, action) =>
+    setRawEvents((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, action } : e)),
     );
   const setNote = (id, notes) =>
     setRawEvents((prev) =>
@@ -14063,6 +15183,9 @@ export default function App() {
         verdict: data.verdict || "true_positive",
         notes: data.notes || "Manually added by user",
       };
+      if (actionEnabled && (data.action === "keep" || data.action === "suppress")) {
+        newEvent.action = data.action;
+      }
       return [...prev, newEvent];
     });
   };
@@ -14171,10 +15294,14 @@ export default function App() {
       Guided validation. If `comment` is empty, existing notes are
       preserved untouched; otherwise the comment is prepended to each
       event's notes so prior context is never destroyed. */
-  const bulkApplyToEvents = (ids, verdict, comment) => {
+  const bulkApplyToEvents = (ids, verdict, comment, action) => {
     if (!ids || ids.length === 0) return;
     const idSet = new Set(ids);
     const stamp = new Date().toISOString().slice(0, 10);
+    // When a bulk action is provided ("keep" / "suppress") it overrides
+    // every matched event. Otherwise we leave each event's existing
+    // action untouched — the bulk apply only changes verdict + notes.
+    const overrideAction = action === "keep" || action === "suppress";
     setBulkConfirm({
       kind: "confirm",
       title: `Apply "${verdict.replace("_", " ")}" to ${ids.length} event${ids.length > 1 ? "s" : ""}?`,
@@ -14189,6 +15316,7 @@ export default function App() {
           prev.map((e) => {
             if (!idSet.has(e.id)) return e;
             const next = { ...e, verdict };
+            if (actionEnabled && overrideAction) next.action = action;
             if (comment) {
               const tag = `[bulk ${stamp}] ${comment}`;
               next.notes = e.notes ? `${tag}\n\n${e.notes}` : tag;
@@ -14450,12 +15578,10 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const exportReport = (onlyTP = true) => {
-    const kept = events.filter((e) =>
-      onlyTP
-        ? e.verdict === "true_positive"
-        : e.verdict !== "false_positive",
-    );
+  const exportReport = () => {
+    // Export every event regardless of verdict so the TSV reflects the
+    // full curation state. Downstream filtering (e.g. drop FPs) is left
+    // to the consumer using the verdict + action columns.
     const header = [
       "source",
       "target",
@@ -14463,10 +15589,11 @@ export default function App() {
       "probability",
       "introduced_species",
       "verdict",
+      "action",
       "notes",
     ];
     const lines = [header.join("\t")];
-    kept.forEach((e) => {
+    events.forEach((e) => {
       lines.push(
         [
           e.source,
@@ -14475,20 +15602,66 @@ export default function App() {
           e.score,
           e.introduced.join(","),
           e.verdict,
+          e.action || "",
           e.notes.replace(/\t/g, " "),
         ].join("\t"),
       );
     });
     downloadFile(
       lines.join("\n"),
-      `contamination_events_curated${onlyTP ? "_TP_only" : ""}.tsv`,
+      `contamination_events_curated.tsv`,
       "text/tab-separated-values",
     );
   };
 
+  /** Restore the entire session from a JSON file produced by exportJSON.
+      Reverses the field-name changes done at export time, then writes
+      directly to the App-level setters. Best-effort: missing fields
+      are left as-is, malformed JSON throws which the caller surfaces. */
+  const importSessionFromJSON = (json) => {
+    if (!json || typeof json !== "object") {
+      throw new Error("Not a valid session JSON.");
+    }
+    if (!Array.isArray(json.events)) {
+      throw new Error('Missing "events" array in the session JSON.');
+    }
+    const restoredEvents = json.events.map((e, i) => ({
+      id: e.id != null ? e.id : i,
+      source: e.source,
+      target: e.target,
+      rate: e.contamination_rate,
+      score: e.probability,
+      introduced: e.introduced_species || [],
+      verdict: e.verdict || "pending",
+      action: e.action || undefined,
+      notes: e.notes || "",
+      cascade: e.cascade || undefined,
+    }));
+    setRawEvents(restoredEvents);
+    setRunMetadata(json.run_metadata || null);
+    setMetadata(json.metadata || null);
+    setPlateMap(json.plate_map || null);
+    setAb(json.abundance || null);
+    if (json.ui_state) {
+      if (typeof json.ui_state.tab === "string") setTab(json.ui_state.tab);
+      if (json.ui_state.sel_id !== undefined) setSelId(json.ui_state.sel_id);
+      if (json.ui_state.filter && typeof json.ui_state.filter === "object")
+        setFilter(json.ui_state.filter);
+      if (json.ui_state.sort && typeof json.ui_state.sort === "object")
+        setSort(json.ui_state.sort);
+    }
+    setErr(null);
+  };
+
   const exportJSON = () => {
+    // Full session dump — events + curation + every loaded auxiliary
+    // file (run metadata, sample metadata, plate map, abundance table).
+    // Aim is "everything you need to reproduce or re-import this
+    // session". Abundance can be large; we serialize the parsed
+    // structure as-is rather than the raw text.
     const payload = {
       generated: new Date().toISOString(),
+      schema_version: 2,
       counts: {
         total: counts.total,
         true_positive: counts.tp,
@@ -14498,13 +15671,28 @@ export default function App() {
       },
       has_metadata: !!metadata,
       has_plate_map: !!plateMap,
+      has_abundance: !!ab,
+      run_metadata: runMetadata || null,
+      metadata: metadata || null,
+      plate_map: plateMap || null,
+      abundance: ab || null,
+      // UI state — let the importer drop the user back exactly where
+      // they were (active tab, selected event, filters, sort).
+      ui_state: {
+        tab,
+        sel_id: selId,
+        filter,
+        sort,
+      },
       events: events.map((e) => ({
+        id: e.id,
         source: e.source,
         target: e.target,
         contamination_rate: e.rate,
         probability: e.score,
         introduced_species: e.introduced,
         verdict: e.verdict,
+        action: e.action || null,
         notes: e.notes,
         relatedness: areRelated(metadata, e.source, e.target),
         plate_distance: plateDistance(plateMap, e.source, e.target),
@@ -14513,7 +15701,7 @@ export default function App() {
     };
     downloadFile(
       JSON.stringify(payload, null, 2),
-      "crocodeel_curation_report.json",
+      "crocodeel_curation_session.json",
       "application/json",
     );
   };
@@ -14540,8 +15728,8 @@ export default function App() {
           : v === "FP"
             ? { bg: "#ed6e6c", label: "False positive" }
             : v === "UNCERTAIN"
-              ? { bg: "#c4c0b3", label: "Uncertain" }
-              : { bg: "#e6e8e8", label: "Pending", textColor: "#5a5550" };
+              ? { bg: "var(--border-strong)", label: "Uncertain" }
+              : { bg: "var(--border)", label: "Pending", textColor: "#5a5550" };
       return `<span style="background:${tone.bg};color:${tone.textColor || "#fff"};padding:2px 8px;border-radius:2px;font-size:10px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;">${tone.label}</span>`;
     };
 
@@ -15012,8 +16200,8 @@ export default function App() {
     <div
       className="min-h-screen"
       style={{
-        background: "#fff",
-        color: "#275662",
+        background: "var(--bg-card)",
+        color: "var(--ink)",
         fontFamily:
           '"Avenir Next", "Nunito Sans", system-ui, -apple-system, sans-serif',
         // Reserve room on the right when the tutorial panel is open so
@@ -15046,7 +16234,7 @@ export default function App() {
         <span
           style={{
             display: "inline-block",
-            background: "#fff",
+            background: "var(--bg-card)",
             color: "#ed6e6c",
             padding: "1px 8px",
             borderRadius: 2,
@@ -15059,11 +16247,25 @@ export default function App() {
         >
           BETA
         </span>
-        Active development — feedback welcome and bugs expected. Verify findings before publication.
+        Interface in active development — bugs expected. Verify findings before publication. Report issues at{" "}
+        <a
+          href="https://github.com/metagenopolis/CroCoDeEL_interpreter/issues"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: "#fff",
+            textDecoration: "underline",
+            textUnderlineOffset: 2,
+            fontWeight: 700,
+          }}
+        >
+          github.com/metagenopolis/CroCoDeEL_interpreter/issues
+        </a>
+        .
       </div>
 
       {/* ==================== HEADER ==================== */}
-      <header style={{ borderBottom: "3px solid #00a3a6", background: "#fff" }}>
+      <header style={{ borderBottom: "3px solid #00a3a6", background: "var(--bg-card)" }}>
         <div className="max-w-7xl mx-auto px-6 py-5">
           <div className="flex items-center gap-3 flex-wrap">
             <img
@@ -15080,7 +16282,7 @@ export default function App() {
               <div
                 className="text-[20px]"
                 style={{
-                  color: "#275662",
+                  color: "var(--ink)",
                   fontWeight: 800,
                   letterSpacing: "-0.01em",
                   fontFamily: '"Raleway", sans-serif',
@@ -15091,7 +16293,7 @@ export default function App() {
               <div
                 className="text-[10px] uppercase tracking-[0.15em]"
                 style={{
-                  color: "#797870",
+                  color: "var(--ink-muted)",
                   fontFamily: '"Raleway", sans-serif',
                 }}
               >
@@ -15168,7 +16370,7 @@ export default function App() {
               <h1
                 className="text-[42px] leading-[1.05] tracking-tight"
                 style={{
-                  color: "#275662",
+                  color: "var(--ink)",
                   fontWeight: 800,
                   fontFamily: '"Raleway", sans-serif',
                 }}
@@ -15182,14 +16384,43 @@ export default function App() {
                 HTML report when you are done.
               </p>
             </div>
+            <div
+              className="flex flex-col items-end gap-2"
+              style={{ flex: "1 1 320px", maxWidth: 420 }}
+            >
+              <button
+                type="button"
+                onClick={() => setConfigOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-sm"
+                title="Open configuration"
+                aria-label="Open configuration"
+                style={{
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border-strong)",
+                  color: "var(--ink)",
+                  fontWeight: 600,
+                  letterSpacing: "0.02em",
+                  fontFamily: '"Raleway", sans-serif',
+                  cursor: "pointer",
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = "var(--bg-soft)";
+                  e.currentTarget.style.borderColor = "#275662";
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = "var(--bg-card)";
+                  e.currentTarget.style.borderColor = "var(--border-strong)";
+                }}
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span>Configuration</span>
+              </button>
             {/* Privacy badge — prominent, reassuring */}
             <div
-              className="flex items-start gap-2 px-3 py-2 rounded-sm"
+              className="flex items-start gap-2 px-3 py-2 rounded-sm w-full"
               style={{
                 background: "rgba(0, 163, 166, 0.08)",
                 border: "1px solid #00a3a6",
-                flex: "1 1 320px",
-                maxWidth: 420,
               }}
             >
               <ShieldCheck
@@ -15200,7 +16431,7 @@ export default function App() {
                 <div
                   className="text-[12px]"
                   style={{
-                    color: "#275662",
+                    color: "var(--ink)",
                     fontWeight: 600,
                     fontFamily: '"Raleway", sans-serif',
                   }}
@@ -15209,14 +16440,15 @@ export default function App() {
                 </div>
                 <div
                   className="text-[11px] mt-1"
-                  style={{ color: "#5a5550", lineHeight: 1.5 }}
+                  style={{ color: "var(--ink-soft)", lineHeight: 1.5 }}
                 >
                   Your work is auto-saved locally so you can close the tab and
                   come back anytime (unless your browser cache is cleared). Use{" "}
-                  <strong style={{ color: "#275662" }}>Clear session</strong>{" "}
+                  <strong style={{ color: "var(--ink)" }}>Clear session</strong>{" "}
                   on the files bar to wipe everything and start fresh.
                 </div>
               </div>
+            </div>
             </div>
           </div>
         </div>
@@ -15226,16 +16458,16 @@ export default function App() {
       <section
         data-tutorial="upload-bar"
         style={{
-          background: "#f6f7f7",
-          borderTop: "1px solid #e6e8e8",
-          borderBottom: "1px solid #e6e8e8",
+          background: "var(--bg-soft)",
+          borderTop: "1px solid var(--border)",
+          borderBottom: "1px solid var(--border)",
         }}
       >
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between gap-4 mb-3 flex-wrap">
             <div
               className="flex items-center gap-2 text-[11px]"
-              style={{ color: "#797870", fontFamily: '"Raleway", sans-serif' }}
+              style={{ color: "var(--ink-muted)", fontFamily: '"Raleway", sans-serif' }}
             >
               <ShieldCheck className="w-3.5 h-3.5" style={{ color: "#00a3a6" }} />
               <span>
@@ -15243,50 +16475,126 @@ export default function App() {
                 data is sent to any server.
               </span>
             </div>
-            {(rawEvents.length > 0 || ab || metadata || plateMap) && (
-              <button
-                onClick={() => {
-                  setBulkConfirm({
-                    kind: "confirm",
-                    title: "Clear the entire session?",
-                    body:
-                      "This removes the loaded events, abundance, metadata and plate map, plus all your verdicts and notes.\n\n" +
-                      "The original files on disk are not affected.",
-                    confirmLabel: "Clear session",
-                    destructive: true,
-                    onConfirm: () => {
-                      setRawEvents([]);
-                      setRunMetadata(null);
-                      setAb(null);
-                      setMetadata(null);
-                      setPlateMap(null);
-                      setSelId(null);
-                      setErr(null);
-                      setTab("overview");
-                    },
-                  });
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                ref={sessionFileRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    try {
+                      const parsed = JSON.parse(String(reader.result));
+                      importSessionFromJSON(parsed);
+                    } catch (err) {
+                      setErr({
+                        title: "Failed to import session",
+                        body: String(err?.message || err),
+                      });
+                    } finally {
+                      // reset so picking the same file again re-fires
+                      e.target.value = "";
+                    }
+                  };
+                  reader.readAsText(file);
                 }}
+              />
+              <button
+                onClick={() => sessionFileRef.current?.click()}
                 className="px-3 py-1.5 text-[11px] rounded-sm flex items-center gap-1.5"
                 style={{
-                  background: "#fff",
-                  color: "#797870",
-                  border: "1px solid #e6e8e8",
+                  background: "var(--bg-card)",
+                  color: "var(--ink-muted)",
+                  border: "1px solid var(--border)",
                   fontWeight: 600,
                   fontFamily: '"Raleway", sans-serif',
                 }}
+                title="Restore a previously exported session JSON"
                 onMouseOver={(e) => {
-                  e.currentTarget.style.borderColor = "#ed6e6c";
-                  e.currentTarget.style.color = "#ed6e6c";
+                  e.currentTarget.style.borderColor = "#00a3a6";
+                  e.currentTarget.style.color = "#00a3a6";
                 }}
                 onMouseOut={(e) => {
-                  e.currentTarget.style.borderColor = "#e6e8e8";
-                  e.currentTarget.style.color = "#797870";
+                  e.currentTarget.style.borderColor = "var(--border)";
+                  e.currentTarget.style.color = "var(--ink-muted)";
                 }}
               >
-                <X className="w-3 h-3" />
-                Clear session
+                <FolderOpen className="w-3 h-3" />
+                Import session
               </button>
-            )}
+              {(rawEvents.length > 0 || ab || metadata || plateMap) && (
+                <>
+                  <button
+                    onClick={exportJSON}
+                    className="px-3 py-1.5 text-[11px] rounded-sm flex items-center gap-1.5"
+                    style={{
+                      background: "var(--bg-card)",
+                      color: "var(--ink-muted)",
+                      border: "1px solid var(--border)",
+                      fontWeight: 600,
+                      fontFamily: '"Raleway", sans-serif',
+                    }}
+                    title="Download the entire session (events, files, UI state) as JSON"
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.borderColor = "#00a3a6";
+                      e.currentTarget.style.color = "#00a3a6";
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border)";
+                      e.currentTarget.style.color = "var(--ink-muted)";
+                    }}
+                  >
+                    <Download className="w-3 h-3" />
+                    Download session
+                  </button>
+                  <button
+                    onClick={() => {
+                      setBulkConfirm({
+                        kind: "confirm",
+                        title: "Clear the entire session?",
+                        body:
+                          "This removes the loaded events, abundance, metadata and plate map, plus all your verdicts and notes.\n\n" +
+                          "The original files on disk are not affected.",
+                        confirmLabel: "Clear session",
+                        destructive: true,
+                        onConfirm: () => {
+                          setRawEvents([]);
+                          setRunMetadata(null);
+                          setAb(null);
+                          setMetadata(null);
+                          setPlateMap(null);
+                          setSelId(null);
+                          setErr(null);
+                          setTab("overview");
+                        },
+                      });
+                    }}
+                    className="px-3 py-1.5 text-[11px] rounded-sm flex items-center gap-1.5"
+                    style={{
+                      background: "var(--bg-card)",
+                      color: "var(--ink-muted)",
+                      border: "1px solid var(--border)",
+                      fontWeight: 600,
+                      fontFamily: '"Raleway", sans-serif',
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.borderColor = "#ed6e6c";
+                      e.currentTarget.style.color = "#ed6e6c";
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border)";
+                      e.currentTarget.style.color = "var(--ink-muted)";
+                    }}
+                  >
+                    <X className="w-3 h-3" />
+                    Clear session
+                  </button>
+                </>
+              )}
+            </div>
           </div>
           <div className="grid md:grid-cols-2 gap-4">
             <UploadCard
@@ -15349,7 +16657,8 @@ export default function App() {
             />
             <UploadCard
               label="species_abundance.tsv"
-              hint="Abundance table — enables scatterplots and assisted scoring"
+              hint="Abundance table — same file you fed to CroCoDeEL."
+              primary
               filename={
                 ab
                   ? `${ab.samples.length} samples × ${ab.species.length} species`
@@ -15397,7 +16706,7 @@ export default function App() {
             <div
               className="flex items-center gap-2 text-sm px-3 py-2 rounded-sm"
               style={{
-                background: "#fdeceb",
+                background: "var(--bg-alert)",
                 border: "1px solid #ed6e6c",
                 color: "#8a2422",
               }}
@@ -15491,7 +16800,7 @@ export default function App() {
                       ? `3px solid ${accent}`
                       : "3px solid transparent",
                     color: disabled
-                      ? "#c4c0b3"
+                      ? "var(--border-strong)"
                       : active
                         ? "#275662"
                         : t.accent
@@ -15549,6 +16858,8 @@ export default function App() {
                 bulkApplyToEvents ? () => setBulkApplyOpen(true) : undefined
               }
               hasAb={!!ab}
+              actionEnabled={actionEnabled}
+              setAction={setAction}
             />
           )}
           {tab === "scatter" && (
@@ -15570,6 +16881,8 @@ export default function App() {
               onBulkApply={
                 bulkApplyToEvents ? () => setBulkApplyOpen(true) : undefined
               }
+              actionEnabled={actionEnabled}
+              setAction={setAction}
             />
           )}
           {tab === "network" && (
@@ -15581,6 +16894,7 @@ export default function App() {
               metadata={metadata}
               plateMap={plateMap}
               runMetadata={runMetadata}
+              actionEnabled={actionEnabled}
               onPick={(id) => {
                 setSelId(id);
                 setTab("validate");
@@ -15623,6 +16937,8 @@ export default function App() {
               ab={ab}
               setVerdict={setVerdict}
               setNote={setNote}
+              actionEnabled={actionEnabled}
+              setAction={setAction}
               metadata={metadata}
               plateMap={plateMap}
               bulkResetAllVerdicts={bulkResetAllVerdicts}
@@ -15639,7 +16955,6 @@ export default function App() {
             <ExportTab
               counts={counts}
               onExportTSV={exportReport}
-              onExportJSON={exportJSON}
               onExportHTML={exportHTMLReport}
             />
           )}
@@ -15715,7 +17030,7 @@ export default function App() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: "#fff",
+              background: "var(--bg-card)",
               borderRadius: 4,
               padding: "24px 28px",
               maxWidth: 520,
@@ -15728,7 +17043,7 @@ export default function App() {
               style={{
                 fontSize: 18,
                 fontWeight: 700,
-                color: "#275662",
+                color: "var(--ink)",
                 fontFamily: '"Raleway", sans-serif',
                 marginBottom: 12,
               }}
@@ -15738,7 +17053,7 @@ export default function App() {
             <p
               style={{
                 fontSize: 13,
-                color: "#5a5550",
+                color: "var(--ink-soft)",
                 lineHeight: 1.6,
                 whiteSpace: "pre-wrap",
                 marginBottom: 20,
@@ -15759,9 +17074,9 @@ export default function App() {
                   padding: "8px 16px",
                   fontSize: 12,
                   fontWeight: 600,
-                  background: "#fff",
-                  color: "#797870",
-                  border: "1px solid #c4c0b3",
+                  background: "var(--bg-card)",
+                  color: "var(--ink-muted)",
+                  border: "1px solid var(--border-strong)",
                   borderRadius: 3,
                   cursor: "pointer",
                   fontFamily: '"Raleway", sans-serif',
@@ -15799,8 +17114,8 @@ export default function App() {
       {/* ==================== FOOTER ==================== */}
       <footer
         style={{
-          background: "#fff",
-          borderTop: "1px solid #e6e8e8",
+          background: "var(--bg-card)",
+          borderTop: "1px solid var(--border)",
           marginTop: 48,
         }}
       >
@@ -15811,7 +17126,7 @@ export default function App() {
               <span
                 className="text-[13px] whitespace-nowrap"
                 style={{
-                  color: "#275662",
+                  color: "var(--ink)",
                   fontWeight: 600,
                   fontFamily: '"Raleway", sans-serif',
                 }}
@@ -15819,13 +17134,22 @@ export default function App() {
                 Institut National de Recherche pour l'Agriculture, l'Alimentation et l'Environnement (INRAE)
               </span>
             </div>
-            <div className="flex items-center gap-6 mt-2">
+            <div
+              className="flex items-center gap-6 mt-2 px-4 py-2 rounded-sm"
+              style={{
+                // Logos are designed for white backgrounds; pad them on
+                // a white card so they don't float on the dark page in
+                // dark mode. In light mode this is invisible since the
+                // page bg is already white.
+                background: "#fff",
+              }}
+            >
               <RepubliqueFrancaise height={40} />
               <InraeLogo height={28} />
             </div>
             <div
               className="text-[11px] mt-4 max-w-2xl leading-relaxed"
-              style={{ color: "#797870" }}
+              style={{ color: "var(--ink-muted)" }}
             >
               Interpretation aid for CroCoDeEL results. Cite: Goulet L. et al.,
               bioRxiv 2025,{" "}
@@ -15844,7 +17168,7 @@ export default function App() {
             </div>
             <div
               className="text-[11px] mt-1 italic"
-              style={{ color: "#797870" }}
+              style={{ color: "var(--ink-muted)" }}
             >
               Created using Claude Opus 4.7, prompted by G. Gautreau.
             </div>
@@ -15860,7 +17184,282 @@ export default function App() {
           onApply={bulkApplyToEvents}
           bulkMarkSameSubjectAsFP={bulkMarkSameSubjectAsFP}
           bulkMarkTowardNCAsTP={bulkMarkTowardNCAsTP}
+          actionEnabled={actionEnabled}
         />
+      )}
+
+      {configOpen && (
+        <div
+          onClick={() => setConfigOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(39,86,98,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Configuration"
+            style={{
+              background: "var(--bg-card)",
+              borderRadius: 6,
+              width: "min(560px, 92vw)",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              boxShadow: "0 12px 40px rgba(39,86,98,0.25)",
+            }}
+          >
+            <div
+              className="flex items-center justify-between px-5 py-3"
+              style={{
+                borderBottom: "1px solid var(--border)",
+                background: "var(--bg-softer)",
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <Settings className="w-4 h-4" style={{ color: "var(--ink)" }} />
+                <div
+                  style={{
+                    color: "var(--ink)",
+                    fontWeight: 700,
+                    fontFamily: '"Raleway", sans-serif',
+                  }}
+                >
+                  Configuration
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfigOpen(false)}
+                aria-label="Close"
+                style={{
+                  background: "transparent",
+                  border: 0,
+                  cursor: "pointer",
+                  color: "var(--ink-muted)",
+                  padding: 4,
+                }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-5 text-[13px]" style={{ color: "var(--ink-soft)" }}>
+              <div
+                className="text-[10px] tracking-[0.15em] uppercase mb-2"
+                style={{
+                  color: "#ed6e6c",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                Theme
+              </div>
+              <div className="flex flex-col gap-2 mb-3">
+                {[
+                  {
+                    id: "light",
+                    label: "Light",
+                    hint: "Always use the light palette.",
+                  },
+                  {
+                    id: "dark",
+                    label: "Dark",
+                    hint: "Always use the dark palette (still partial — most panels keep light styling for now).",
+                  },
+                  {
+                    id: "auto-os",
+                    label: "Auto (follow OS)",
+                    hint: "Match your browser / operating system theme. Updates live when you toggle dark mode at the OS level.",
+                  },
+                  {
+                    id: "auto-time",
+                    label: "Auto (schedule)",
+                    hint: "Switch to dark inside a time window you define below.",
+                  },
+                ].map((opt) => {
+                  const active = theme === opt.id;
+                  return (
+                    <label
+                      key={opt.id}
+                      className="flex items-start gap-2 px-3 py-2 rounded-sm cursor-pointer"
+                      style={{
+                        background: active ? "var(--bg-info)" : "var(--bg-softer)",
+                        border: active
+                          ? "1px solid #00a3a6"
+                          : "1px solid #e6e8e8",
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="config-theme"
+                        value={opt.id}
+                        checked={active}
+                        onChange={() => setTheme(opt.id)}
+                        style={{ accentColor: "#00a3a6", marginTop: 3 }}
+                      />
+                      <div className="min-w-0">
+                        <div
+                          style={{
+                            color: "var(--ink)",
+                            fontWeight: 700,
+                            fontFamily: '"Raleway", sans-serif',
+                            fontSize: 13,
+                          }}
+                        >
+                          {opt.label}
+                        </div>
+                        <div
+                          className="text-[11px] mt-0.5"
+                          style={{ color: "var(--ink-muted)" }}
+                        >
+                          {opt.hint}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              {theme === "auto-time" && (
+                <div
+                  className="flex items-center gap-3 mb-3 px-3 py-2 rounded-sm"
+                  style={{
+                    background: "var(--bg-soft)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <span
+                    className="text-[11px]"
+                    style={{ color: "var(--ink-muted)", fontWeight: 600 }}
+                  >
+                    Dark from
+                  </span>
+                  <input
+                    type="time"
+                    value={darkStart}
+                    onChange={(e) => setDarkStart(e.target.value)}
+                    style={{
+                      padding: "4px 6px",
+                      fontSize: 12,
+                      border: "1px solid var(--border-strong)",
+                      background: "var(--bg-card)",
+                      color: "var(--ink)",
+                      borderRadius: 2,
+                    }}
+                  />
+                  <span
+                    className="text-[11px]"
+                    style={{ color: "var(--ink-muted)", fontWeight: 600 }}
+                  >
+                    to
+                  </span>
+                  <input
+                    type="time"
+                    value={darkEnd}
+                    onChange={(e) => setDarkEnd(e.target.value)}
+                    style={{
+                      padding: "4px 6px",
+                      fontSize: 12,
+                      border: "1px solid var(--border-strong)",
+                      background: "var(--bg-card)",
+                      color: "var(--ink)",
+                      borderRadius: 2,
+                    }}
+                  />
+                  <span
+                    className="text-[11px] ml-auto"
+                    style={{ color: "var(--ink-muted)", fontStyle: "italic" }}
+                  >
+                    local time
+                  </span>
+                </div>
+              )}
+              <p
+                className="text-[11px]"
+                style={{ color: "#9aa1a3", fontStyle: "italic" }}
+              >
+                Dark mode currently flips only the page background. Most
+                panels still render with their light styling because
+                colors live as inline values across the components.
+              </p>
+
+              <div
+                className="text-[10px] tracking-[0.15em] uppercase mt-5 mb-2"
+                style={{
+                  color: "#ed6e6c",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                }}
+              >
+                Suppress / keep action
+              </div>
+              <label
+                className="flex items-start gap-2 px-3 py-2 rounded-sm cursor-pointer"
+                style={{
+                  background: actionEnabled ? "var(--bg-info)" : "var(--bg-softer)",
+                  border: actionEnabled
+                    ? "1px solid #00a3a6"
+                    : "1px solid var(--border)",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={actionEnabled}
+                  onChange={(e) => setActionEnabled(e.target.checked)}
+                  style={{ accentColor: "#00a3a6", marginTop: 3 }}
+                />
+                <div className="min-w-0">
+                  <div
+                    style={{
+                      color: "var(--ink)",
+                      fontWeight: 700,
+                      fontFamily: '"Raleway", sans-serif',
+                      fontSize: 13,
+                    }}
+                  >
+                    Enable suppress/keep action
+                  </div>
+                  <div
+                    className="text-[11px] mt-0.5"
+                    style={{ color: "var(--ink-muted)" }}
+                  >
+                    Useful when a small contamination shouldn't cost you a
+                    whole study — flip individual TPs from "suppress" to
+                    "keep" to preserve them in downstream analyses.
+                    Disabled by default.
+                  </div>
+                </div>
+              </label>
+            </div>
+            <div
+              className="flex justify-end px-5 py-3"
+              style={{
+                borderTop: "1px solid var(--border)",
+                background: "var(--bg-softer)",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setConfigOpen(false)}
+                className="px-4 py-1.5 text-[12px] rounded-sm"
+                style={{
+                  background: "#275662",
+                  color: "#fff",
+                  border: "1px solid #275662",
+                  fontWeight: 700,
+                  fontFamily: '"Raleway", sans-serif',
+                  cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
