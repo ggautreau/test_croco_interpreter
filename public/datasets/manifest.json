@@ -83,7 +83,8 @@
       "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
       "files": {
         "events": "PRJEB6337/contamination_events.tsv",
-        "abundance": "PRJEB6337/species_abundance.tsv"
+        "abundance": "PRJEB6337/species_abundance.tsv",
+        "metadata": "PRJEB6337/metadata.tsv"
       }
     },
     {
@@ -117,7 +118,8 @@
       "dataverse_url": "https://entrepot.recherche.data.gouv.fr/dataset.xhtml?persistentId=doi:10.57745/N6JSHQ",
       "files": {
         "events": "PRJNA352475/contamination_events.tsv",
-        "abundance": "PRJNA352475/species_abundance.tsv"
+        "abundance": "PRJNA352475/species_abundance.tsv",
+        "metadata": "PRJNA352475/metadata.tsv"
       }
     },
     {
@@ -135,7 +137,8 @@
       "files": {
         "events": "PRJNA698986_P2/contamination_events.tsv",
         "abundance": "PRJNA698986_P2/species_abundance.tsv",
-        "plate_map": "PRJNA698986_P2/plate_map.tsv"
+        "plate_map": "PRJNA698986_P2/plate_map.tsv",
+        "metadata": "PRJNA698986_P2/metadata.tsv"
       }
     },
     {
@@ -154,7 +157,8 @@
       "files": {
         "events": "PRJNA698986_P3/contamination_events.tsv",
         "abundance": "PRJNA698986_P3/species_abundance.tsv",
-        "plate_map": "PRJNA698986_P3/plate_map.tsv"
+        "plate_map": "PRJNA698986_P3/plate_map.tsv",
+        "metadata": "PRJNA698986_P3/metadata.tsv"
       }
     },
     {
